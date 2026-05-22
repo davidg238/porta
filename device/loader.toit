@@ -1,3 +1,4 @@
+import esp32
 import system.containers
 import tftp show TFTPClient
 
@@ -18,22 +19,68 @@ UDP port the TFTP server listens on. Must match the PORT constant in
 GATEWAY-PORT ::= 6969
 
 /**
-Executes the M1 smoke-test pass: pulls the firmware blob from the TFTP gateway,
-  streams the container image into transient storage, and starts it.
+How long to deep-sleep between polls. On wake the ESP32 reboots, jaguar
+  restarts this loader (a named installed container) and the payload (tagged
+  with the Jaguar-installed magic), and $main runs again.
+*/
+POLL-PERIOD ::= Duration --s=30
 
-Connects a $TFTPClient to $GATEWAY-HOST:$GATEWAY-PORT and reads the file named
-  "firmware" (the full blob as `[u32 size_le][u32 crc32_le][image bytes]`)
-  straight into a $BlobInstallWriter. The writer peels the 8-byte header,
-  streams the image bytes into a $ContainerImageInstaller (verifying size and
-  CRC32) without ever holding the whole image in RAM, and commits. The returned
-  UUID is then passed to `containers.start` to launch the payload container.
+/**
+How long to let the freshly started payload print heartbeats before
+  deep-sleeping, so the smoke test can observe it on the serial console.
+*/
+PAYLOAD-OBSERVE ::= Duration --s=5
 
-The payload is expected to print "delivered tick N" heartbeat lines on the
-  serial console — that output is the smoke-test success proof.
+/**
+Runs one M2 poll cycle, then deep-sleeps.
 
-Deep-sleep and re-poll on wake are deferred to M2.
+Pulls the firmware blob from the TFTP gateway and streams it through a
+  $BlobInstallWriter into a named $ContainerImageInstaller (so the payload
+  persists across deep-sleep), starts the payload, lets it print for
+  $PAYLOAD-OBSERVE, then `esp32.deep-sleep`s for $POLL-PERIOD. Deep-sleep wakes
+  via a full reboot, so the cycle repeats by re-running $main rather than
+  looping in-process.
+
+A failed poll (gateway down, CRC mismatch, network drop) is caught and traced
+  rather than propagated, so the device still deep-sleeps and retries on the
+  next wake; the last successfully installed payload keeps running meanwhile
+  (jaguar restarted it on boot). Mirrors jaguar's `catch --trace:
+  run-installed-containers` (jaguar.toit:110).
+
+On wake the serial console should show the payload heartbeat reappear
+  (restarted by jaguar's `run-installed-containers`) and this loader re-poll —
+  the M2 success criterion.
+
+# Known limitation (smoke test)
+Each wake starts the payload twice: once by jaguar's `run-installed-containers`
+  (it auto-restarts the persisted, magic-tagged image) and once by this loader's
+  re-pull + `containers.start`. While the gateway payload is unchanged both run
+  the same image (same UUID, so flash holds only one image and nothing
+  accumulates — deep-sleep clears running state each cycle), so it is harmless
+  here, just redundant. The production client removes
+  the overlap via the deferred "skip re-install if CRC unchanged" optimization
+  (the loader defers to the already-running instance) or by dropping jaguar in a
+  custom envelope where the loader is the sole starter. Not worth fixing in the
+  smoke test.
 */
 main:
+  print "loader: awake, polling gateway $GATEWAY-HOST:$GATEWAY-PORT"
+  // Never let a transient poll failure strand the device awake: trace it and
+  // still deep-sleep so the next wake retries (cf. jaguar.toit:110).
+  catch --trace: poll-once
+  print "loader: observing payload for $PAYLOAD-OBSERVE"
+  sleep PAYLOAD-OBSERVE
+  print "loader: deep-sleeping for $POLL-PERIOD"
+  esp32.deep-sleep POLL-PERIOD
+
+/**
+Pulls "firmware" over TFTP, streams it into flash as the named "payload"
+  container, and starts it.
+
+Aborts the install on any failure path so a partially-opened
+  `ContainerImageWriter` cannot leak across a wake cycle.
+*/
+poll-once -> none:
   client := TFTPClient --host=GATEWAY-HOST
   client.port = GATEWAY-PORT  // TFTPClient has no --port constructor arg; set before open.
   client.open
@@ -48,6 +95,4 @@ main:
     print "loader: started payload"
   finally:
     client.close
-    // If the transfer or commit threw mid-way, release the (possibly opened)
-    // ContainerImageWriter so it does not leak across an M2 re-poll loop.
     if not installed: sink.abort
