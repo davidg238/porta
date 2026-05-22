@@ -1,0 +1,10 @@
+name: porta-host
+description: Throwaway TFTP harness for the porta smoke test (serves the framed firmware blob).
+dependencies:
+  # NOTE: machine-specific absolute path (per CLAUDE.md, packages live under
+  # ~/workspaceToit/). A clone on a different layout must adjust this path.
+  tftp:
+    path: /home/david/workspaceToit/tftp
+  host:
+    url: github.com/toitlang/pkg-host
+    version: ^1.16.0
