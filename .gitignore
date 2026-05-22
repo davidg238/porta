@@ -1,0 +1,20 @@
+# Local-only reference symlink to the parent project (machine-specific absolute path)
+/st-zephyr
+
+# Go gateway build output
+gateway/jast-gw
+*.db
+
+# Build artifacts / caches
+build/
+build-host/
+__pycache__/
+*.pyc
+
+# Smoke-test captured artifacts (regenerated from jag)
+host/image
+host/*.image
+host/firmware
+
+# Toit
+.packages/
