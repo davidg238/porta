@@ -1,47 +1,45 @@
-import crypto.crc
-import io
 import system.containers
 import uuid
 
+import .blob_sink show ImageInstaller
+
 /**
-On-device flash-image helper lifted and adapted from jaguar's `flash-image`
-  (jaguar/src/jaguar.toit).
+On-device image installer lifted and adapted from jaguar's `flash-image`
+  (jaguar/src/jaguar.toit), reshaped as a push-style $ImageInstaller so a
+  `BlobInstallWriter` can stream a TFTP transfer straight into flash without
+  buffering the whole image in RAM.
 */
 
 /**
-Streams $image-size bytes from $reader into a transient `ContainerImageWriter`,
-verifies the resulting CRC32-IEEE against $crc32 (reused verbatim from the TFTP
-header), and commits the image, returning its UUID.
+An $ImageInstaller backed by a transient `ContainerImageWriter`.
 
-The $name parameter is intentionally unused in M1 (transient install — no named
-registry). It is kept in the signature so that the M2 named-install task can add
-the registry call without changing callers.
-
-# Errors
-Throws "truncated stream: expected N bytes, got M" if the reader closes before
-  $image-size bytes have been delivered.
-Throws "CRC32 mismatch" if the computed CRC32-IEEE digest does not equal $crc32.
-  The writer is closed on both error paths.
+$begin opens the writer for a known image size, $write streams bytes into it,
+  and $commit / $abort finish or discard the install.
 */
-flash-image image-size/int reader/io.Reader name/string? --crc32/int -> uuid.Uuid:
-  summer := crc.Crc.little-endian 32
-      --polynomial=0xEDB88320
-      --initial-state=0xffff_ffff
-      --xor-result=0xffff_ffff
-  written := 0
-  writer := containers.ContainerImageWriter image-size
-  while written < image-size:
-    data := reader.read
-    if not data: break
-    summer.add data
-    // Update written before writer.write — the RPC call may neuter the ByteArray,
-    // zeroing data.size after the call (same subtlety as in jaguar).
-    written += data.size
-    writer.write data
-  if written != image-size:
-    writer.close
-    throw "truncated stream: expected $image-size bytes, got $written"
-  if summer.get-as-int != crc32:
-    writer.close
-    throw "CRC32 mismatch"
-  return writer.commit
+class ContainerImageInstaller implements ImageInstaller:
+  /**
+  Install name, kept for the M2 named-install registry. Unused in M1 (transient
+    install — no named registry), so callers need not change when M2 wires it up.
+  */
+  name_/string?
+  writer_/containers.ContainerImageWriter? := null
+
+  constructor .name_:
+
+  begin size/int -> none:
+    writer_ = containers.ContainerImageWriter size
+
+  write chunk/ByteArray -> none:
+    writer_.write chunk
+
+  commit -> uuid.Uuid:
+    result := writer_.commit
+    // Drop the writer so a later abort (e.g. from a caller's finally) is a
+    // no-op rather than closing an already-committed writer.
+    writer_ = null
+    return result
+
+  abort -> none:
+    if writer_ != null:
+      writer_.close
+      writer_ = null
