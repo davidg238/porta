@@ -1,20 +1,52 @@
-// porta on-device loader — SCAFFOLD ONLY.
-//
-// Implement per ../docs/specs/2026-05-21-toit-tftp-loader-design.md (component 3)
-// and the plan in ../docs/plans/. Invoke the Toit skills first.
-//
-// Loop:
-//   1. bring up WiFi (STA / IPv4)
-//   2. TFTPClient --host=<gateway-ip>; read "firmware" -> Reader
-//   3. read first 8 bytes -> size (u32 LE), crc32 (u32 LE)
-//   4. hand the same reader to lifted flash-image: install the container
-//   5. start the payload container
-//   6. esp32.deep-sleep N; on wake, repeat   (M2; M1 omits sleep)
-//
-// flash-image + the named-install registry are lifted from
-// ~/workspaceToit/jaguar/src/{jaguar.toit,container_registry.toit} with jag's
-// HTTP-body reader replaced by the tftp_client reader.
+import io
+import system.containers
+import tftp show TFTPClient
 
+import .flash_image show flash-image
+import .header
+
+/**
+Gateway LAN IP where `host/serve.toit` is running. Adjust to match the host
+  machine's address on the shared network.
+*/
+GATEWAY-HOST ::= "192.168.0.175"
+
+/**
+UDP port the TFTP server listens on. Must match the PORT constant in
+  `host/serve.toit`. Port 6969 is used so the server needs no root privileges
+  (port 69 would require root).
+*/
+GATEWAY-PORT ::= 6969
+
+/**
+Executes the M1 smoke-test pass: pulls the firmware blob from the TFTP gateway,
+  flashes the container image into transient storage, and starts it.
+
+Connects a $TFTPClient to $GATEWAY-HOST:$GATEWAY-PORT, reads the file named
+  "firmware" (the full blob as `[u32 size_le][u32 crc32_le][image bytes]`),
+  parses the 8-byte $Header to extract image size and CRC32, wraps the image
+  bytes in an $io.Reader, and hands them to $flash-image which verifies the
+  digest and commits the image. The returned UUID is then passed to
+  `containers.start` to launch the payload container.
+
+The payload is expected to print "delivered tick N" heartbeat lines on the
+  serial console — that output is the smoke-test success proof.
+
+Deep-sleep and re-poll on wake are deferred to M2.
+*/
 main:
-  // TODO(porta-agent): implement the poll -> flash-image -> run -> sleep loop.
-  throw "not implemented"
+  client := TFTPClient --host=GATEWAY-HOST
+  client.port = GATEWAY-PORT  // TFTPClient has no --port constructor arg; set before open
+  client.open
+  blob/ByteArray := #[]
+  try:
+    blob = client.read-bytes "firmware"
+  finally:
+    client.close
+  header := parse-header blob
+  image-bytes := blob[8 .. 8 + header.size]
+  print "loader: pulled blob=$blob.size image=$header.size crc32=$header.crc32"
+  id := flash-image header.size (io.Reader image-bytes) "payload" --crc32=header.crc32
+  print "loader: installed $id, starting"
+  containers.start id
+  print "loader: started payload"
