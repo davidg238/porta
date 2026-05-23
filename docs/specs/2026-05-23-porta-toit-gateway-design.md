@@ -230,11 +230,15 @@ from. So `container install` is the single unification point, dispatched on the
 file type:
 
 ```
-gateway container install <name> <file> -d <node>
-  <file> = .bin   prebuilt image   → store as-is        (M1)
-         = .pod   ar-archive       → extract images+cfg → payloads + run  (pod frontend, M3)
-         = .toit  source           → compile+relocate   → payload + run  (compile frontend, M4)
+gateway container install <name> <file> -d <node> [--interval <dur>] [--trigger <type>=<val> …]
+  <file> = .bin   prebuilt image   → store as-is        ┐
+         = .pod   ar-archive       → extract images+cfg ├─→ payload(s) + enqueue run (per triggers)
+         = .toit  source           → compile+relocate   ┘     M1 .bin · M3 .pod · M4 .toit
 ```
+
+All three frontends differ only in how they produce the payload; they converge on
+the **identical backend** (`payload(s)` + enqueue `run` per the triggers given at
+install) — that convergence *is* the ingestion seam pinned in M1.
 
 The common **ingestion seam** (`register_payload` + enqueue `run`) is pinned in
 **M1**. The `.pod` and `.toit` frontends slot in behind it later — they are just
