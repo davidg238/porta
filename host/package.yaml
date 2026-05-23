@@ -1,5 +1,5 @@
 name: porta-host
-description: Throwaway TFTP harness for the porta smoke test (serves the framed firmware blob).
+description: Minimal Porta gateway harness — serves an Artemis-shaped goal-state + the raw container image over TFTP.
 dependencies:
   # NOTE: machine-specific absolute path (per CLAUDE.md, packages live under
   # ~/workspaceToit/). A clone on a different layout must adjust this path.
