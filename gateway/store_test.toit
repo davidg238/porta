@@ -1,5 +1,5 @@
 import expect show *
-import .store show Store DEFAULT-POLL-INTERVAL-S DEFAULT-MAX-OFFLINE-S
+import .store show Store DEFAULT-POLL-INTERVAL-S DEFAULT-MAX-OFFLINE-S encode-json_ decode-json_
 import .command show Command
 
 main:
@@ -75,5 +75,18 @@ main:
 
   // Queues are per device.
   expect-equals 0 (store.undelivered-commands "010203040506").size
+
+  observed := encode-json_ {"apps": {"blink": {"crc": 7, "runlevel": 3}}}
+  health := encode-json_ {"uptime_s": 12, "free_heap": 50000, "wakes": 3}
+  store.insert-report "aabbccddeeff" --observed-state=observed --health=health --now=4000
+  // The latest observed state + report time are cached on the node row.
+  refreshed := store.node "aabbccddeeff"
+  expect-equals 4000 refreshed["last_report_at"]
+  decoded := decode-json_ refreshed["observed_state"]
+  expect-equals 7 decoded["apps"]["blink"]["crc"]
+  // The append-only reports table holds the history (newest first).
+  reports := store.reports "aabbccddeeff"
+  expect-equals 1 reports.size
+  expect-equals 4000 reports[0]["ts"]
 
   store.close

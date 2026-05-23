@@ -168,6 +168,26 @@ class Store:
       }
     return result
 
+  /**
+  Records a node's observed state from a wake.
+
+  Appends a row to the reports audit table (with $observed-state and $health,
+    each a JSON string, at $now epoch seconds) and refreshes the cached
+    observed_state / last_report_at on the $device-id node row.
+  */
+  insert-report device-id/string --observed-state/string --health/string --now/int -> none:
+    db_.execute "INSERT INTO reports (device_id, ts, observed_state, health) VALUES (?, ?, ?, ?)"
+        [device-id, now, observed-state, health]
+    db_.execute "UPDATE nodes SET observed_state = ?, last_report_at = ? WHERE id = ?"
+        [observed-state, now, device-id]
+
+  /** Returns $device-id's reports, newest first. */
+  reports device-id/string -> List:
+    result := []
+    db_.query "SELECT ts, observed_state, health FROM reports WHERE device_id = ? ORDER BY ts DESC" [device-id]: | row |
+      result.add {"ts": row[0], "observed_state": row[1], "health": row[2]}
+    return result
+
   command-row_ row/List -> Map:
     return {
       "id": row[0], "verb": row[1], "args": (decode-json_ row[2]),
