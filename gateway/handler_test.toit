@@ -55,3 +55,25 @@ main:
   expect-equals 4 (handler.size "payload?id=x&crc=999")
   expect-equals null (handler.size "payload?id=x&crc=7")
   store.close
+
+  // A WRQ to "report" buffers the body and, on close, records observed apps + health.
+  store2 := Store.open ":memory:"
+  h2 := StoreBackedHandler store2
+  store2.ensure-node "aabbccddeeff" --now=2000
+  body := #[]
+  body = "{\"apps\":{\"blink\":{\"crc\":999,\"runlevel\":3}},\"health\":{\"wakes\":4}}".to-byte-array
+  w := h2.writer-for "report?id=aabbccddeeff"
+  w.write body
+  w.close
+  reps := store2.reports "aabbccddeeff"
+  expect-equals 1 reps.size
+  observed := decode-json_ reps[0]["observed_state"]
+  expect-equals 999 observed["apps"]["blink"]["crc"]
+  health := decode-json_ reps[0]["health"]
+  expect-equals 4 health["wakes"]
+  // The node row's cached observed_state was refreshed too.
+  node := store2.node "aabbccddeeff"
+  expect ((decode-json_ node["observed_state"])["apps"].contains "blink")
+  // A WRQ to anything but "report" is refused.
+  expect-throw STORAGE-ACCESS-DENIED: h2.writer-for "payload?id=aabbccddeeff&crc=1"
+  store2.close
