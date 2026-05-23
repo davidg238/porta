@@ -1,42 +1,20 @@
+// device/flash_image.toit
 import system.containers
 import uuid
 
-import .blob_sink show ImageInstaller
+import .image_writer show ImageInstaller
 
 /**
-On-device image installer lifted and adapted from jaguar's `flash-image`
-  (jaguar/src/jaguar.toit), reshaped as a push-style $ImageInstaller so a
-  `BlobInstallWriter` can stream a TFTP transfer straight into flash without
-  buffering the whole image in RAM.
-*/
+On-device image installer adapted from jaguar's flash-image, reshaped as a
+  push-style $ImageInstaller so an ImageStreamWriter streams a TFTP transfer
+  straight into flash without buffering the whole image.
 
-/**
-Marks a committed image as a named, Jaguar-installed container.
-
-This is the verbatim magic value jaguar writes (`jaguar.toit:238`,
-  `container_registry.toit:10`). Committing with `--data=$JAGUAR-INSTALLED-MAGIC`
-  makes the device's jaguar firmware discover the image on every boot and
-  auto-restart it via `run-installed-containers` — which is how the payload
-  survives a deep-sleep wake. "Big cat."
-*/
-JAGUAR-INSTALLED-MAGIC ::= 0xb16_ca7
-
-/**
-An $ImageInstaller backed by a `ContainerImageWriter`.
-
-$begin opens the writer for a known image size, $write streams bytes into it,
-  and $commit / $abort finish or discard the install.
+Commits with `--run-boot=false`: the supervisor — not the firmware — owns
+  starting containers (no JAGUAR-INSTALLED-MAGIC, no auto-restart on boot). The
+  committed image still persists in the flash registry across power-cycles.
 */
 class ContainerImageInstaller implements ImageInstaller:
-  /**
-  Install name. When non-null, $commit tags the image with
-    $JAGUAR-INSTALLED-MAGIC so it persists and auto-restarts across a
-    deep-sleep wake (named install); when null, the image is transient.
-  */
-  name_/string?
   writer_/containers.ContainerImageWriter? := null
-
-  constructor .name_:
 
   begin size/int -> none:
     writer_ = containers.ContainerImageWriter size
@@ -45,13 +23,8 @@ class ContainerImageInstaller implements ImageInstaller:
     writer_.write chunk
 
   commit -> uuid.Uuid:
-    // Mirror jaguar.toit:238: a named install is tagged with the magic so
-    // run-installed-containers restarts it on boot; transient otherwise.
-    data := name_ != null ? JAGUAR-INSTALLED-MAGIC : 0
-    result := writer_.commit --data=data
-    // Drop the writer so a later abort (e.g. from a caller's finally) is a
-    // no-op rather than closing an already-committed writer.
-    writer_ = null
+    result := writer_.commit --run-boot=false
+    writer_ = null  // later abort (e.g. from a finally) becomes a no-op
     return result
 
   abort -> none:
