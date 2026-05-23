@@ -54,6 +54,23 @@ class Inventory:
       }
     return {"apps": m}
 
+  /**
+  Reconstructs the goal-app map (name → {"size","crc","triggers","runlevel",
+    "arguments"}, the shape GoalState.parse consumes) from the installed apps, so a
+    wake can apply freshly drained commands on top of the node's current goal.
+  */
+  to-goal-map -> Map:
+    goal := {:}
+    apps.do: | name/string a/InstalledApp |
+      goal[name] = {
+        "size": a.size,
+        "crc": a.crc,
+        "triggers": a.triggers.to-map,
+        "runlevel": a.runlevel,
+        "arguments": [],
+      }
+    return goal
+
   /** Compares the goal against the inventory and returns what the supervisor must do. */
   reconcile goal/GoalState -> Reconciliation:
     to-fetch := []
