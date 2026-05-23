@@ -38,4 +38,17 @@ main:
   store.set-poll-interval-intended "aabbccddeeff" 1
   expect-equals 1 (store.node "aabbccddeeff")["poll_interval_s"]
 
+  image := #[0xca, 0xfe, 0xba, 0xbe, 0x00, 0x01]
+  expect-not (store.payload-exists 12345)
+  store.register-payload --crc=12345 --name="blink" --image=image
+  expect (store.payload-exists 12345)
+  p := store.payload 12345
+  expect-equals "blink" p["name"]
+  expect-equals 6 p["size"]
+  expect-equals image p["image"]                 // BLOB round-trips byte-identical
+  // Re-register the same crc replaces (idempotent registration).
+  store.register-payload --crc=12345 --name="blink" --image=#[0x01]
+  expect-equals 1 (store.payload 12345)["size"]
+  expect-equals null (store.payload 999)         // unknown crc → null
+
   store.close

@@ -113,6 +113,21 @@ class Store:
   set-poll-interval-intended id/string seconds/int -> none:
     db_.execute "UPDATE nodes SET poll_interval_s = ? WHERE id = ?" [seconds, id]
 
+  /** Stores image $image (keyed by $crc, labelled $name); replaces any existing row for $crc. */
+  register-payload --crc/int --name/string --image/ByteArray -> none:
+    db_.execute "INSERT OR REPLACE INTO payloads (crc, name, size, image) VALUES (?, ?, ?, ?)"
+        [crc, name, image.size, image]
+
+  /** Whether a payload with $crc is stored. */
+  payload-exists crc/int -> bool:
+    return (db_.query-one "SELECT 1 FROM payloads WHERE crc = ?" [crc]) != null
+
+  /** Returns the payload for $crc as {"crc","name","size","image"}, or null. */
+  payload crc/int -> Map?:
+    row := db_.query-one "SELECT crc, name, size, image FROM payloads WHERE crc = ?" [crc]
+    if row == null: return null
+    return {"crc": row[0], "name": row[1], "size": row[2], "image": row[3]}
+
   node-row_ row/List? -> Map?:
     if row == null: return null
     return {
