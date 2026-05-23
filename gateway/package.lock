@@ -1,0 +1,28 @@
+sdk: ^2.0.0-alpha.188.1
+prefixes:
+  cli: pkg-cli
+  host: pkg-host
+  sqlite: sqlite
+packages:
+  pkg-cli:
+    url: github.com/toitlang/pkg-cli
+    name: cli
+    version: 1.8.0
+    hash: 73c8aabb60a6f5f304566a1e781d7b025aa17e9b
+    prefixes:
+      fs: pkg-fs
+      host: pkg-host
+  pkg-fs:
+    url: github.com/toitlang/pkg-fs
+    name: fs
+    version: 2.3.1
+    hash: 60836d4500317af2093d59d50c117d612c33f1fa
+    prefixes:
+      host: pkg-host
+  pkg-host:
+    url: github.com/toitlang/pkg-host
+    name: host
+    version: 1.18.0
+    hash: 310dc330fc249be43d231282531d352f26f45474
+  sqlite:
+    path: /home/david/workspaceToit/sqlite
