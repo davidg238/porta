@@ -56,3 +56,13 @@ main:
   feed w3 image[0..500] 128
   expect-throw "truncated stream: expected 1000 bytes, got 500": w3.commit
   expect fi3.aborted
+
+  // zero-byte image: no feed/write calls, commit must succeed
+  good0 := crc-of (ByteArray 0)
+  fi4 := FakeInstaller
+  w4 := ImageStreamWriter fi4 --size=0 --crc=good0
+  expect-equals 0 fi4.begun-size
+  id4 := w4.commit
+  expect fi4.committed
+  expect-equals (ByteArray 0) (fi4.image)
+  expect-equals fi4.result_ id4
