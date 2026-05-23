@@ -1109,7 +1109,7 @@ Expected on the second wake: `supervisor: payload unchanged (crc=2157114022)` an
 - [ ] **Step 7: Verify cold-boot autonomy (offline resume)**
 
 Stop the gateway (`Ctrl-C` in its terminal), then physically power-cycle the device (unplug/replug, or press EN). Re-attach `jag monitor`.
-Expected: because NVS still holds the inventory, the supervisor restarts the persisted payload. (On a *true* cold boot RTC is cleared so `poll-due` is true and the poll will fail with the gateway down — caught/traced — but `start-installed` still runs the payload from flash.) Confirm `delivered tick N` reappears with the gateway offline. ✅ offline autonomy after first provisioning.
+Expected: because NVS still holds the inventory, the supervisor restarts the persisted payload **without polling**. On a true cold power-cycle RTC user memory is cleared, so `ScheduleStore` re-inits `last-poll-us = 0` and `clock-us` (`Time.monotonic-us`) is also ~0; since the NVS inventory is non-empty, `cold = false`, so `poll-due = false OR (0 - 0 >= POLL-PERIOD) = false`. The first wake therefore goes **straight to `start-installed`** — there is **no `supervisor: polling …` line and no stack trace** on this wake. (The poll resumes on a later sleep-wake once `clock-us` has advanced past `POLL-PERIOD`; if the gateway is still down then, that poll fails and is caught/traced, but the payload keeps running from flash.) Confirm `delivered tick N` reappears with the gateway offline. ✅ offline autonomy after first provisioning.
 
 - [ ] **Step 8: Commit**
 
