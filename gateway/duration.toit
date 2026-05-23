@@ -11,8 +11,8 @@ parse-duration-s text/string -> int:
   if text == "": throw "invalid duration: "
   last := text[text.size - 1]
   if '0' <= last <= '9':
-    return int.parse text --on-error=: throw "invalid duration: $text"
-  magnitude := int.parse text[..text.size - 1] --on-error=: throw "invalid duration: $text"
+    return int.parse text --if-error=: throw "invalid duration: $text"
+  magnitude := int.parse text[..text.size - 1] --if-error=: throw "invalid duration: $text"
   if last == 's': return magnitude
   if last == 'm': return magnitude * 60
   if last == 'h': return magnitude * 3600
