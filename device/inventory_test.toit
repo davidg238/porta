@@ -34,9 +34,27 @@ main:
   r3 := inv.reconcile (GoalState {:})
   expect-equals 1 r3.to-remove.size
 
+  // multi-app reconcile: keep (same crc → schedule), add (new → fetch), drop (absent → remove)
+  t60b := Triggers --interval-s=60
+  installed-keep := InstalledApp --name="keep" --id=id --size=10 --crc=111 --triggers=t60b --runlevel=3
+  installed-drop := InstalledApp --name="drop" --id=id --size=10 --crc=222 --triggers=t60b --runlevel=3
+  inv-multi := Inventory {"keep": installed-keep, "drop": installed-drop}
+  t60c := Triggers --interval-s=60
+  app-keep := App --name="keep" --size=10 --crc=111 --triggers=t60c --runlevel=3
+  app-add := App --name="add" --size=20 --crc=333 --triggers=t60c --runlevel=3
+  goal-multi := GoalState {"keep": app-keep, "add": app-add}
+  r4 := inv-multi.reconcile goal-multi
+  expect-equals 1 r4.to-fetch.size
+  expect-equals 1 r4.to-schedule.size
+  expect-equals 1 r4.to-remove.size
+  expect-equals "add" (r4.to-fetch[0] as App).name
+  expect-equals "keep" (r4.to-schedule[0] as InstalledApp).name
+  expect-equals "drop" (r4.to-remove[0] as InstalledApp).name
+
   // encode/decode round-trip
   tree := inv.encode
   back := Inventory.decode tree
   expect-equals 111 (back.apps["payload"] as InstalledApp).crc
   expect-equals id (back.apps["payload"] as InstalledApp).id
   expect-equals 60 (back.apps["payload"] as InstalledApp).triggers.interval-s
+  expect-equals "payload" (back.apps["payload"] as InstalledApp).name
