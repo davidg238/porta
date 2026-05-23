@@ -44,19 +44,20 @@ the gateway becomes pod-feedable later with zero node changes.
 ## Goal & success criterion
 
 Establish the Porta node runtime **without jaguar**: a custom firmware envelope
-whose system app is a **supervisor** that owns deep-sleep, reconciles an
-Artemis-shaped goal-state delivered over the LAN, schedules container payloads by
-the Artemis trigger vocabulary, and survives power-cycles offline via a
-non-volatile inventory.
+whose system app is a **supervisor** that owns deep-sleep, brings up its
+**configured transport**, reconciles an Artemis-shaped goal-state delivered over
+the LAN, schedules container payloads by the Artemis trigger vocabulary, and
+survives power-cycles offline via a non-volatile inventory.
 
 **Success =** flash the custom envelope with `jag flash --exclude-jaguar`; the
 device boots straight into the supervisor (no jaguar present, verified by serial
-+ static `firmware … show`); the supervisor brings up WiFi from flash-time
-credentials, polls the minimal Porta gateway, reconciles a goal-state that
-installs and schedules the captured payload container, runs it per its triggers,
-deep-sleeps, and on wake re-runs the cycle — relaunching the persisted payload
-**without** re-downloading it when unchanged, and resuming correctly after a
-simulated cold boot from the NVS inventory.
++ static `firmware … show`); the supervisor brings up its configured transport
+(**WiFi for this milestone**, from flash-time credentials), polls the minimal
+Porta gateway, reconciles a goal-state that installs and schedules the captured
+payload container, runs it per its triggers, deep-sleeps, and on wake re-runs the
+cycle — relaunching the persisted payload **without** re-downloading it when
+unchanged, and resuming correctly after a simulated cold boot from the NVS
+inventory.
 
 ## Locked decisions (do not re-litigate)
 
@@ -165,21 +166,33 @@ schedule per `triggers`. The compact **poll up-call** carries the node's
 `{node-id, chip, sdk, [{name:id}]}` so the gateway can return only deltas
 ("up-to-date" / "load X"). On a LAN, bandwidth is cheap — no binary-delta OTA.
 
-### Transport seam
+### Transport seam (two layers)
 
-Split the Toit TFTP client into:
+Transport is pluggable at two levels, and the supervisor must **not** hardcode
+WiFi:
 
-- a **reliable-block engine** — block sequencing, ACK, retransmit, OACK/blksize
-  negotiation — transport-agnostic; and
-- a **datagram-channel interface** — `send bytes` / `receive -> bytes` / `close`.
+1. **`Transport` — link selection + bring-up.** Driven by a **connection
+   descriptor** that mirrors Artemis's pod `connections` array (`wifi`,
+   `cellular`, `ethernet`; `artemis/src/cli/pod-specification.toit:452-528`),
+   which Porta extends with `espnow` and `bt-mesh`. A `Transport` opens the link
+   per its descriptor and yields a `Channel`. For WiFi this is `net.open` +
+   `udp-open`; for ESPnow the `espnow.Service` *is* both link and channel.
+2. **`Channel` — the datagram interface** the reliable-block engine uses:
+   `send bytes` / `receive -> bytes` / `close`.
 
-Implement `UdpChannel` now. `EspnowChannel` is a later drop-in: Toit's
-`esp32.espnow.Service` (`send --address`, `receive -> Datagram{address,data}`,
-`add-peer`, optional `Key`) is structurally identical, and ESPnow datagrams are
-**~1470 bytes** — a ~1024-byte block fits in one frame. ESPnow has no path/`?id=`
-notion, so the command layer needs its own tiny framing there (peer = node MAC);
-the reliable-transfer reuse is the prize. The current `tftp_client.toit` already
-isolates socket ops, so introducing the interface is contained.
+Correspondingly, split the Toit TFTP client into a **reliable-block engine**
+(block sequencing, ACK, retransmit, OACK/blksize negotiation — transport-agnostic)
+sitting on a `Channel`.
+
+Implement **`WifiTransport` + `UdpChannel` now**; the connection descriptor is
+config-driven (default WiFi this milestone). `EspnowChannel`/`bt-mesh` are later
+drop-ins: Toit's `esp32.espnow.Service` (`send --address`,
+`receive -> Datagram{address,data}`, `add-peer`, optional `Key`) is structurally
+identical, and ESPnow datagrams are **~1470 bytes** — a ~1024-byte block fits in
+one frame. ESPnow has no path/`?id=` notion, so the command layer needs its own
+tiny framing there (peer = node MAC); the reliable-transfer reuse is the prize.
+The current `tftp_client.toit` already isolates socket ops, so introducing the
+interfaces is contained.
 
 ### Gateway (minimal, this sub-project)
 
@@ -190,7 +203,11 @@ A small **Toit-side** server (grown from `host/serve.toit`) that:
 
 It is the seed of the future polyglot gateway (later it ingests real pods and
 absorbs the ST function, retiring the Go server) — so written with light care,
-not as pure throwaway. No `.pod` parsing, topology, or MCP yet.
+not as pure throwaway. No `.pod` parsing, topology, or MCP yet, and **no
+persistent store this milestone** (the goal-state is hand-crafted in memory).
+When it later grows a device registry / desired-state / topology store, use the
+Toit **`sqlite`** package (`~/workspaceToit/sqlite`), mirroring the Go gateway's
+`store/store.go`.
 
 ## Storage tiers
 
@@ -283,9 +300,17 @@ jag monitor
 - **VPN termination** on the gateway (Artemis ↔ Porta uplink).
 - **Data-acquisition + MCP marshalling** on the gateway.
 - **Fleet/group → per-node mapping** (Artemis is device→group→pod, group-granular).
-- **ESPnow `EspnowChannel`**; **whole-firmware OTA** of a node (reflash for now);
-  **diff/delta OTA** (unneeded on a LAN); **BT-off custom envelope** (RAM win);
-  **polyglot unification** with the ST Go gateway; **signing/auth**.
+- **Additional transports** — `EspnowChannel`, `bt-mesh`, and the
+  `cellular`/`ethernet` connection-descriptor types; only `WifiTransport` is built
+  now (the `Transport`/`Channel` seam + connection descriptor make these
+  drop-ins).
+- **Persistent gateway storage** — when the gw grows a real device registry /
+  desired-state / topology store, use the Toit **`sqlite`** package
+  (`~/workspaceToit/sqlite`), mirroring the Go gateway's `store/store.go`. The
+  minimal gw this milestone needs no DB (hand-crafted goal-state).
+- **Whole-firmware OTA** of a node (reflash for now); **diff/delta OTA** (unneeded
+  on a LAN); **BT-off custom envelope** (RAM win); **polyglot unification** with
+  the ST Go gateway; **signing/auth**.
 
 ## References (Artemis, read-only)
 
@@ -299,5 +324,7 @@ jag monitor
 - On-device apply/install/schedule (best supervisor reference):
   `artemis/src/service/{synchronize,containers,jobs}.toit`;
   trigger wire encoding `artemis/artemis-pkg-copy/src/artemis.toit:103-154`.
+- Gateway storage: Toit `sqlite` package `~/workspaceToit/sqlite`; existing
+  Go-gateway schema `gateway/store/store.go` (devices, command_queue).
 </content>
 </invoke>
