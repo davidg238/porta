@@ -4,7 +4,8 @@ import encoding.json
 /**
 Builds the goal-state JSON the minimal gateway serves at "goal". One app named
   $name, with a single interval trigger. Mirrors the Porta goal contract in
-  docs/specs/2026-05-22-...; the node fetches the image by the app's name.
+  docs/specs/2026-05-22-porta-no-jaguar-supervisor-design.md; the node fetches
+  the image by the app's name.
 */
 build-goal --name/string --size/int --crc/int --interval-s/int -> ByteArray:
   return json.encode {
