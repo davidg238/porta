@@ -264,6 +264,10 @@ cmd-container-list parsed/cli.Parsed -> none:
     return
   observed := decode-json_ node["observed_state"]
   apps := observed.get "apps" --if-absent=: {:}
+  if apps.is-empty:
+    print "$id: no containers installed"
+    store.close
+    return
   print "DEVICE        IMAGE       NAME"
   apps.do: | name/string spec/Map |
     print "$(node["id"])  $(pad_ "$(spec.get "crc")" 10)  $name"

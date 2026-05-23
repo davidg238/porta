@@ -46,7 +46,6 @@ class Store:
         CREATE TABLE IF NOT EXISTS command_queue (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           device_id TEXT,
-          seq INTEGER,
           verb TEXT,
           args TEXT,
           issued_at INTEGER,
@@ -134,12 +133,9 @@ class Store:
     $now (epoch seconds). Returns the new command id.
   */
   enqueue-command device-id/string command/Command --issued-by/string --now/int -> int:
-    db_.execute "INSERT INTO command_queue (device_id, seq, verb, args, issued_at, issued_by, delivered_at) VALUES (?, ?, ?, ?, ?, ?, NULL)"
-        [device-id, (next-seq_ device-id), command.verb, (encode-json_ command.args), now, issued-by]
+    db_.execute "INSERT INTO command_queue (device_id, verb, args, issued_at, issued_by, delivered_at) VALUES (?, ?, ?, ?, ?, NULL)"
+        [device-id, command.verb, (encode-json_ command.args), now, issued-by]
     return db_.last-insert-rowid
-
-  next-seq_ device-id/string -> int:
-    return (db_.query-one "SELECT COALESCE(MAX(seq), 0) + 1 FROM command_queue WHERE device_id = ?" [device-id])[0]
 
   /** Returns $device-id's undelivered commands, oldest first. */
   undelivered-commands device-id/string -> List:
