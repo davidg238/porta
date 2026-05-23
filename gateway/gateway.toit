@@ -7,6 +7,7 @@ import .store show Store DEFAULT-MAX-OFFLINE-S decode-json_
 import .command show *
 import .crc32 show crc32
 import .duration show parse-duration-s
+import .serve show cmd-serve DEFAULT-PORT
 
 main args:
   (build-command).run args
@@ -98,10 +99,15 @@ build-command -> cli.Command:
       --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
       --run=:: cmd-log it
 
+  serve-cmd := cli.Command "serve"
+      --help="Run the gateway daemon: serve the command queue and payloads over TFTP/UDP."
+      --options=[ cli.OptionInt "port" --help="UDP port to listen on." --default=DEFAULT-PORT ]
+      --run=:: cmd-serve it
+
   return cli.Command "gateway"
       --help="Porta LAN gateway — command-queue control plane for Toit nodes."
       --options=[ cli.Option "db" --help="Path to the sqlite store." --default="porta.db" ]
-      --subcommands=[ scan-cmd, ping-cmd, device-cmd, container-cmd, log-cmd ]
+      --subcommands=[ serve-cmd, scan-cmd, ping-cmd, device-cmd, container-cmd, log-cmd ]
 
 // --- shared helpers ----------------------------------------------------------
 
