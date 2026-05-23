@@ -4,6 +4,11 @@ import .store show Store decode-json_
 import .command show Command
 import tftp show Peer RRQ STORAGE-FILE-NOT-FOUND STORAGE-ACCESS-DENIED
 
+/** A minimal $Peer for transfer-complete tests (the handler never dereferences it). */
+class FakePeer implements Peer:
+  operator == other/Peer -> bool: return other is FakePeer
+  hash-code -> int: return 0
+
 main:
   // No query → base only, empty params.
   bare := parse-resource_ "commands"
@@ -77,3 +82,34 @@ main:
   // A WRQ to anything but "report" is refused.
   expect-throw STORAGE-ACCESS-DENIED: h2.writer-for "payload?id=aabbccddeeff&crc=1"
   store2.close
+
+  // Two queued commands drain in FIFO order, each marked delivered on its RRQ complete.
+  store3 := Store.open ":memory:"
+  h3 := StoreBackedHandler store3
+  peer := FakePeer
+  store3.ensure-node "aabbccddeeff" --now=3000
+  c1 := store3.enqueue-command "aabbccddeeff" (Command.set-poll-interval --interval-s=1) --issued-by="t" --now=3000
+  c2 := store3.enqueue-command "aabbccddeeff" (Command.stop --name="blink") --issued-by="t" --now=3000
+
+  // First drain step: serve + complete → c1 delivered, c2 still pending.
+  (h3.reader-for "commands?id=aabbccddeeff").close
+  h3.on-transfer-complete --op=RRQ --resource="commands?id=aabbccddeeff" --peer=peer --bytes=10 --ok=true
+  expect-equals c2 (store3.next-undelivered "aabbccddeeff")["id"]
+
+  // Second drain step → c2 delivered, queue now empty.
+  (h3.reader-for "commands?id=aabbccddeeff").close
+  h3.on-transfer-complete --op=RRQ --resource="commands?id=aabbccddeeff" --peer=peer --bytes=10 --ok=true
+  expect-equals null (store3.next-undelivered "aabbccddeeff")
+
+  // The drain-sentinel transfer (empty queue) marks nothing and does not throw.
+  h3.on-transfer-complete --op=RRQ --resource="commands?id=aabbccddeeff" --peer=peer --bytes=0 --ok=true
+
+  // A failed transfer (ok=false) never marks delivered.
+  c3 := store3.enqueue-command "aabbccddeeff" (Command.stop --name="x") --issued-by="t" --now=3000
+  h3.on-transfer-complete --op=RRQ --resource="commands?id=aabbccddeeff" --peer=peer --bytes=10 --ok=false
+  expect-equals c3 (store3.next-undelivered "aabbccddeeff")["id"]
+
+  // A payload transfer-complete is not a command delivery (must not mark c3).
+  h3.on-transfer-complete --op=RRQ --resource="payload?id=aabbccddeeff&crc=1" --peer=peer --bytes=4 --ok=true
+  expect-equals c3 (store3.next-undelivered "aabbccddeeff")["id"]
+  store3.close

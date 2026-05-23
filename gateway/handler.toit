@@ -78,6 +78,17 @@ class StoreBackedHandler extends Storage:
       return BytesReader_ p["image"]
     throw STORAGE-FILE-NOT-FOUND
 
+  on-transfer-complete --op/int --resource/string --peer/Peer --bytes/int --ok/bool -> none:
+    if not ok: return
+    if op != RRQ: return
+    parsed := parse-resource_ resource
+    if parsed[0] != "commands": return
+    id := parsed[1].get "id"
+    if id == null: return
+    next := store_.next-undelivered id
+    if next == null: return  // Drain-sentinel transfer: nothing to mark.
+    store_.mark-delivered next["id"] --now=now_
+
   writer-for name/string --req/Request?=null --tsize-hint/int?=null -> io.CloseableWriter:
     parsed := parse-resource_ name
     if parsed[0] != "report": throw STORAGE-ACCESS-DENIED
