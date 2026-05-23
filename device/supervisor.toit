@@ -1,51 +1,55 @@
 // device/supervisor.toit
 import esp32
+import encoding.json
 import system.storage
 import system.containers
 
 import .goal_state show GoalState
 import .inventory show Inventory InstalledApp
+import .node_command show NodeCommand apply-to-goal
+import .node_id show mac-to-id
+import .report show build-report
 import .image_writer show ImageStreamWriter
 import .flash_image show ContainerImageInstaller
 import .transport show WifiTransport GatewayClient
 import .schedule_store show ScheduleStore clock-us
 
-/** Gateway LAN address. Adjust to the host running host/serve.toit. */
+/** Gateway LAN address. Adjust to the host running `gateway serve`. */
 GATEWAY-HOST ::= "192.168.0.175"
 GATEWAY-PORT ::= 6969
 
-/** How often to poll the gateway for goal changes. */
-POLL-PERIOD ::= Duration --s=30
+/** Fallback poll cadence (seconds) before the node has been told otherwise. */
+DEFAULT-POLL-S ::= 30
 /** How long to stay awake observing started payloads before sleeping. */
 OBSERVE ::= Duration --s=5
-/** Deep-sleep duration between wakes. */
-SLEEP ::= Duration --s=30
 
-/** NVS bucket + key holding the persistent inventory. */
+/** NVS bucket + keys for persistent node-local state. */
 BUCKET-NAME ::= "porta"
 INVENTORY-KEY ::= "inventory"
+POLL-INTERVAL-KEY ::= "poll_interval_s"
 
 /**
-One supervisor wake: dispatch by wake cause, poll/reconcile if due, start the
-  installed payloads, observe, then deep-sleep. Deep-sleep wakes via full reboot,
-  so the loop is the reboot; $main is linear.
+One supervisor wake: identify, poll the gateway if due (drain commands → apply →
+  reconcile → fetch/remove → report), start the installed payloads, then deep-sleep
+  for the node-local poll interval. Deep-sleep wakes via full reboot, so $main is
+  linear and the reboot is the loop.
 */
 main:
-  cause := esp32.wakeup-cause
-  print "supervisor: awake (cause=$cause)"
-
+  print "supervisor: awake (cause=$esp32.wakeup-cause)"
+  id := mac-to-id esp32.mac-address
   bucket := storage.Bucket.open --flash BUCKET-NAME
   inventory := load-inventory bucket
+  poll-interval-s := bucket.get POLL-INTERVAL-KEY --if-absent=: DEFAULT-POLL-S
   store := ScheduleStore
   now := clock-us
 
-  // Poll on cold boot (empty inventory) or when the poll period has elapsed.
+  // Poll on cold boot (empty inventory) or once the poll interval has elapsed.
   cold := inventory.apps.is-empty
-  poll-due := cold or (now - store.last-poll-us) >= POLL-PERIOD.in-us
+  poll-due := cold or (now - store.last-poll-us) >= (poll-interval-s * 1_000_000)
   if poll-due:
-    // Never strand the device awake on a transient failure: trace and still sleep.
+    // Never strand the node awake on a transient failure: trace and still sleep.
     catch --trace:
-      inventory = poll-and-reconcile bucket inventory
+      poll-interval-s = poll-and-reconcile bucket inventory id poll-interval-s store
       store.last-poll-us = now
 
   start-installed inventory
@@ -53,8 +57,8 @@ main:
 
   print "supervisor: observing for $OBSERVE"
   sleep OBSERVE
-  print "supervisor: deep-sleeping for $SLEEP"
-  esp32.deep-sleep SLEEP
+  print "supervisor: deep-sleeping for $(poll-interval-s)s"
+  esp32.deep-sleep (Duration --s=poll-interval-s)
 
 /** Loads the inventory from NVS, or an empty one if none/garbage. */
 load-inventory bucket/storage.Bucket -> Inventory:
@@ -65,24 +69,51 @@ load-inventory bucket/storage.Bucket -> Inventory:
 save-inventory bucket/storage.Bucket inventory/Inventory -> none:
   bucket[INVENTORY-KEY] = inventory.encode
 
-/** Fetches the goal, installs new/changed images, returns the updated inventory. */
-poll-and-reconcile bucket/storage.Bucket inventory/Inventory -> Inventory:
-  print "supervisor: polling $GATEWAY-HOST:$GATEWAY-PORT"
+/**
+Connects, drains the command queue applying each command to a goal seeded from the
+  current inventory, reconciles (fetch new/changed images, remove dropped apps),
+  reports observed state, and returns the (possibly updated) poll interval.
+*/
+poll-and-reconcile bucket/storage.Bucket inventory/Inventory id/string poll-interval-s/int store/ScheduleStore -> int:
+  print "supervisor: polling $GATEWAY-HOST:$GATEWAY-PORT as id=$id"
   client/GatewayClient := (WifiTransport --host=GATEWAY-HOST --port=GATEWAY-PORT).connect
   try:
-    goal := GoalState.parse (client.fetch-bytes "goal")
+    goal-map := inventory.to-goal-map
+    // Drain: each "commands" RRQ returns the oldest undelivered command, or a
+    // zero-byte body when the queue is exhausted.
+    while true:
+      bytes := client.fetch-bytes "commands?id=$id"
+      if bytes.is-empty: break
+      command := NodeCommand.decode bytes
+      if command.is-set-poll:
+        poll-interval-s = command.interval-s
+        bucket[POLL-INTERVAL-KEY] = poll-interval-s
+        print "supervisor: poll interval now $(poll-interval-s)s"
+      else:
+        apply-to-goal goal-map command
+        print "supervisor: applied $command.verb $(command.name)"
+
+    goal := GoalState.parse (json.encode {"apps": goal-map})
     recon := inventory.reconcile goal
-    recon.to-schedule.do: | a/InstalledApp | print "supervisor: $a.name unchanged (crc=$a.crc)"
     recon.to-fetch.do: | app |
       print "supervisor: fetching $app.name ($app.size B, crc=$app.crc)"
       installer := ContainerImageInstaller
       writer := ImageStreamWriter installer --size=app.size --crc=app.crc
-      client.fetch app.name --to-writer=writer
-      id := writer.commit
-      inventory.apps[app.name] = InstalledApp --name=app.name --id=id --size=app.size --crc=app.crc --triggers=app.triggers --runlevel=app.runlevel
-      print "supervisor: installed $app.name -> $id"
+      client.fetch "payload?id=$id&name=$app.name&crc=$app.crc" --to-writer=writer
+      image-id := writer.commit
+      inventory.apps[app.name] = InstalledApp --name=app.name --id=image-id --size=app.size --crc=app.crc --triggers=app.triggers --runlevel=app.runlevel
+      print "supervisor: installed $app.name -> $image-id"
+    recon.to-remove.do: | a/InstalledApp |
+      print "supervisor: removing $a.name"
+      catch --trace: containers.uninstall a.id
+      inventory.apps.remove a.name
     save-inventory bucket inventory
-    return inventory
+
+    // Report observed state before sleeping (audit + convergence).
+    body := build-report inventory --uptime-us=clock-us --wakes=store.wakes
+    client.put "report?id=$id" body
+    print "supervisor: reported $(inventory.apps.size) app(s)"
+    return poll-interval-s
   finally:
     client.close
 
