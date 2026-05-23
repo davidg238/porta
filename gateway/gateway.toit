@@ -23,10 +23,40 @@ build-command -> cli.Command:
       --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
       --run=:: cmd-ping it
 
+  device-show-cmd := cli.Command "show"
+      --help="Show a node's last contact, observed state, and queued commands."
+      --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
+      --run=:: cmd-device-show it
+
+  device-set-max-offline-cmd := cli.Command "set-max-offline"
+      --help="Set the offline threshold used to judge a node's health."
+      --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
+      --rest=[ cli.Option "duration" --help="e.g. 30s, 5m, 1h." --required ]
+      --run=:: cmd-device-set-max-offline it
+
+  device-set-poll-interval-cmd := cli.Command "set-poll-interval"
+      --help="Enqueue a change to the node's wake/poll cadence."
+      --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
+      --rest=[ cli.Option "duration" --help="e.g. 1s, 30s, 5m." --required ]
+      --run=:: cmd-device-set-poll-interval it
+
+  device-name-cmd := cli.Command "name"
+      --help="Override a node's auto-assigned friendly name."
+      --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
+      --rest=[ cli.Option "new-name" --help="The new name." --required ]
+      --run=:: cmd-device-name it
+
+  device-cmd := cli.Command "device"
+      --help="Inspect and configure a node."
+      --subcommands=[
+        device-show-cmd, device-set-max-offline-cmd,
+        device-set-poll-interval-cmd, device-name-cmd,
+      ]
+
   return cli.Command "gateway"
       --help="Porta LAN gateway — command-queue control plane for Toit nodes."
       --options=[ cli.Option "db" --help="Path to the sqlite store." --default="porta.db" ]
-      --subcommands=[ scan-cmd, ping-cmd ]
+      --subcommands=[ scan-cmd, ping-cmd, device-cmd ]
 
 // --- shared helpers ----------------------------------------------------------
 
@@ -92,3 +122,50 @@ cmd-ping parsed/cli.Parsed -> none:
 pad_ s/string width/int -> string:
   if s.size >= width: return s
   return s + (" " * (width - s.size))
+
+cmd-device-show parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  node := store.node id
+  if node == null:
+    print "$id: no row yet (never seen, never configured)"
+    store.close
+    return
+  now := now_
+  print "id:            $(node["id"])"
+  print "name:          $(node["name"])"
+  print "last-seen:     $(node["last_seen"] == null ? "never" : "$(now - node["last_seen"])s ago")"
+  print "poll-interval: $(node["poll_interval_s"])s"
+  print "max-offline:   $(node["max_offline_s"])s"
+  print "observed:      $(node["observed_state"] == null ? "(no report yet)" : node["observed_state"])"
+  undelivered := store.undelivered-commands id
+  print "queued (undelivered): $undelivered.size"
+  undelivered.do: | c/Map | print "  #$(c["id"]) $(c["verb"]) $(c["args"])"
+  store.close
+
+cmd-device-set-max-offline parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  store.ensure-node id --now=now_
+  seconds := parse-duration-s parsed["duration"]
+  store.set-max-offline id seconds
+  print "$id: max-offline = $(seconds)s"
+  store.close
+
+cmd-device-set-poll-interval parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  store.ensure-node id --now=now_
+  seconds := parse-duration-s parsed["duration"]
+  cmd-id := store.enqueue-command id (Command.set-poll-interval --interval-s=seconds) --issued-by="cli" --now=now_
+  store.set-poll-interval-intended id seconds
+  print "$id: enqueued set-poll-interval $(seconds)s (command #$cmd-id)"
+  store.close
+
+cmd-device-name parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  store.ensure-node id --now=now_
+  store.set-node-name id parsed["new-name"]
+  print "$id: name = $(parsed["new-name"])"
+  store.close
