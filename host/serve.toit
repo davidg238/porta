@@ -1,35 +1,34 @@
-// host/serve.toit — serves the captured image as the framed "firmware" blob.
+// host/serve.toit — minimal Porta gateway: serves a goal-state + raw image.
 import host.directory
 import host.file
 import log
 import tftp show FilesystemStorage TFTPServer
-import .blob
+import .goal show build-goal
 
 /** Root directory for the TFTP filesystem storage. */
 ROOT ::= "/tmp/porta-tftp"
 
-/**
-UDP port on which the TFTP server listens.
-
-Port 69 requires root or CAP_NET_BIND_SERVICE on Linux; 6969 is unprivileged.
-The on-device loader must target the same port.
-*/
+/** Unprivileged UDP port (69 needs root). The supervisor must match this. */
 PORT ::= 6969
 
-/**
-Frames the captured image blob and serves it over TFTP.
+/** App name; the node fetches the image under this filename. */
+PAYLOAD-NAME ::= "payload"
 
-Reads the `image` and `image.crc32` files from the current directory, writes
-  the framed blob to $ROOT/firmware, then blocks serving TFTP read requests
-  on UDP/$PORT.
+/** Interval (seconds) advertised in the goal — fast, to observe multi-rate. */
+PAYLOAD-INTERVAL-S ::= 5
+
+/**
+Serves the captured image as the raw "payload" file plus a "goal" file in the
+  Artemis-shaped goal-state format. No blob framing — size+crc ride in the goal.
 */
 main:
   image := file.read-contents "image"
   crc32 := int.parse (file.read-contents "image.crc32").to-string.trim
-  blob := frame-blob image crc32
+  goal := build-goal --name=PAYLOAD-NAME --size=image.size --crc=crc32 --interval-s=PAYLOAD-INTERVAL-S
   if not file.is-directory ROOT: directory.mkdir --recursive ROOT
-  file.write-contents blob --path="$ROOT/firmware"
-  print "serving firmware: image=$image.size crc32=$crc32 blob=$blob.size on UDP/$PORT"
+  file.write-contents image --path="$ROOT/$PAYLOAD-NAME"
+  file.write-contents goal --path="$ROOT/goal"
+  print "serving goal ($goal.size B) + $PAYLOAD-NAME (image=$image.size crc32=$crc32) on UDP/$PORT"
   storage := FilesystemStorage --root=ROOT --read-only
   server := TFTPServer --storage=storage --port=PORT --logger=log.default
   server.start
