@@ -131,17 +131,26 @@ Resource names carry the node id as a query suffix the handler parses
 (`stripQuery` + `extractDeviceID`, as the Go gw does):
 
 1. **Drain commands.** Node issues RRQ `commands?id=<mac>` repeatedly. Each
-   response is the **next queued command** (encoded; see `command.toit`) or an
-   **empty/sentinel** body meaning "queue exhausted" → node stops draining. The
-   gateway marks each command **delivered** when its RRQ **transfer completes**.
+   response is the **oldest undelivered** command (`WHERE delivered_at IS NULL
+   ORDER BY id`, encoded; see `command.toit`). A **zero-byte body** means "queue
+   exhausted" → node stops draining; this is TFTP-native (a 0-length final DATA
+   block) and unambiguous given the **encoding invariant that any real command is
+   ≥1 byte**. The gateway marks each command **delivered** only when its RRQ
+   **transfer completes**, so the *next* RRQ returns the next undelivered command.
+   Delivery ≠ execution: a crash after delivery but before apply is caught by the
+   report-driven reconciliation (step 4) and the command re-issued.
 2. **Fetch payloads on demand.** When an applied `run <name>@crc` references an
    image the node lacks, node streams RRQ `payload?id=<mac>&name=<n>&crc=<c>` into
    the existing `ImageStreamWriter`/`flash-image` install path.
 3. **Apply + reconcile.** Each command mutates the node's NVS goal state; the node
    reconciles (install/start/stop) using the supervisor machinery already shipped.
 4. **Report.** Before sleeping, node issues WRQ `report?id=<mac>` with a compact
-   **observed-state** body: the apps it is now running (name@crc, runlevel,
-   triggers) + health/heartbeat. Gateway stores it (audit + convergence).
+   **observed-state** body: per running app `name@crc` + `runlevel` + a triggers
+   summary, plus a small **health** struct (heartbeat/uptime, free-heap,
+   wake-count). **No per-app logs**, and a **soft cap on app count** so a
+   pathological inventory can't blow the device-side WRQ buffer (the bound is
+   device-memory, not a TFTP limit — WRQ is multi-block). Gateway stores it (audit
+   + convergence).
 5. **Sleep** until the next wake (poll cadence per the node's current
    `set-poll-interval`).
 
@@ -338,14 +347,16 @@ hardware-verified and must not change. Back-compat tests (device client +
 
 ## Risks & open questions
 
-- **Empty-queue sentinel**: define the "queue exhausted" signal cleanly over TFTP
-  (empty body vs explicit marker) so draining terminates unambiguously.
-- **MCP-in-Toit (M4)** is the largest unknown (SSE + JSON-RPC over `pkg-http`); it
+- ~~**Empty-queue sentinel**~~ **RESOLVED**: zero-byte RRQ body = "drained"
+  (TFTP-native 0-length DATA block), relying on the "real command ≥1 byte"
+  encoding invariant. No magic marker. (Wire protocol step 1.)
+- ~~**Report size**~~ **RESOLVED**: report = apps (`name@crc`+runlevel+triggers
+  summary) + small health struct, no per-app logs, soft cap on app count. (Wire
+  protocol step 4.)
+- **MCP-in-Toit (M5)** is the largest unknown (SSE + JSON-RPC over `pkg-http`); it
   is intentionally last.
 - **Spec A sequencing** (write+dispatch first, vs author both specs and build the
   TFTP-free store/CLI in parallel) — to be decided at planning time.
-- **Report size**: keep `observed_state` compact (name@crc + counts), not full
-  per-app detail, to bound the WRQ.
 - **Package layout**: `gateway/` as a single package vs splitting host-only store
   from wire code — settle when the file set is concrete.
 
