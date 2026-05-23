@@ -93,10 +93,15 @@ build-command -> cli.Command:
       --help="Install, remove, and list a node's containers."
       --subcommands=[ container-install-cmd, container-uninstall-cmd, container-list-cmd ]
 
+  log-cmd := cli.Command "log"
+      --help="Show a node's command audit history (issued and delivered)."
+      --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
+      --run=:: cmd-log it
+
   return cli.Command "gateway"
       --help="Porta LAN gateway — command-queue control plane for Toit nodes."
       --options=[ cli.Option "db" --help="Path to the sqlite store." --default="porta.db" ]
-      --subcommands=[ scan-cmd, ping-cmd, device-cmd, container-cmd ]
+      --subcommands=[ scan-cmd, ping-cmd, device-cmd, container-cmd, log-cmd ]
 
 // --- shared helpers ----------------------------------------------------------
 
@@ -262,4 +267,18 @@ cmd-container-list parsed/cli.Parsed -> none:
   print "DEVICE        IMAGE       NAME"
   apps.do: | name/string spec/Map |
     print "$(node["id"])  $(pad_ "$(spec.get "crc")" 10)  $name"
+  store.close
+
+cmd-log parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  entries := store.command-log id
+  if entries.is-empty:
+    print "$id: no commands"
+    store.close
+    return
+  print "ID   VERB              DELIVERED  ARGS"
+  entries.do: | e/Map |
+    delivered := e["delivered_at"] == null ? "pending" : "yes"
+    print "$(pad_ "#$(e["id"])" 4) $(pad_ e["verb"] 17) $(pad_ delivered 10) $(e["args"])"
   store.close
