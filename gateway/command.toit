@@ -62,3 +62,52 @@ class Command:
   runlevel -> int?: return args.get "runlevel"
   arguments -> List?: return args.get "arguments"
   interval-s -> int?: return args.get "interval"
+
+/**
+Builds the {type:value} trigger map (device/triggers.toit form) from repeatable
+  --trigger $flags (each "boot", "interval=<s>", "install=<n>",
+  "gpio-high=<pin>", "gpio-low=<pin>", or "gpio-touch=<pin>") plus the optional
+  --interval shorthand $interval-s (seconds, or null).
+
+Throws on an unknown trigger type or a non-integer value.
+*/
+triggers-from-flags flags/List --interval-s/int? -> Map:
+  m := {:}
+  if interval-s != null: m["interval"] = interval-s
+  flags.do: | spec/string |
+    eq := spec.index-of "="
+    if eq < 0:
+      if spec == "boot": m["boot"] = 1
+      else: throw "unknown trigger: $spec"
+    else:
+      type := spec[..eq]
+      value := int.parse spec[eq + 1..] --if-error=: throw "invalid trigger value: $spec"
+      if type == "interval": m["interval"] = value
+      else if type == "install": m["install"] = value
+      else if type == "gpio-high" or type == "gpio-low" or type == "gpio-touch":
+        m["$type:$value"] = value
+      else: throw "unknown trigger: $type"
+  return m
+
+/**
+Folds an ordered list of $commands into the goal-app map a node would converge
+  to: app name → {"crc", "triggers", "runlevel", "arguments"}.
+
+A run sets (or replaces) its app; a stop removes it; set-poll-interval does not
+  affect the app set. Because commands are absolute, re-applying a run is a no-op
+  and a later run for the same name wins — this function makes that idempotency
+  testable on host and is reused by the device-side apply in B2.
+*/
+project commands/List -> Map:
+  goal := {:}
+  commands.do: | c/Command |
+    if c.verb == VERB-RUN:
+      goal[c.name] = {
+        "crc": c.crc,
+        "triggers": c.triggers,
+        "runlevel": c.runlevel,
+        "arguments": c.arguments,
+      }
+    else if c.verb == VERB-STOP:
+      goal.remove c.name
+  return goal

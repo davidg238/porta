@@ -23,3 +23,17 @@ main:
   p := Command.decode (Command.set-poll-interval --interval-s=5).encode
   expect-equals VERB-SET-POLL-INTERVAL p.verb
   expect-equals 5 p.interval-s
+
+  // triggers-from-flags builds the device {type:value} trigger map.
+  t := triggers-from-flags ["boot", "gpio-high=33"] --interval-s=30
+  expect-equals 1 t["boot"]
+  expect-equals 33 t["gpio-high:33"]
+  expect-equals 30 t["interval"]
+  expect-throw "unknown trigger: bogus": triggers-from-flags ["bogus"] --interval-s=null
+
+  // project folds a command list to the goal-app map; it is idempotent.
+  run-x := Command.run --name="x" --crc=1 --triggers={"interval": 10}
+  expect-structural-equals (project [run-x]) (project [run-x, run-x])      // re-run is a no-op
+  expect (project [run-x, (Command.stop --name="x")]).is-empty  // stop removes
+  later := project [run-x, (Command.run --name="x" --crc=2 --triggers={:})]
+  expect-equals 2 later["x"]["crc"]                             // later run wins
