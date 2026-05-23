@@ -60,7 +60,8 @@ The decisive design conversation settled this shape:
   `run_st`, sourcemaps. The Go gateway stays as `gateway-go/` for that.
 - **WAN/cloud machinery** from Artemis: `org`, `auth`/`login`, `broker`,
   `fleet init`, cloud device-identity provisioning, `pod upload`/`download`.
-- **Source compilation** in the gateway (M1 takes prebuilt images; deferred).
+- **Source compilation** in the gateway for *this milestone* (M1 takes prebuilt
+  images). Scheduled as its own later milestone (M4), behind the M1 ingestion seam.
 - Groups, signing, diff-OTA.
 
 ## Key decisions (locked during brainstorming)
@@ -88,7 +89,10 @@ The decisive design conversation settled this shape:
    crc; a node pulls `payload` (by name+crc) only when a `run` references an image
    it lacks.
 10. **`container install` takes a prebuilt image** in M1 (the artifact the loader
-    spike already builds); source-compile is later.
+    spike already builds). It is the **single, file-type-dispatched ingestion
+    verb**: `.bin` now (M1), `.pod` (M3) and `.toit` source-compile (M4) slot in
+    behind a common ingestion seam pinned in M1. v1 accepts all three extensions
+    but stubs `.pod`/`.toit` with a "scheduled for Mn" message.
 11. **TFTP refactor** (dependency, dispatched to a separate agent): split
     `~/workspaceToit/tftp` into block-engine / transport / request-handler; keep
     the device `TFTPClient` wire- and API-compatible (it is hardware-verified).
@@ -172,8 +176,10 @@ Deferred tables (smalltalk-era / later milestones): `data_log` time-series,
 
 All declarative/absolute:
 
-- `run <name> --crc <n> --interval <dur> [--runlevel <n>] [--triggers …]` — node
-  should run app `name` from image `crc` on the given schedule.
+- `run <name> --crc <n> [--interval <dur>] [--trigger <type>=<val> …] [--runlevel <n>]`
+  — node should run app `name` from image `crc` per the given triggers. `--interval`
+  is shorthand for `--trigger interval=<seconds>`. Trigger vocab matches
+  `device/triggers.toit` (boot/install/interval/gpio-high/gpio-low/gpio-touch).
 - `stop <name>` — node should not run `name`.
 - `set-poll-interval <dur>` — change the node's wake/poll cadence.
 
@@ -182,25 +188,82 @@ they would be transient, non-idempotent commands and are not needed for M1.
 
 ## CLI surface (M1) — `jag`-aligned, Artemis concepts
 
-`pkg-cli` (`Command`/`Option`/`Flag`/`--short-name`/`--type="duration"`/`Example`),
-`-d/--device` selects by **name or id (MAC)**:
+`pkg-cli` (`Command`/`Option`/`Flag`/`--short-name`/`--type="duration"`/`Example`).
+**`<node>` = a node name *or* its MAC**; `-d/--device` accepts either. Before a
+node has ever polled (so before it is auto-named), address it by the **MAC** you
+know from flashing; after first contact you may use the friendly name.
 
 | Command | Effect | Lineage |
 |---|---|---|
 | `gateway serve [--db P] [--port 6969]` | the daemon (TFTP/UDP, store-backed) | (gw-specific) |
 | `gateway scan [--include-never-seen]` | list nodes; health via `max-offline` | jag scan + artemis status |
 | `gateway ping -d <node>` | recently-seen check | jag |
-| `gateway device show -d <node>` (alias `status`) | last-seen, observed goal-state, queued/undelivered commands, poll interval | artemis |
+| `gateway device show -d <node>` | last-seen, observed goal-state, queued/undelivered commands, poll interval | artemis |
 | `gateway device set-max-offline -d <node> <dur>` | offline threshold (config row) | artemis |
-| `gateway device set-poll-interval -d <node> <dur>` | enqueue `set-poll-interval` | (this model) |
-| `gateway device name -d <id> <name>` | override auto-name | jag auto-names |
-| `gateway container install <name> <file> -d <node> --interval <dur> [--crc N]` | register prebuilt image + enqueue `run` | jag |
+| `gateway device set-poll-interval -d <node> <dur>` | enqueue `set-poll-interval` (node **wake/poll cadence** — distinct from a container's `--interval` run schedule) | (this model) |
+| `gateway device name -d <node> <new-name>` | override auto-name | jag auto-names |
+| `gateway container install <name> <file> -d <node> [--interval <dur>] [--trigger <type=val> …] [--runlevel N] [--crc N]` | register prebuilt image + enqueue `run` | jag |
 | `gateway container uninstall <name> -d <node>` | enqueue `stop` | jag |
 | `gateway container list -d <node>` | node's goal apps from latest report (DEVICE/IMAGE/NAME) | jag |
 | `gateway log -d <node>` | the auditable command history (issued/delivered) | (audit) |
 
+**Naming:** the GW auto-assigns a jag-style name keyed by MAC on a node's **first
+poll** (operator-overridable via `device name`); the name lives only at the GW —
+the node never carries it. Nodes need no naming before use.
+
+**Triggers:** `container install` exposes the **full supervisor/Artemis trigger
+vocabulary** (`device/triggers.toit`): `boot`, `install`, `interval`,
+`gpio-high:<pin>`, `gpio-low:<pin>`, `gpio-touch:<pin>`. The CLI surfaces them as a
+**repeatable `--trigger <type>=<val>`** (e.g. `--trigger gpio-high=33 --trigger
+boot`), with **`--interval <dur>` as shorthand** for the common `interval` case.
+These map onto the `run` command's `--triggers`/`--runlevel`. (No cron / no
+on-network trigger — Artemis has neither, and we do not invent any.)
+
 (`container install`/`uninstall` map to the `run`/`stop` command verbs; `run`/
 `stop` may be exposed as aliases.)
+
+## Container ingestion — one verb, file-type-dispatched
+
+All input formats converge on the **same backend**: *produce payload(s) + enqueue a
+`run` command*. The store and command machinery don't care where the image came
+from. So `container install` is the single unification point, dispatched on the
+file type:
+
+```
+gateway container install <name> <file> -d <node>
+  <file> = .bin   prebuilt image   → store as-is        (M1)
+         = .pod   ar-archive       → extract images+cfg → payloads + run  (pod frontend, M3)
+         = .toit  source           → compile+relocate   → payload + run  (compile frontend, M4)
+```
+
+The common **ingestion seam** (`register_payload` + enqueue `run`) is pinned in
+**M1**. The `.pod` and `.toit` frontends slot in behind it later — they are just
+*additional accepted input formats to a verb that already exists*, exactly as
+jag's own `container install` accepts source *or* a snapshot.
+
+**v1 handler accepts all three file types** and dispatches by extension, but
+returns a clear **"not yet supported (scheduled for M3)"** / **"… (M4)"** message
+for `.pod` and `.toit` until those frontends ship — so the surface is stable and
+the roadmap is discoverable from the CLI itself.
+
+### `jag run` vs `container install` on a sleeping fleet
+
+Literal `jag run` is for **awake dev devices** — run-now, stream logs. Our nodes
+**deep-sleep and pull on a schedule**, so what actually maps is `jag **container
+install**` (persist a container that runs per trigger), **not** live `jag run`. The
+dev-loop ergonomics (`set-poll-interval 1s` while programming) is how you
+approximate jag's tightness on a sleeping fleet.
+
+### Source-compile coupling (M4)
+
+When the `.toit` frontend lands, two constraints follow from the SDK/chip coupling:
+
+- **Who compiles:** the gateway shells out to the **SDK-matched `toit`/`jag`** (or
+  a sidecar compile service over HTTP, mirroring the existing Go-gw→Python
+  pattern) rather than embedding its own toolchain — the *same* SDK that flashed
+  the node produces its images.
+- **Per-node SDK/chip tracking:** relocation needs each node's chip + firmware SDK
+  version, so the **state report carries it** and the compile frontend targets it.
 
 ## Device-side changes (supervisor)
 
@@ -244,13 +307,18 @@ hardware-verified and must not change. Back-compat tests (device client +
   **Hardware-verified on `fwkb`.** Depends on Spec A.
 - **M2** — richer **telemetry** (`data_log` time-series) + `gateway monitor`,
   extending the M1 report channel.
-- **M3** — **pods**: `.pod` (`ar`-archive) ingestion — gateway extracts container
-  images + device-config and turns them into payloads + `run` commands.
-- **M4** — **MCP/SSE** server over `pkg-http` wrapping the same store/command ops
+- **M3** — **pods** (`.pod` frontend): `ar`-archive ingestion — gateway extracts
+  container images + device-config and turns them into payloads + `run` commands.
+  Pure extraction, no toolchain. Behind the M1 ingestion seam.
+- **M4** — **source-compile** (`.toit` frontend): `container install <src.toit>`
+  compiles + chip-relocates via the **SDK-matched `toit`/`jag`** (sidecar or
+  shell-out), behind the same ingestion seam. Carries the SDK/chip coupling risk;
+  needs per-node SDK/chip from the report. The "jag run on a sleeping fleet" story.
+- **M5** — **MCP/SSE** server over `pkg-http` wrapping the same store/command ops
   (read tools first: `list_nodes`, `device_status`; then `run`/`stop`/
-  `register_payload`).
+  `register_payload`). The largest unknown — intentionally last.
 - **Deferred:** full smalltalk-node support (verbs/debug/`run_st`), groups,
-  signing, diff-OTA, source compilation in the gateway.
+  signing, diff-OTA.
 
 ## Testing strategy
 
