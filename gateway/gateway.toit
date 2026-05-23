@@ -3,7 +3,7 @@
 // store-backed request handler are B2 and are intentionally not here yet.
 import cli
 import host.file
-import .store show Store DEFAULT-MAX-OFFLINE-S
+import .store show Store DEFAULT-MAX-OFFLINE-S decode-json_
 import .command show *
 import .crc32 show crc32
 import .duration show parse-duration-s
@@ -53,10 +53,50 @@ build-command -> cli.Command:
         device-set-poll-interval-cmd, device-name-cmd,
       ]
 
+  container-install-cmd := cli.Command "install"
+      --help="""
+        Register a container image for a node and enqueue a run command.
+
+        <file> dispatches by extension: .bin is a prebuilt image (M1); .pod and
+        .toit are accepted but not yet supported (scheduled for M3 / M4).
+        """
+      --options=[
+        cli.Option "device" --short-name="d" --help="Node name or MAC." --required,
+        cli.OptionInt "crc" --help="Image CRC32 (computed from the file if omitted).",
+        cli.Option "interval" --help="Run-interval shorthand, e.g. 30s (a --trigger interval=…).",
+        cli.Option "trigger" --multi --help="Repeatable trigger: boot | interval=<s> | gpio-high=<pin> | gpio-low=<pin> | gpio-touch=<pin>.",
+        cli.OptionInt "runlevel" --help="Container runlevel." --default=3,
+      ]
+      --rest=[
+        cli.Option "name" --help="App name on the node." --required,
+        cli.Option "file" --help="Image file (.bin | .pod | .toit)." --required,
+      ]
+      --examples=[
+        cli.Example "Install blink to run every 30 s on a node addressed by MAC:"
+            --arguments="--device=aabbccddeeff --interval=30s blink ./blink.bin"
+            --global-priority=5,
+      ]
+      --run=:: cmd-container-install it
+
+  container-uninstall-cmd := cli.Command "uninstall"
+      --help="Enqueue a stop command so the node no longer runs an app."
+      --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
+      --rest=[ cli.Option "name" --help="App name to stop." --required ]
+      --run=:: cmd-container-uninstall it
+
+  container-list-cmd := cli.Command "list"
+      --help="List a node's apps from its latest report."
+      --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
+      --run=:: cmd-container-list it
+
+  container-cmd := cli.Command "container"
+      --help="Install, remove, and list a node's containers."
+      --subcommands=[ container-install-cmd, container-uninstall-cmd, container-list-cmd ]
+
   return cli.Command "gateway"
       --help="Porta LAN gateway — command-queue control plane for Toit nodes."
       --options=[ cli.Option "db" --help="Path to the sqlite store." --default="porta.db" ]
-      --subcommands=[ scan-cmd, ping-cmd, device-cmd ]
+      --subcommands=[ scan-cmd, ping-cmd, device-cmd, container-cmd ]
 
 // --- shared helpers ----------------------------------------------------------
 
@@ -168,4 +208,58 @@ cmd-device-name parsed/cli.Parsed -> none:
   store.ensure-node id --now=now_
   store.set-node-name id parsed["new-name"]
   print "$id: name = $(parsed["new-name"])"
+  store.close
+
+cmd-container-install parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  store.ensure-node id --now=now_
+  name := parsed["name"]
+  path := parsed["file"]
+
+  if path.ends-with ".pod":
+    print "Error: .pod ingestion is not yet supported (scheduled for M3)."
+    exit 1
+  if path.ends-with ".toit":
+    print "Error: .toit source-compile is not yet supported (scheduled for M4)."
+    exit 1
+  if not path.ends-with ".bin":
+    print "Error: unsupported file type for '$path' (expected .bin, .pod, or .toit)."
+    exit 1
+
+  image := file.read-contents path
+  crc := parsed["crc"] != null ? parsed["crc"] : (crc32 image)
+  triggers := triggers-from-flags parsed["trigger"]
+      --interval-s=(parsed["interval"] != null ? (parse-duration-s parsed["interval"]) : null)
+  if triggers.is-empty:
+    print "Note: no triggers given — '$name' will be installed but not started until a trigger is added."
+
+  store.register-payload --crc=crc --name=name --image=image
+  run-cmd := Command.run --name=name --crc=crc --triggers=triggers --runlevel=parsed["runlevel"]
+  cmd-id := store.enqueue-command id run-cmd --issued-by="cli" --now=now_
+  print "$id: registered $name@$crc ($(image.size) B); enqueued run (command #$cmd-id)"
+  store.close
+
+cmd-container-uninstall parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  store.ensure-node id --now=now_
+  name := parsed["name"]
+  cmd-id := store.enqueue-command id (Command.stop --name=name) --issued-by="cli" --now=now_
+  print "$id: enqueued stop $name (command #$cmd-id)"
+  store.close
+
+cmd-container-list parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  node := store.node id
+  if node == null or node["observed_state"] == null:
+    print "$id: no report yet"
+    store.close
+    return
+  observed := decode-json_ node["observed_state"]
+  apps := observed.get "apps" --if-absent=: {:}
+  print "DEVICE        IMAGE       NAME"
+  apps.do: | name/string spec/Map |
+    print "$(node["id"])  $(pad_ "$(spec.get "crc")" 10)  $name"
   store.close
