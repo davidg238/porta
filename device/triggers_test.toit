@@ -10,6 +10,12 @@ main:
   expect-equals [4] t.touch
   expect-equals (1 << 33) t.ext1-high-mask
 
+  // gpio-low parse and round-trip
+  tl := Triggers.parse {"gpio-low:5": 5}
+  expect-equals [5] tl.gpio-low
+  tl2 := Triggers.parse tl.to-map
+  expect-equals [5] tl2.gpio-low
+
   // round-trip through to-map
   t2 := Triggers.parse t.to-map
   expect t2.boot
