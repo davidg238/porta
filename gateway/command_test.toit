@@ -3,7 +3,7 @@ import .command show *
 
 main:
   // run round-trips through the wire encoding.
-  c := Command.run --name="blink" --crc=7 --triggers={"interval": 30}
+  c := Command.run --name="blink" --crc=7 --size=4096 --triggers={"interval": 30}
   bytes := c.encode
   expect (bytes.size >= 1)            // the "real command ≥ 1 byte" invariant
   d := Command.decode bytes
@@ -32,8 +32,15 @@ main:
   expect-throw "unknown trigger: bogus": triggers-from-flags ["bogus"] --interval-s=null
 
   // project folds a command list to the goal-app map; it is idempotent.
-  run-x := Command.run --name="x" --crc=1 --triggers={"interval": 10}
+  run-x := Command.run --name="x" --crc=1 --size=512 --triggers={"interval": 10}
   expect-structural-equals (project [run-x]) (project [run-x, run-x])      // re-run is a no-op
   expect (project [run-x, (Command.stop --name="x")]).is-empty  // stop removes
-  later := project [run-x, (Command.run --name="x" --crc=2 --triggers={:})]
+  later := project [run-x, (Command.run --name="x" --crc=2 --size=1024 --triggers={:})]
   expect-equals 2 later["x"]["crc"]                             // later run wins
+
+  // run carries size so the device can size its image writer from the command alone.
+  rc := Command.run --name="blink" --crc=999 --size=2048 --triggers={"interval": 30}
+  expect-equals 2048 rc.size
+  decoded := Command.decode rc.encode
+  expect-equals 2048 decoded.size
+  expect-equals 999 decoded.crc

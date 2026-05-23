@@ -10,7 +10,7 @@ main:
   image := #[0x01, 0x02, 0x03, 0x04]
   crc := 99
   store.register-payload --crc=crc --name="blink" --image=image
-  store.enqueue-command dev (Command.run --name="blink" --crc=crc --triggers={"interval": 5}) --issued-by="cli" --now=10
+  store.enqueue-command dev (Command.run --name="blink" --crc=crc --size=image.size --triggers={"interval": 5}) --issued-by="cli" --now=10
   store.enqueue-command dev (Command.set-poll-interval --interval-s=1) --issued-by="cli" --now=11
 
   // A node wakes: record contact, drain the queue to exhaustion, applying each.

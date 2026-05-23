@@ -53,7 +53,7 @@ main:
   expect-equals null (store.payload 999)         // unknown crc → null
 
   dev := "aabbccddeeff"
-  id1 := store.enqueue-command dev (Command.run --name="blink" --crc=7 --triggers={"interval": 30}) --issued-by="cli" --now=3000
+  id1 := store.enqueue-command dev (Command.run --name="blink" --crc=7 --size=6 --triggers={"interval": 30}) --issued-by="cli" --now=3000
   id2 := store.enqueue-command dev (Command.stop --name="old") --issued-by="cli" --now=3001
   expect (id2 > id1)
 

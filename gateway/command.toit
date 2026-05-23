@@ -22,14 +22,18 @@ class Command:
   constructor .verb .args:
 
   /**
-  Builds a run command: the node should run app $name from image $crc under the
-    given $triggers ({type:value} map, see device/triggers.toit), at $runlevel,
-    with container $arguments.
+  Builds a run command: the node should run app $name from image $crc (byte count
+    $size) under the given $triggers ({type:value} map, see device/triggers.toit),
+    at $runlevel, with container $arguments.
+
+  $size is required so the device can size its image writer from the command alone,
+    without reading the payload first.
   */
-  static run --name/string --crc/int --triggers/Map --runlevel/int=3 --arguments/List=[] -> Command:
+  static run --name/string --crc/int --size/int --triggers/Map --runlevel/int=3 --arguments/List=[] -> Command:
     return Command VERB-RUN {
       "name": name,
       "crc": crc,
+      "size": size,
       "triggers": triggers,
       "runlevel": runlevel,
       "arguments": arguments,
@@ -58,6 +62,7 @@ class Command:
 
   name -> string?: return args.get "name"
   crc -> int?: return args.get "crc"
+  size -> int?: return args.get "size"
   triggers -> Map?: return args.get "triggers"
   runlevel -> int?: return args.get "runlevel"
   arguments -> List?: return args.get "arguments"

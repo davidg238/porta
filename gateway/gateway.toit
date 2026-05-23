@@ -246,7 +246,7 @@ cmd-container-install parsed/cli.Parsed -> none:
     print "Note: no triggers given — '$name' will be installed but not started until a trigger is added."
 
   store.register-payload --crc=crc --name=name --image=image
-  run-cmd := Command.run --name=name --crc=crc --triggers=triggers --runlevel=parsed["runlevel"]
+  run-cmd := Command.run --name=name --crc=crc --size=image.size --triggers=triggers --runlevel=parsed["runlevel"]
   cmd-id := store.enqueue-command id run-cmd --issued-by="cli" --now=now_
   print "$id: registered $name@$crc ($(image.size) B); enqueued run (command #$cmd-id)"
   store.close
