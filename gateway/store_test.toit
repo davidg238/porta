@@ -1,5 +1,6 @@
 import expect show *
 import .store show Store DEFAULT-POLL-INTERVAL-S DEFAULT-MAX-OFFLINE-S
+import .command show Command
 
 main:
   store := Store.open ":memory:"
@@ -50,5 +51,29 @@ main:
   store.register-payload --crc=12345 --name="blink" --image=#[0x01]
   expect-equals 1 (store.payload 12345)["size"]
   expect-equals null (store.payload 999)         // unknown crc → null
+
+  dev := "aabbccddeeff"
+  id1 := store.enqueue-command dev (Command.run --name="blink" --crc=7 --triggers={"interval": 30}) --issued-by="cli" --now=3000
+  id2 := store.enqueue-command dev (Command.stop --name="old") --issued-by="cli" --now=3001
+  expect (id2 > id1)
+
+  // FIFO: next-undelivered returns the oldest; mark-delivered advances it.
+  first := store.next-undelivered dev
+  expect-equals id1 first["id"]
+  expect-equals "run" first["verb"]
+  expect-equals 7 first["args"]["crc"]            // args decoded to a map
+  expect-equals 2 (store.undelivered-commands dev).size
+  store.mark-delivered id1 --now=3100
+  expect-equals id2 (store.next-undelivered dev)["id"]
+  expect-equals 1 (store.undelivered-commands dev).size
+
+  // The log is the full audit history with delivery stamps.
+  log := store.command-log dev
+  expect-equals 2 log.size
+  expect-equals 3100 log[0]["delivered_at"]
+  expect-equals null log[1]["delivered_at"]
+
+  // Queues are per device.
+  expect-equals 0 (store.undelivered-commands "010203040506").size
 
   store.close

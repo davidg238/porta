@@ -3,6 +3,7 @@
 import sqlite
 import encoding.json
 import .names show node-name-for
+import .command show Command
 
 DEFAULT-POLL-INTERVAL-S ::= 30
 DEFAULT-MAX-OFFLINE-S ::= 300
@@ -127,6 +128,51 @@ class Store:
     row := db_.query-one "SELECT crc, name, size, image FROM payloads WHERE crc = ?" [crc]
     if row == null: return null
     return {"crc": row[0], "name": row[1], "size": row[2], "image": row[3]}
+
+  /**
+  Appends $command to node $device-id's FIFO queue, recording $issued-by and
+    $now (epoch seconds). Returns the new command id.
+  */
+  enqueue-command device-id/string command/Command --issued-by/string --now/int -> int:
+    db_.execute "INSERT INTO command_queue (device_id, seq, verb, args, issued_at, issued_by, delivered_at) VALUES (?, ?, ?, ?, ?, ?, NULL)"
+        [device-id, (next-seq_ device-id), command.verb, (encode-json_ command.args), now, issued-by]
+    return db_.last-insert-rowid
+
+  next-seq_ device-id/string -> int:
+    return (db_.query-one "SELECT COALESCE(MAX(seq), 0) + 1 FROM command_queue WHERE device_id = ?" [device-id])[0]
+
+  /** Returns $device-id's undelivered commands, oldest first. */
+  undelivered-commands device-id/string -> List:
+    result := []
+    db_.query "SELECT id, verb, args, issued_at, issued_by FROM command_queue WHERE device_id = ? AND delivered_at IS NULL ORDER BY id" [device-id]: | row |
+      result.add (command-row_ row)
+    return result
+
+  /** Returns the oldest undelivered command for $device-id, or null. */
+  next-undelivered device-id/string -> Map?:
+    row := db_.query-one "SELECT id, verb, args, issued_at, issued_by FROM command_queue WHERE device_id = ? AND delivered_at IS NULL ORDER BY id LIMIT 1" [device-id]
+    if row == null: return null
+    return command-row_ row
+
+  /** Marks command $id delivered at $now (epoch seconds). */
+  mark-delivered id/int --now/int -> none:
+    db_.execute "UPDATE command_queue SET delivered_at = ? WHERE id = ?" [now, id]
+
+  /** Returns the full command history for $device-id, oldest first (the audit log). */
+  command-log device-id/string -> List:
+    result := []
+    db_.query "SELECT id, verb, args, issued_at, issued_by, delivered_at FROM command_queue WHERE device_id = ? ORDER BY id" [device-id]: | row |
+      result.add {
+        "id": row[0], "verb": row[1], "args": (decode-json_ row[2]),
+        "issued_at": row[3], "issued_by": row[4], "delivered_at": row[5],
+      }
+    return result
+
+  command-row_ row/List -> Map:
+    return {
+      "id": row[0], "verb": row[1], "args": (decode-json_ row[2]),
+      "issued_at": row[3], "issued_by": row[4],
+    }
 
   node-row_ row/List? -> Map?:
     if row == null: return null
