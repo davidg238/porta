@@ -25,3 +25,7 @@ host/firmware
 /firmware-esp32.envelope.gz
 /supervisor.snapshot
 /supervisor.image
+
+# Payload image build artifacts (regenerated from device/*.toit sources)
+/chatty.snapshot
+/chatty.bin

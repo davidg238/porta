@@ -6,6 +6,7 @@ import encoding.json
 VERB-RUN ::= "run"
 VERB-STOP ::= "stop"
 VERB-SET-POLL-INTERVAL ::= "set-poll-interval"
+VERB-SET-CONSOLE ::= "set-console"
 
 /** One command pulled from the gateway, as a verb plus its argument map. */
 class NodeCommand:
@@ -25,6 +26,7 @@ class NodeCommand:
   size -> int?: return args.get "size"
   interval-s -> int?: return args.get "interval"
   is-set-poll -> bool: return verb == VERB-SET-POLL-INTERVAL
+  is-set-console -> bool: return verb == VERB-SET-CONSOLE
 
 /**
 Applies $command to the goal-app map $goal (name → {"size","crc","triggers",

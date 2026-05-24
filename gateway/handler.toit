@@ -6,6 +6,7 @@
 
 import io
 import io.buffer show Buffer
+import encoding.json
 import tftp show Storage Request Peer RRQ STORAGE-FILE-NOT-FOUND STORAGE-ACCESS-DENIED
 import .store show Store encode-json_ decode-json_
 import .command show Command
@@ -91,11 +92,13 @@ class StoreBackedHandler extends Storage:
 
   writer-for name/string --req/Request?=null --tsize-hint/int?=null -> io.CloseableWriter:
     parsed := parse-resource_ name
-    if parsed[0] != "report": throw STORAGE-ACCESS-DENIED
+    base := parsed[0]
     id := parsed[1].get "id"
     if id == null: throw STORAGE-ACCESS-DENIED
     store_.touch-node id --now=now_
-    return ReportWriter_ store_ id now_
+    if base == "report": return ReportWriter_ store_ id now_
+    if base == "data": return DataWriter_ store_ id now_
+    throw STORAGE-ACCESS-DENIED
 
 /**
 An $io.CloseableWriter that buffers a WRQ "report" body and, on close, splits it
@@ -121,3 +124,60 @@ class ReportWriter_ extends io.CloseableWriter:
         --observed-state=(encode-json_ {"apps": apps})
         --health=(encode-json_ health)
         --now=now_
+
+/**
+An $io.CloseableWriter that buffers a WRQ "data" body (JSONL — one telemetry entry
+  per line) and, on close, decodes each line and appends it to the data_log. A line
+  that fails to decode (e.g. a truncated final line) is skipped, so a short tail
+  costs only that line. Each entry is {"ts"?,"seq"?,"kind","name"?,"value"?,"text"?};
+  missing ts/seq default to the gateway receive time / line index.
+
+  The decoded "value" field's runtime type is preserved via $Store.insert-data's
+    value_type tag: bool->0/1 + "bool"; int->int + "int"; float->float + "float";
+    string->text column + "string"; null/List/Map->value null, type null.
+*/
+class DataWriter_ extends io.CloseableWriter:
+  store_/Store
+  id_/string
+  now_/int
+  buffer_/Buffer := Buffer
+  constructor .store_ .id_ .now_:
+
+  try-write_ data/io.Data from/int to/int -> int:
+    buffer_.write data from to
+    return to - from
+
+  close_ -> none:
+    line-no := 0
+    (buffer_.bytes.to-string.split "\n").do: | line/string |
+      line = line.trim
+      if line == "": continue.do
+      entry/Map? := null
+      catch: entry = json.decode line.to-byte-array
+      if entry is not Map: continue.do
+      raw := entry.get "value"
+      text := entry.get "text"
+      value/num? := null
+      value-type/string? := null
+      if raw is bool:
+        value = raw ? 1 : 0
+        value-type = "bool"
+      else if raw is int:
+        value = raw
+        value-type = "int"
+      else if raw is float:
+        value = raw
+        value-type = "float"
+      else if raw is string:
+        text = raw
+        value-type = "string"
+      // else: raw is null, a List, or a Map (unsupported as a scalar) — leave value/value-type null.
+      store_.insert-data id_
+          --ts=(entry.get "ts" --if-absent=: now_)
+          --seq=(entry.get "seq" --if-absent=: line-no)
+          --kind=(entry.get "kind" --if-absent=: "log")
+          --name=(entry.get "name")
+          --value=value
+          --text=text
+          --value-type=value-type
+      line-no++

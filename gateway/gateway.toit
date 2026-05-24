@@ -47,11 +47,17 @@ build-command -> cli.Command:
       --rest=[ cli.Option "new-name" --help="The new name." --required ]
       --run=:: cmd-device-name it
 
+  device-set-console-cmd := cli.Command "set-console"
+      --help="Enqueue turning a node's console/telemetry forwarding on or off (off by default)."
+      --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
+      --rest=[ cli.Option "state" --help="on | off." --required ]
+      --run=:: cmd-device-set-console it
+
   device-cmd := cli.Command "device"
       --help="Inspect and configure a node."
       --subcommands=[
         device-show-cmd, device-set-max-offline-cmd,
-        device-set-poll-interval-cmd, device-name-cmd,
+        device-set-poll-interval-cmd, device-name-cmd, device-set-console-cmd,
       ]
 
   container-install-cmd := cli.Command "install"
@@ -104,10 +110,20 @@ build-command -> cli.Command:
       --options=[ cli.OptionInt "port" --help="UDP port to listen on." --default=DEFAULT-PORT ]
       --run=:: cmd-serve it
 
+  monitor-cmd := cli.Command "monitor"
+      --help="Show a node's telemetry (data_log); --follow tails new rows as wakes deliver them."
+      --options=[
+        cli.Option "device" --short-name="d" --help="Node name or MAC." --required,
+        cli.Option "since" --help="Look-back window, e.g. 1h, 30m (default 1h).",
+        cli.Flag "follow" --short-name="f" --help="Keep polling and print new rows until interrupted.",
+        cli.Option "kind" --help="Filter to 'log' or 'metric'.",
+      ]
+      --run=:: cmd-monitor it
+
   return cli.Command "gateway"
       --help="Porta LAN gateway — command-queue control plane for Toit nodes."
       --options=[ cli.Option "db" --help="Path to the sqlite store." --default="porta.db" ]
-      --subcommands=[ serve-cmd, scan-cmd, ping-cmd, device-cmd, container-cmd, log-cmd ]
+      --subcommands=[ serve-cmd, scan-cmd, ping-cmd, device-cmd, container-cmd, log-cmd, monitor-cmd ]
 
 // --- shared helpers ----------------------------------------------------------
 
@@ -174,6 +190,19 @@ pad_ s/string width/int -> string:
   if s.size >= width: return s
   return s + (" " * (width - s.size))
 
+/** Formats a data_log row {ts,seq,kind,name,value,text,value_type} for `monitor`. */
+monitor-line_ r/Map -> string:
+  if r["kind"] != "metric": return "$(r["ts"])  log     $(r["text"])"
+  vt := r["value_type"]
+  rendered := ""
+  if vt == "string": rendered = "$(r["text"])"
+  else if vt == "bool": rendered = (r["value"] != 0) ? "true" : "false"
+  // NUMERIC affinity may store a whole-number float (13.0) as int 13; render by the
+  // declared value_type so a float always shows its decimal point.
+  else if vt == "float": rendered = "$((r["value"]).to-float)"
+  else: rendered = "$(r["value"])"   // "int" (or unknown) — render as stored
+  return "$(r["ts"])  metric  $(r["name"])=$rendered"
+
 cmd-device-show parsed/cli.Parsed -> none:
   store := open-store_ parsed
   id := resolve-node-id_ store parsed["device"]
@@ -219,6 +248,18 @@ cmd-device-name parsed/cli.Parsed -> none:
   store.ensure-node id --now=now_
   store.set-node-name id parsed["new-name"]
   print "$id: name = $(parsed["new-name"])"
+  store.close
+
+cmd-device-set-console parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  store.ensure-node id --now=now_
+  state := parsed["state"]
+  if state != "on" and state != "off":
+    print "Error: state must be 'on' or 'off'."
+    exit 1
+  cmd-id := store.enqueue-command id (Command.set-console --on=(state == "on")) --issued-by="cli" --now=now_
+  print "$id: enqueued set-console $state (command #$cmd-id)"
   store.close
 
 cmd-container-install parsed/cli.Parsed -> none:
@@ -292,3 +333,27 @@ cmd-log parsed/cli.Parsed -> none:
     delivered := e["delivered_at"] == null ? "pending" : "yes"
     print "$(pad_ "#$(e["id"])" 4) $(pad_ e["verb"] 17) $(pad_ delivered 10) $(e["args"])"
   store.close
+
+cmd-monitor parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  kind := parsed["kind"]
+  since-s := parsed["since"] != null ? (parse-duration-s parsed["since"]) : 3600
+  now := now_
+  (store.query-data id --since=(now - since-s) --until=now --kind=kind).do: | r/Map |
+    print (monitor-line_ r)
+  if parsed["follow"]:
+    last := now
+    try:
+      while true:
+        sleep --ms=2000
+        t := now_
+        (store.query-data id --since=(last + 1) --until=t --kind=kind).do: | r/Map |
+          print (monitor-line_ r)
+        // Dedup: advance past the last-seen ts. Rows sharing a ts at the poll
+        // boundary may be missed/repeated — accepted known-minor (see plan B3 note).
+        last = t
+    finally:
+      store.close
+  else:
+    store.close
