@@ -1,0 +1,15 @@
+name: gateway
+description: Porta Toit gateway — command-queue control plane + sqlite store (host).
+dependencies:
+  # NOTE: machine-specific absolute path (per CLAUDE.md, packages live under
+  # ~/workspaceToit/). A clone on a different layout must adjust this path.
+  sqlite:
+    path: /home/david/workspaceToit/sqlite
+  cli:
+    url: github.com/toitlang/pkg-cli
+    version: ^1.7.0
+  host:
+    url: github.com/toitlang/pkg-host
+    version: ^1.16.0
+  tftp:
+    path: /home/david/workspaceToit/tftp

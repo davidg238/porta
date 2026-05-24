@@ -54,6 +54,36 @@ class Inventory:
       }
     return {"apps": m}
 
+  /**
+  Reconstructs the goal-app map (name → {"size","crc","triggers","runlevel",
+    "arguments"}, the shape GoalState.parse consumes) from the installed apps, so a
+    wake can apply freshly drained commands on top of the node's current goal.
+  */
+  to-goal-map -> Map:
+    goal := {:}
+    apps.do: | name/string a/InstalledApp |
+      goal[name] = {
+        "size": a.size,
+        "crc": a.crc,
+        "triggers": a.triggers.to-map,
+        "runlevel": a.runlevel,
+        "arguments": [],
+      }
+    return goal
+
+  /**
+  Drops every app whose image id is absent from $installed-ids (a list of
+    uuid.Uuid for the images actually present in flash) and returns the names
+    dropped. Lets the node self-heal after a reflash or partial uninstall left
+    NVS referencing a container image that no longer exists.
+  */
+  prune-missing installed-ids/List -> List:
+    dropped := []
+    apps.do: | name/string a/InstalledApp |
+      if not (installed-ids.any: it == a.id): dropped.add name
+    dropped.do: | name/string | apps.remove name
+    return dropped
+
   /** Compares the goal against the inventory and returns what the supervisor must do. */
   reconcile goal/GoalState -> Reconciliation:
     to-fetch := []

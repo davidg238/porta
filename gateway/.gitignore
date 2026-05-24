@@ -1,0 +1,4 @@
+.packages/
+*.db
+*.db-wal
+*.db-shm

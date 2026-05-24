@@ -8,6 +8,8 @@ interface GatewayClient:
   fetch-bytes name/string -> ByteArray
   /** Streams a resource into $to-writer (e.g. an image). Returns bytes read. */
   fetch name/string --to-writer/io.Writer -> int
+  /** Writes $bytes to the gateway under resource $name (a WRQ, e.g. the report). */
+  put name/string bytes/ByteArray -> none
   close -> none
 
 /**
@@ -44,6 +46,9 @@ class TftpGatewayClient implements GatewayClient:
 
   fetch name/string --to-writer/io.Writer -> int:
     return client_.read name --to-writer=to-writer
+
+  put name/string bytes/ByteArray -> none:
+    client_.write-bytes bytes --filename=name
 
   close -> none:
     client_.close
