@@ -190,10 +190,15 @@ pad_ s/string width/int -> string:
   if s.size >= width: return s
   return s + (" " * (width - s.size))
 
-/** Formats a data_log row {ts,seq,kind,name,value,text} for `monitor`. */
+/** Formats a data_log row {ts,seq,kind,name,value,text,value_type} for `monitor`. */
 monitor-line_ r/Map -> string:
-  if r["kind"] == "metric": return "$(r["ts"])  metric  $(r["name"])=$(r["value"])"
-  return "$(r["ts"])  log     $(r["text"])"
+  if r["kind"] != "metric": return "$(r["ts"])  log     $(r["text"])"
+  vt := r["value_type"]
+  rendered := ""
+  if vt == "string": rendered = "$(r["text"])"
+  else if vt == "bool": rendered = (r["value"] != 0) ? "true" : "false"
+  else: rendered = "$(r["value"])"   // int -> "7", float -> "13.0"/"20.5"
+  return "$(r["ts"])  metric  $(r["name"])=$rendered"
 
 cmd-device-show parsed/cli.Parsed -> none:
   store := open-store_ parsed
