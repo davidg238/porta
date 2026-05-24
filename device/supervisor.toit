@@ -13,6 +13,9 @@ import .image_writer show ImageStreamWriter
 import .flash_image show ContainerImageInstaller
 import .transport show WifiTransport GatewayClient
 import .schedule_store show ScheduleStore clock-us
+import .telemetry_buffer show TelemetryBuffer
+import .telemetry_service show TelemetryServiceClient TelemetryServiceProvider
+import .telemetry_codec show build-data-body
 
 /** Gateway LAN address. Adjust to the host running `gateway serve`. */
 GATEWAY-HOST ::= "192.168.0.175"
@@ -27,6 +30,7 @@ OBSERVE ::= Duration --s=5
 BUCKET-NAME ::= "porta"
 INVENTORY-KEY ::= "inventory"
 POLL-INTERVAL-KEY ::= "poll_interval_s"
+CONSOLE-KEY ::= "console_forward"
 
 /**
 One supervisor wake: identify, poll the gateway if due (drain commands → apply →
@@ -43,6 +47,10 @@ main:
   store := ScheduleStore
   now := clock-us
 
+  // Bring up the telemetry provider before any payload app can emit.
+  spawn-remoting_
+  sleep --ms=50  // let the provider register before payloads open clients
+
   // Poll on cold boot (empty inventory) or once the poll interval has elapsed.
   cold := inventory.apps.is-empty
   poll-due := cold or (now - store.last-poll-us) >= (poll-interval-s * 1_000_000)
@@ -57,6 +65,10 @@ main:
 
   print "supervisor: observing for $OBSERVE"
   sleep OBSERVE
+
+  // Ship telemetry produced this wake (after payloads ran), if forwarding is on.
+  if (bucket.get CONSOLE-KEY --if-absent=: false): flush-telemetry_ id
+
   print "supervisor: deep-sleeping for $(poll-interval-s)s"
   esp32.deep-sleep (Duration --s=poll-interval-s)
 
@@ -95,6 +107,10 @@ poll-and-reconcile bucket/storage.Bucket inventory/Inventory id/string poll-inte
         poll-interval-s = command.interval-s
         bucket[POLL-INTERVAL-KEY] = poll-interval-s
         print "supervisor: poll interval now $(poll-interval-s)s"
+      else if command.is-set-console:
+        on := command.args.get "on" --if-absent=: false
+        bucket[CONSOLE-KEY] = on
+        print "supervisor: console-forward now $on"
       else:
         apply-to-goal goal-map command
         print "supervisor: applied $command.verb $(command.name)"
@@ -137,3 +153,30 @@ arm-wakeups inventory/Inventory -> none:
   if mask != 0:
     esp32.enable-external-wakeup mask true
     print "supervisor: armed ext1 wake mask=0x$(%x mask)"
+
+/** Spawns the telemetry provider in its own process (services only, no socket). */
+spawn-remoting_ -> none:
+  spawn::
+    provider := TelemetryServiceProvider (TelemetryBuffer --cap=128)
+    provider.install
+    while true: sleep (Duration --s=3600)  // outlive the wake window; deep-sleep ends it
+
+/**
+Drains the telemetry buffer (a client call to the spawned provider) and, if any
+  entries accrued this wake, ships them as a JSONL "data?id=" WRQ. Best-effort:
+  any failure is traced and the node still deep-sleeps.
+*/
+flush-telemetry_ id/string -> none:
+  catch --trace:
+    tclient := TelemetryServiceClient
+    tclient.open
+    entries := tclient.drain
+    tclient.close
+    if entries.is-empty: return
+    body := build-data-body entries
+    gw := (WifiTransport --host=GATEWAY-HOST --port=GATEWAY-PORT).connect
+    try:
+      gw.put "data?id=$id" body
+      print "supervisor: shipped $(entries.size) telemetry entr(ies)"
+    finally:
+      gw.close
