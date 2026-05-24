@@ -49,7 +49,7 @@ main:
 
   // Bring up the telemetry provider before any payload app can emit.
   spawn-remoting_
-  sleep --ms=50  // let the provider register before payloads open clients
+  sleep --ms=200  // let the provider register before payloads open clients
 
   // Poll on cold boot (empty inventory) or once the poll interval has elapsed.
   cold := inventory.apps.is-empty
@@ -67,6 +67,8 @@ main:
   sleep OBSERVE
 
   // Ship telemetry produced this wake (after payloads ran), if forwarding is on.
+  // This opens a second TFTP connection every wake the flag is on (not only poll
+  // wakes); keep poll-interval >= 30s to avoid the tftp TID-race (davidg238/tftp#5).
   if (bucket.get CONSOLE-KEY --if-absent=: false): flush-telemetry_ id
 
   print "supervisor: deep-sleeping for $(poll-interval-s)s"
@@ -157,9 +159,11 @@ arm-wakeups inventory/Inventory -> none:
 /** Spawns the telemetry provider in its own process (services only, no socket). */
 spawn-remoting_ -> none:
   spawn::
-    provider := TelemetryServiceProvider (TelemetryBuffer --cap=128)
-    provider.install
-    while true: sleep (Duration --s=3600)  // outlive the wake window; deep-sleep ends it
+    catch --trace:
+      provider := TelemetryServiceProvider (TelemetryBuffer --cap=128)
+      provider.install
+      print "supervisor: telemetry provider registered"
+      while true: sleep (Duration --s=3600)  // outlive the wake window; deep-sleep ends it
 
 /**
 Drains the telemetry buffer (a client call to the spawned provider) and, if any
@@ -170,8 +174,11 @@ flush-telemetry_ id/string -> none:
   catch --trace:
     tclient := TelemetryServiceClient
     tclient.open
-    entries := tclient.drain
-    tclient.close
+    entries := []
+    try:
+      entries = tclient.drain
+    finally:
+      tclient.close
     if entries.is-empty: return
     body := build-data-body entries
     gw := (WifiTransport --host=GATEWAY-HOST --port=GATEWAY-PORT).connect
