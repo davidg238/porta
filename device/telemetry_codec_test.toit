@@ -20,4 +20,22 @@ main:
 
   // Empty input → empty body.
   expect-equals 0 (build-data-body []).size
+
+  // Type fidelity across the JSONL round-trip (the gateway infers value_type from
+  // the decoded runtime type). Decode each line and check the runtime type.
+  typed := build-data-body [
+    {"kind": "metric", "name": "i", "value": 7},        // int
+    {"kind": "metric", "name": "f", "value": 20.5},     // fractional float
+    {"kind": "metric", "name": "w", "value": 13.0},     // whole-number float
+    {"kind": "metric", "name": "b", "value": true},     // bool
+    {"kind": "metric", "name": "s", "value": "x"},      // string
+  ]
+  tlines := []
+  (typed.to-string.split "\n").do: | l/string | if l.trim != "": tlines.add (json.decode l.to-byte-array)
+  expect (tlines[0]["value"] is int)
+  expect (tlines[1]["value"] is float)
+  expect-equals true (tlines[3]["value"] is bool)
+  expect-equals "x" tlines[4]["value"]
+  // Record (do not assert) what a whole-number float becomes after round-trip.
+  print "whole-number-float 13.0 round-trips as: $(tlines[2]["value"]) (is float = $(tlines[2]["value"] is float))"
   print "telemetry codec OK"

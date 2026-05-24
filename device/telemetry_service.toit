@@ -12,7 +12,7 @@ interface TelemetryService:
   log message/string -> none
   static LOG-INDEX ::= 0
 
-  report name/string value/float -> none
+  report name/string value -> none
   static REPORT-INDEX ::= 1
 
   drain -> List
@@ -25,7 +25,7 @@ class TelemetryServiceClient extends services.ServiceClient implements Telemetry
     super selector
 
   log message/string -> none: invoke_ TelemetryService.LOG-INDEX message
-  report name/string value/float -> none: invoke_ TelemetryService.REPORT-INDEX [name, value]
+  report name/string value -> none: invoke_ TelemetryService.REPORT-INDEX [name, value]
   drain -> List: return invoke_ TelemetryService.DRAIN-INDEX null
 
 class TelemetryServiceProvider extends services.ServiceProvider
@@ -38,12 +38,10 @@ class TelemetryServiceProvider extends services.ServiceProvider
   handle index/int arguments/any --gid/int --client/int -> any:
     if index == TelemetryService.LOG-INDEX: return log arguments
     if index == TelemetryService.REPORT-INDEX:
-      value := arguments[1]
-      if value is int: value = value.to-float
-      return report arguments[0] value
+      return report arguments[0] arguments[1]
     if index == TelemetryService.DRAIN-INDEX: return drain
     unreachable
 
   log message/string -> none: buffer_.add {"kind": "log", "text": message}
-  report name/string value/float -> none: buffer_.add {"kind": "metric", "name": name, "value": value}
+  report name/string value -> none: buffer_.add {"kind": "metric", "name": name, "value": value}
   drain -> List: return buffer_.drain
