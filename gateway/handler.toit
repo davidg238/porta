@@ -133,8 +133,8 @@ An $io.CloseableWriter that buffers a WRQ "data" body (JSONL — one telemetry e
   missing ts/seq default to the gateway receive time / line index.
 
   The decoded "value" field's runtime type is preserved via $Store.insert-data's
-  value_type tag: bool→0/1 + "bool"; int→int + "int"; float→float + "float";
-  string→goes into the text column + "string"; absent/null→value null, type null.
+    value_type tag: bool->0/1 + "bool"; int->int + "int"; float->float + "float";
+    string->text column + "string"; null/List/Map->value null, type null.
 */
 class DataWriter_ extends io.CloseableWriter:
   store_/Store
@@ -171,7 +171,7 @@ class DataWriter_ extends io.CloseableWriter:
       else if raw is string:
         text = raw
         value-type = "string"
-      // else raw == null: a log line or a valueless entry — leave value/value-type null.
+      // else: raw is null, a List, or a Map (unsupported as a scalar) — leave value/value-type null.
       store_.insert-data id_
           --ts=(entry.get "ts" --if-absent=: now_)
           --seq=(entry.get "seq" --if-absent=: line-no)

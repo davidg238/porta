@@ -36,6 +36,7 @@ main:
   // string value lives in text.
   expect-equals "auto" rows[3]["text"]
   expect-equals "string" rows[3]["value_type"]
+  expect-equals null rows[3]["value"]                // string lives in text, value is null
   // log entry passes through, value_type null.
   expect-equals "log" rows[4]["kind"]
   expect-equals "hi" rows[4]["text"]
@@ -57,6 +58,18 @@ main:
   w2.write body2
   w2.close
   expect-equals 2 (store.query-data "ffeeddccbbaa" --since=0 --until=300).size
+
+  // A non-scalar value (JSON array/object) is unsupported: the row is still
+  // inserted, but value and value_type are null (graceful degradation, not a crash).
+  store.ensure-node "112233445566" --now=1000
+  body3 := "{\"ts\":300,\"seq\":0,\"kind\":\"metric\",\"name\":\"x\",\"value\":[1,2]}\n".to-byte-array
+  w3 := handler.writer-for "data?id=112233445566"
+  w3.write body3
+  w3.close
+  row3s := store.query-data "112233445566" --since=0 --until=400
+  expect-equals 1 row3s.size
+  expect-equals null row3s[0]["value"]
+  expect-equals null row3s[0]["value_type"]
 
   store.close
   print "data ingest OK"
