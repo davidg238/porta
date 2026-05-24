@@ -67,8 +67,9 @@ class Store:
           seq INTEGER,
           kind TEXT,
           name TEXT,
-          value REAL,
-          text TEXT)"""
+          value NUMERIC,
+          text TEXT,
+          value_type TEXT)"""
     db_.execute "CREATE INDEX IF NOT EXISTS idx_data_device_ts ON data_log(device_id, ts)"
 
   /** Whether a table named $name exists. Test/diagnostic helper. */
@@ -196,10 +197,10 @@ class Store:
       result.add {"ts": row[0], "observed_state": row[1], "health": row[2]}
     return result
 
-  /** Appends one telemetry entry for node $device-id. */
-  insert-data device-id/string --ts/int --seq/int --kind/string --name/string?=null --value/float?=null --text/string?=null -> none:
-    db_.execute "INSERT INTO data_log (device_id, ts, seq, kind, name, value, text) VALUES (?, ?, ?, ?, ?, ?, ?)"
-        [device-id, ts, seq, kind, name, value, text]
+  /** Appends one telemetry entry for node $device-id. $value-type tags the metric value's original scalar type ("int"/"float"/"bool"/"string"); null for logs. */
+  insert-data device-id/string --ts/int --seq/int --kind/string --name/string?=null --value/num?=null --text/string?=null --value-type/string?=null -> none:
+    db_.execute "INSERT INTO data_log (device_id, ts, seq, kind, name, value, text, value_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        [device-id, ts, seq, kind, name, value, text, value-type]
 
   /**
   Returns $device-id's telemetry rows with $since <= ts <= $until (epoch seconds),
@@ -207,14 +208,14 @@ class Store:
   */
   query-data device-id/string --since/int --until/int --kind/string?=null -> List:
     result := []
-    sql := "SELECT ts, seq, kind, name, value, text FROM data_log WHERE device_id = ? AND ts >= ? AND ts <= ?"
+    sql := "SELECT ts, seq, kind, name, value, text, value_type FROM data_log WHERE device_id = ? AND ts >= ? AND ts <= ?"
     params := [device-id, since, until]
     if kind != null:
       sql += " AND kind = ?"
       params.add kind
     sql += " ORDER BY ts, seq"
     db_.query sql params: | row |
-      result.add {"ts": row[0], "seq": row[1], "kind": row[2], "name": row[3], "value": row[4], "text": row[5]}
+      result.add {"ts": row[0], "seq": row[1], "kind": row[2], "name": row[3], "value": row[4], "text": row[5], "value_type": row[6]}
     return result
 
   /** Deletes telemetry rows with ts < $cutoff (epoch seconds). */
