@@ -9,7 +9,7 @@ main:
     provider.install
     sleep (Duration --s=2)
     provider.uninstall
-  yield  // let the provider register before we open a client
+  sleep --ms=200  // let the provider register before we open a client
 
   client := TelemetryServiceClient
   client.open
