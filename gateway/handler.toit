@@ -6,6 +6,7 @@
 
 import io
 import io.buffer show Buffer
+import encoding.json
 import tftp show Storage Request Peer RRQ STORAGE-FILE-NOT-FOUND STORAGE-ACCESS-DENIED
 import .store show Store encode-json_ decode-json_
 import .command show Command
@@ -91,11 +92,13 @@ class StoreBackedHandler extends Storage:
 
   writer-for name/string --req/Request?=null --tsize-hint/int?=null -> io.CloseableWriter:
     parsed := parse-resource_ name
-    if parsed[0] != "report": throw STORAGE-ACCESS-DENIED
+    base := parsed[0]
     id := parsed[1].get "id"
     if id == null: throw STORAGE-ACCESS-DENIED
     store_.touch-node id --now=now_
-    return ReportWriter_ store_ id now_
+    if base == "report": return ReportWriter_ store_ id now_
+    if base == "data": return DataWriter_ store_ id now_
+    throw STORAGE-ACCESS-DENIED
 
 /**
 An $io.CloseableWriter that buffers a WRQ "report" body and, on close, splits it
@@ -121,3 +124,39 @@ class ReportWriter_ extends io.CloseableWriter:
         --observed-state=(encode-json_ {"apps": apps})
         --health=(encode-json_ health)
         --now=now_
+
+/**
+An $io.CloseableWriter that buffers a WRQ "data" body (JSONL — one telemetry entry
+  per line) and, on close, decodes each line and appends it to the data_log. A line
+  that fails to decode (e.g. a truncated final line) is skipped, so a short tail
+  costs only that line. Each entry is {"ts"?,"seq"?,"kind","name"?,"value"?,"text"?};
+  missing ts/seq default to the gateway receive time / line index.
+*/
+class DataWriter_ extends io.CloseableWriter:
+  store_/Store
+  id_/string
+  now_/int
+  buffer_/Buffer := Buffer
+  constructor .store_ .id_ .now_:
+
+  try-write_ data/io.Data from/int to/int -> int:
+    buffer_.write data from to
+    return to - from
+
+  close_ -> none:
+    line-no := 0
+    (buffer_.bytes.to-string.split "\n").do: | line/string |
+      if line.trim == "": continue.do
+      entry/Map? := null
+      catch: entry = json.decode line.to-byte-array
+      if entry == null: continue.do
+      value := entry.get "value"
+      if value is int: value = value.to-float
+      store_.insert-data id_
+          --ts=(entry.get "ts" --if-absent=: now_)
+          --seq=(entry.get "seq" --if-absent=: line-no)
+          --kind=(entry.get "kind" --if-absent=: "log")
+          --name=(entry.get "name")
+          --value=value
+          --text=(entry.get "text")
+      line-no++
