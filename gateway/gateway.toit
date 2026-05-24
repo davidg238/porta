@@ -104,10 +104,20 @@ build-command -> cli.Command:
       --options=[ cli.OptionInt "port" --help="UDP port to listen on." --default=DEFAULT-PORT ]
       --run=:: cmd-serve it
 
+  monitor-cmd := cli.Command "monitor"
+      --help="Show a node's telemetry (data_log); --follow tails new rows as wakes deliver them."
+      --options=[
+        cli.Option "device" --short-name="d" --help="Node name or MAC." --required,
+        cli.Option "since" --help="Look-back window, e.g. 1h, 30m (default 1h).",
+        cli.Flag "follow" --short-name="f" --help="Keep polling and print new rows until interrupted.",
+        cli.Option "kind" --help="Filter to 'log' or 'metric'.",
+      ]
+      --run=:: cmd-monitor it
+
   return cli.Command "gateway"
       --help="Porta LAN gateway — command-queue control plane for Toit nodes."
       --options=[ cli.Option "db" --help="Path to the sqlite store." --default="porta.db" ]
-      --subcommands=[ serve-cmd, scan-cmd, ping-cmd, device-cmd, container-cmd, log-cmd ]
+      --subcommands=[ serve-cmd, scan-cmd, ping-cmd, device-cmd, container-cmd, log-cmd, monitor-cmd ]
 
 // --- shared helpers ----------------------------------------------------------
 
@@ -173,6 +183,11 @@ cmd-ping parsed/cli.Parsed -> none:
 pad_ s/string width/int -> string:
   if s.size >= width: return s
   return s + (" " * (width - s.size))
+
+/** Formats a data_log row {ts,seq,kind,name,value,text} for `monitor`. */
+monitor-line_ r/Map -> string:
+  if r["kind"] == "metric": return "$(r["ts"])  metric  $(r["name"])=$(r["value"])"
+  return "$(r["ts"])  log     $(r["text"])"
 
 cmd-device-show parsed/cli.Parsed -> none:
   store := open-store_ parsed
@@ -291,4 +306,22 @@ cmd-log parsed/cli.Parsed -> none:
   entries.do: | e/Map |
     delivered := e["delivered_at"] == null ? "pending" : "yes"
     print "$(pad_ "#$(e["id"])" 4) $(pad_ e["verb"] 17) $(pad_ delivered 10) $(e["args"])"
+  store.close
+
+cmd-monitor parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  kind := parsed["kind"]
+  since-s := parsed["since"] != null ? (parse-duration-s parsed["since"]) : 3600
+  now := now_
+  (store.query-data id --since=(now - since-s) --until=now --kind=kind).do: | r/Map |
+    print (monitor-line_ r)
+  if parsed["follow"]:
+    last := now
+    while true:
+      sleep --ms=2000
+      t := now_
+      (store.query-data id --since=(last + 1) --until=t --kind=kind).do: | r/Map |
+        print (monitor-line_ r)
+      last = t
   store.close
