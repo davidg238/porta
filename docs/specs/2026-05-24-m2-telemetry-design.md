@@ -225,6 +225,34 @@ Unchanged M1 steps 1–3 (drain commands, fetch payloads, apply+reconcile), then
   `report`s, flip `set-console on`, verify `data_log` fills and `monitor --follow`
   tails; verify quiet by default.
 
+## Hardware verification result (2026-05-24, node `fwkb` / `30aea41a6208`)
+
+M2.1 **hardware-verified on `fwkb`**. Built the supervisor into a no-jaguar envelope
+(`host/build-envelope.sh`), flashed, and drove it from the host gateway daemon
+(`serve --port=6969`, db `/tmp/porta-m2.db`):
+
+- Firmware boots, the spawned telemetry provider registers (`supervisor: telemetry
+  provider registered`), node polls and reports.
+- Commands deliver + apply (`set-poll-interval`, `set-console`, `run chatty`).
+- `chatty` (test payload) emits `log` + typed `metric`s → provider buffer → supervisor
+  drains after the observe window → ships a `data?id=` JSONL WRQ → gateway ingests →
+  `gateway monitor` reads it back. **All scalar types rendered correctly:**
+  `boot=true` (bool), `mode=blink` (string), `counter=0..4` (int), `load=0.0..6.0`
+  (float, incl. whole-number `0.0`), and `chatty: tick N` (log).
+- **Default-off invariant confirmed:** with `set-console off`, chatty still runs but the
+  supervisor ships nothing — the `data_log` row count held steady. The M1 path is
+  unchanged when telemetry is off.
+
+The **explicit `TelemetryServiceClient.log` path** (the M2.0 fallback) is the one used and
+is now hardware-proven; the print-interception spike was not needed.
+
+**Caveat (transport, not M2):** the `tftp#5` TID-race (davidg238/tftp#5) bit the initial
+38 KB `chatty.bin` payload fetch repeatedly (once as a hard hang needing a power-cycle).
+It cleared on retry; once `chatty` was installed it persisted in inventory (no re-fetch),
+and the small per-wake transfers (commands / report / `data?id=` flush) carried telemetry
+fine. The principled fix remains davidg238/tftp#5 (fresh UDP socket per transfer / drain
+stale datagrams between exchanges).
+
 ## Milestones (within M2)
 
 - **M2.0 — spike (first, gating):** can a non-system container register `PrintService`
