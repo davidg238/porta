@@ -146,10 +146,11 @@ class DataWriter_ extends io.CloseableWriter:
   close_ -> none:
     line-no := 0
     (buffer_.bytes.to-string.split "\n").do: | line/string |
-      if line.trim == "": continue.do
+      line = line.trim
+      if line == "": continue.do
       entry/Map? := null
       catch: entry = json.decode line.to-byte-array
-      if entry == null: continue.do
+      if entry is not Map: continue.do
       value := entry.get "value"
       if value is int: value = value.to-float
       store_.insert-data id_
