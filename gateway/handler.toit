@@ -131,6 +131,10 @@ An $io.CloseableWriter that buffers a WRQ "data" body (JSONL — one telemetry e
   that fails to decode (e.g. a truncated final line) is skipped, so a short tail
   costs only that line. Each entry is {"ts"?,"seq"?,"kind","name"?,"value"?,"text"?};
   missing ts/seq default to the gateway receive time / line index.
+
+  The decoded "value" field's runtime type is preserved via $Store.insert-data's
+  value_type tag: bool→0/1 + "bool"; int→int + "int"; float→float + "float";
+  string→goes into the text column + "string"; absent/null→value null, type null.
 */
 class DataWriter_ extends io.CloseableWriter:
   store_/Store
@@ -151,13 +155,29 @@ class DataWriter_ extends io.CloseableWriter:
       entry/Map? := null
       catch: entry = json.decode line.to-byte-array
       if entry is not Map: continue.do
-      value := entry.get "value"
-      if value is int: value = value.to-float
+      raw := entry.get "value"
+      text := entry.get "text"
+      value/num? := null
+      value-type/string? := null
+      if raw is bool:
+        value = raw ? 1 : 0
+        value-type = "bool"
+      else if raw is int:
+        value = raw
+        value-type = "int"
+      else if raw is float:
+        value = raw
+        value-type = "float"
+      else if raw is string:
+        text = raw
+        value-type = "string"
+      // else raw == null: a log line or a valueless entry — leave value/value-type null.
       store_.insert-data id_
           --ts=(entry.get "ts" --if-absent=: now_)
           --seq=(entry.get "seq" --if-absent=: line-no)
           --kind=(entry.get "kind" --if-absent=: "log")
           --name=(entry.get "name")
           --value=value
-          --text=(entry.get "text")
+          --text=text
+          --value-type=value-type
       line-no++

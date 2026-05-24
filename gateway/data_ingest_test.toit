@@ -9,32 +9,46 @@ main:
   handler := StoreBackedHandler store
   store.ensure-node "aabbccddeeff" --now=1000
 
-  // A WRQ to "data" ingests JSONL: one entry per line. The trailing line is
+  // JSONL ingest preserves each metric value's scalar type. The final line is
   // truncated (no closing brace) and must be skipped, not abort the batch.
   body := ("{\"ts\":100,\"seq\":0,\"kind\":\"metric\",\"name\":\"pm\",\"value\":13}\n"
-         + "{\"ts\":101,\"seq\":1,\"kind\":\"log\",\"text\":\"hi\"}\n"
-         + "{\"ts\":102,\"seq\":2,\"kind\":\"met").to-byte-array
+         + "{\"ts\":101,\"seq\":1,\"kind\":\"metric\",\"name\":\"t\",\"value\":20.5}\n"
+         + "{\"ts\":102,\"seq\":2,\"kind\":\"metric\",\"name\":\"door\",\"value\":true}\n"
+         + "{\"ts\":103,\"seq\":3,\"kind\":\"metric\",\"name\":\"mode\",\"value\":\"auto\"}\n"
+         + "{\"ts\":104,\"seq\":4,\"kind\":\"log\",\"text\":\"hi\"}\n"
+         + "{\"ts\":105,\"seq\":5,\"kind\":\"met").to-byte-array
   w := handler.writer-for "data?id=aabbccddeeff"
   w.write body
   w.close
 
   rows := store.query-data "aabbccddeeff" --since=0 --until=200
-  expect-equals 2 rows.size                          // 2 good lines; truncated 3rd skipped
-  expect-equals 13.0 rows[0]["value"]                // int 13 stored as REAL 13.0
-  expect-equals "hi" rows[1]["text"]
-  expect-equals "metric" rows[0]["kind"]
-  expect-equals "log" rows[1]["kind"]
+  expect-equals 5 rows.size                          // 5 good lines; truncated 6th skipped
+  // int preserved as int.
+  expect-equals 13 rows[0]["value"]
+  expect (rows[0]["value"] is int)
+  expect-equals "int" rows[0]["value_type"]
+  // float preserved.
+  expect-equals 20.5 rows[1]["value"]
+  expect-equals "float" rows[1]["value_type"]
+  // bool stored as 1 with type tag.
+  expect-equals 1 rows[2]["value"]
+  expect-equals "bool" rows[2]["value_type"]
+  // string value lives in text.
+  expect-equals "auto" rows[3]["text"]
+  expect-equals "string" rows[3]["value_type"]
+  // log entry passes through, value_type null.
+  expect-equals "log" rows[4]["kind"]
+  expect-equals "hi" rows[4]["text"]
+  expect-equals null rows[4]["value_type"]
 
-  // contact was recorded.
+  // contact recorded.
   expect ((store.node "aabbccddeeff")["last_seen"]) != null
 
-  // A WRQ to an unknown resource is still refused.
+  // Unknown resource and no-id are refused.
   expect-throw STORAGE-ACCESS-DENIED: handler.writer-for "bogus?id=aabbccddeeff"
-
-  // A WRQ to "data" with no id is refused.
   expect-throw STORAGE-ACCESS-DENIED: handler.writer-for "data"
 
-  // Non-object JSON lines are skipped; the batch is not aborted.
+  // A non-object JSON line is skipped, not fatal.
   store.ensure-node "ffeeddccbbaa" --now=1000
   body2 := ("{\"ts\":200,\"seq\":0,\"kind\":\"log\",\"text\":\"a\"}\n"
           + "42\n"
