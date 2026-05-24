@@ -179,8 +179,11 @@ preserved end-to-end:
   A non-scalar value (JSON array/object) degrades gracefully to `value`/`value_type` NULL.
 - `gateway monitor` renders by `value_type` (`pm=13`, `pm=13.0`, `door=true`, `mode=auto`).
 
-Verified on host: int/float/bool/string survive both the device RPC and the JSONL
-round-trip (a whole-number float `13.0` decodes back as a float, not an int).
+Verified on host: int/float/bool/string survive the device RPC and the JSONL
+round-trip. Note one storage subtlety: SQLite NUMERIC affinity stores a
+whole-number float (e.g. 13.0) as an integer storage class, so query-data returns
+int 13 — but value_type stays "float", and `gateway monitor` renders by value_type,
+so a float metric always displays with its decimal point (pm=13.0).
 
 ## Wire protocol
 

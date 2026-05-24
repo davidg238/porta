@@ -197,7 +197,10 @@ monitor-line_ r/Map -> string:
   rendered := ""
   if vt == "string": rendered = "$(r["text"])"
   else if vt == "bool": rendered = (r["value"] != 0) ? "true" : "false"
-  else: rendered = "$(r["value"])"   // int -> "7", float -> "13.0"/"20.5"
+  // NUMERIC affinity may store a whole-number float (13.0) as int 13; render by the
+  // declared value_type so a float always shows its decimal point.
+  else if vt == "float": rendered = "$((r["value"]).to-float)"
+  else: rendered = "$(r["value"])"   // "int" (or unknown) — render as stored
   return "$(r["ts"])  metric  $(r["name"])=$rendered"
 
 cmd-device-show parsed/cli.Parsed -> none:

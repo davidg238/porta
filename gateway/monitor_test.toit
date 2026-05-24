@@ -19,4 +19,8 @@ main:
   // ingested as value=null, value_type=null — renders the name with a "null" value.
   degraded := {"ts": 106, "seq": 6, "kind": "metric", "name": "x", "value": null, "text": null, "value_type": null}
   expect-equals "106  metric  x=null" (monitor-line_ degraded)
+  // A whole-number float stored via NUMERIC affinity comes back as int 13, but
+  // value_type is "float", so it must still render with a decimal point.
+  wholef := {"ts": 107, "seq": 7, "kind": "metric", "name": "pm", "value": 13, "text": null, "value_type": "float"}
+  expect-equals "107  metric  pm=13.0" (monitor-line_ wholef)
   print "monitor-line OK"

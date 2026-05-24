@@ -41,5 +41,13 @@ main:
   store.prune-data --cutoff=101
   expect-equals 4 (store.query-data "aabbccddeeff" --since=0 --until=200).size  // ts=100 pruned
 
+  // NUMERIC affinity: a whole-number float is stored as an integer storage class,
+  // but value_type preserves the declared type for the formatter.
+  store.insert-data "ddeeff001122" --ts=10 --seq=0 --kind="metric" --name="w" --value=13.0 --value-type="float"
+  wrows := store.query-data "ddeeff001122" --since=0 --until=20
+  expect-equals 1 wrows.size
+  expect-equals "float" wrows[0]["value_type"]
+  expect-equals 13 wrows[0]["value"]          // NUMERIC dropped the .0 → int 13
+
   store.close
   print "data_log OK"
