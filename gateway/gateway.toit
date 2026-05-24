@@ -47,11 +47,17 @@ build-command -> cli.Command:
       --rest=[ cli.Option "new-name" --help="The new name." --required ]
       --run=:: cmd-device-name it
 
+  device-set-console-cmd := cli.Command "set-console"
+      --help="Enqueue turning a node's console/telemetry forwarding on or off (off by default)."
+      --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
+      --rest=[ cli.Option "state" --help="on | off." --required ]
+      --run=:: cmd-device-set-console it
+
   device-cmd := cli.Command "device"
       --help="Inspect and configure a node."
       --subcommands=[
         device-show-cmd, device-set-max-offline-cmd,
-        device-set-poll-interval-cmd, device-name-cmd,
+        device-set-poll-interval-cmd, device-name-cmd, device-set-console-cmd,
       ]
 
   container-install-cmd := cli.Command "install"
@@ -234,6 +240,18 @@ cmd-device-name parsed/cli.Parsed -> none:
   store.ensure-node id --now=now_
   store.set-node-name id parsed["new-name"]
   print "$id: name = $(parsed["new-name"])"
+  store.close
+
+cmd-device-set-console parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  store.ensure-node id --now=now_
+  state := parsed["state"]
+  if state != "on" and state != "off":
+    print "Error: state must be 'on' or 'off'."
+    exit 1
+  cmd-id := store.enqueue-command id (Command.set-console --on=(state == "on")) --issued-by="cli" --now=now_
+  print "$id: enqueued set-console $state (command #$cmd-id)"
   store.close
 
 cmd-container-install parsed/cli.Parsed -> none:

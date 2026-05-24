@@ -5,6 +5,7 @@ import encoding.json
 VERB-RUN ::= "run"
 VERB-STOP ::= "stop"
 VERB-SET-POLL-INTERVAL ::= "set-poll-interval"
+VERB-SET-CONSOLE ::= "set-console"
 
 /**
 An operator command targeted at a node.
@@ -46,6 +47,10 @@ class Command:
   /** Builds a command setting the node's wake/poll cadence to $interval-s seconds. */
   static set-poll-interval --interval-s/int -> Command:
     return Command VERB-SET-POLL-INTERVAL {"interval": interval-s}
+
+  /** Builds a command turning the node's console/telemetry forwarding $on. */
+  static set-console --on/bool -> Command:
+    return Command VERB-SET-CONSOLE {"on": on}
 
   /** Serializes this command to its JSON wire form. */
   encode -> ByteArray:
