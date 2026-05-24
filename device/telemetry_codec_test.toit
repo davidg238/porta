@@ -34,8 +34,9 @@ main:
   (typed.to-string.split "\n").do: | l/string | if l.trim != "": tlines.add (json.decode l.to-byte-array)
   expect (tlines[0]["value"] is int)
   expect (tlines[1]["value"] is float)
-  expect-equals true (tlines[3]["value"] is bool)
+  expect (tlines[3]["value"] is bool)
   expect-equals "x" tlines[4]["value"]
-  // Record (do not assert) what a whole-number float becomes after round-trip.
-  print "whole-number-float 13.0 round-trips as: $(tlines[2]["value"]) (is float = $(tlines[2]["value"] is float))"
+  expect (tlines[4]["value"] is string)
+  expect (tlines[2]["value"] is float)               // whole-number float stays float
+  expect-equals 13.0 tlines[2]["value"]
   print "telemetry codec OK"

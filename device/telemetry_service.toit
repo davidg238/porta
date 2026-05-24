@@ -12,6 +12,7 @@ interface TelemetryService:
   log message/string -> none
   static LOG-INDEX ::= 0
 
+  /** Reports a scalar metric $value under $name. $value must be an int, float, bool, or string. */
   report name/string value -> none
   static REPORT-INDEX ::= 1
 
