@@ -150,19 +150,37 @@ new hop — only changes which process answers.)
 
 ```sql
 CREATE TABLE IF NOT EXISTS data_log (
-  id        INTEGER PRIMARY KEY AUTOINCREMENT,
-  device_id TEXT,
-  ts        INTEGER,            -- epoch seconds (gateway receive time; device may carry its own ts in-body)
-  seq       INTEGER,            -- device-side ordering within a batch
-  kind      TEXT,               -- 'log' | 'metric'
-  name      TEXT,               -- metric name (NULL for log)
-  value     REAL,               -- metric value (NULL for log)
-  text      TEXT                -- console line (NULL for metric)
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id  TEXT,
+  ts         INTEGER,           -- epoch seconds (gateway receive time; device may carry its own ts in-body)
+  seq        INTEGER,           -- device-side ordering within a batch
+  kind       TEXT,              -- 'log' | 'metric'
+  name       TEXT,              -- metric name (NULL for log)
+  value      NUMERIC,           -- numeric/bool metric value (NULL for log or string metric)
+  text       TEXT,              -- console line, OR a string-valued metric (NULL otherwise)
+  value_type TEXT               -- 'int'|'float'|'bool'|'string' for metrics; NULL for log
 );
 CREATE INDEX IF NOT EXISTS idx_data_device_ts ON data_log(device_id, ts);
 ```
 
 Pruned by age (`prune_data maxAge` — mirrors the Go gw's `PruneData`).
+
+### Addendum (2026-05-24): typed metric values
+
+The original design typed a metric `value` as a single `REAL`. During M2 implementation
+this was generalized so a metric value can be an **int, float, bool, or string**,
+preserved end-to-end:
+
+- `TelemetryService.report name value` accepts any scalar (no `/float` constraint);
+  the device ships it verbatim in the JSONL body (JSON already distinguishes the types).
+- The gateway infers `value_type` from the **decoded JSON runtime type** — no explicit
+  wire tag — and stores: numeric → `value` (NUMERIC, so an int stays an int); bool →
+  `value` 0/1 + `value_type='bool'`; string → reused `text` column + `value_type='string'`.
+  A non-scalar value (JSON array/object) degrades gracefully to `value`/`value_type` NULL.
+- `gateway monitor` renders by `value_type` (`pm=13`, `pm=13.0`, `door=true`, `mode=auto`).
+
+Verified on host: int/float/bool/string survive both the device RPC and the JSONL
+round-trip (a whole-number float `13.0` decodes back as a float, not an int).
 
 ## Wire protocol
 
