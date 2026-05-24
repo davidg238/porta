@@ -59,6 +59,17 @@ class Store:
           ts INTEGER,
           observed_state TEXT,
           health TEXT)"""
+    db_.execute """
+        CREATE TABLE IF NOT EXISTS data_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          device_id TEXT,
+          ts INTEGER,
+          seq INTEGER,
+          kind TEXT,
+          name TEXT,
+          value REAL,
+          text TEXT)"""
+    db_.execute "CREATE INDEX IF NOT EXISTS idx_data_device_ts ON data_log(device_id, ts)"
 
   /** Whether a table named $name exists. Test/diagnostic helper. */
   has-table_ name/string -> bool:
@@ -184,6 +195,31 @@ class Store:
     db_.query "SELECT ts, observed_state, health FROM reports WHERE device_id = ? ORDER BY ts DESC" [device-id]: | row |
       result.add {"ts": row[0], "observed_state": row[1], "health": row[2]}
     return result
+
+  /** Appends one telemetry entry for node $device-id. */
+  insert-data device-id/string --ts/int --seq/int --kind/string --name/string?=null --value/float?=null --text/string?=null -> none:
+    db_.execute "INSERT INTO data_log (device_id, ts, seq, kind, name, value, text) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        [device-id, ts, seq, kind, name, value, text]
+
+  /**
+  Returns $device-id's telemetry rows with $since <= ts <= $until (epoch seconds),
+    oldest first by (ts, seq); when $kind is given, only that kind.
+  */
+  query-data device-id/string --since/int --until/int --kind/string?=null -> List:
+    result := []
+    sql := "SELECT ts, seq, kind, name, value, text FROM data_log WHERE device_id = ? AND ts >= ? AND ts <= ?"
+    params := [device-id, since, until]
+    if kind != null:
+      sql += " AND kind = ?"
+      params.add kind
+    sql += " ORDER BY ts, seq"
+    db_.query sql params: | row |
+      result.add {"ts": row[0], "seq": row[1], "kind": row[2], "name": row[3], "value": row[4], "text": row[5]}
+    return result
+
+  /** Deletes telemetry rows with ts < $cutoff (epoch seconds). */
+  prune-data --cutoff/int -> none:
+    db_.execute "DELETE FROM data_log WHERE ts < ?" [cutoff]
 
   command-row_ row/List -> Map:
     return {
