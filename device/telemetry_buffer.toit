@@ -13,6 +13,7 @@ class TelemetryBuffer:
   dropped_/int := 0
 
   constructor --cap/int=128:
+    if cap < 1: throw "INVALID_ARGUMENT"
     cap_ = cap
 
   /** Appends $entry, dropping the oldest if already at capacity. */
@@ -22,7 +23,10 @@ class TelemetryBuffer:
       dropped_++
     entries_.add entry
 
-  /** Number of entries currently buffered. */
+  /**
+  Number of entries currently buffered (excludes the dropped-count marker that
+    $drain prepends when drops have occurred).
+  */
   size -> int: return entries_.size
 
   /** Returns all entries (oldest first, after an optional dropped-count marker) and empties the buffer. */
