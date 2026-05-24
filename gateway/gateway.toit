@@ -318,10 +318,16 @@ cmd-monitor parsed/cli.Parsed -> none:
     print (monitor-line_ r)
   if parsed["follow"]:
     last := now
-    while true:
-      sleep --ms=2000
-      t := now_
-      (store.query-data id --since=(last + 1) --until=t --kind=kind).do: | r/Map |
-        print (monitor-line_ r)
-      last = t
-  store.close
+    try:
+      while true:
+        sleep --ms=2000
+        t := now_
+        (store.query-data id --since=(last + 1) --until=t --kind=kind).do: | r/Map |
+          print (monitor-line_ r)
+        // Dedup: advance past the last-seen ts. Rows sharing a ts at the poll
+        // boundary may be missed/repeated — accepted known-minor (see plan B3 note).
+        last = t
+    finally:
+      store.close
+  else:
+    store.close
