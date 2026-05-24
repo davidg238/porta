@@ -10,10 +10,12 @@ interface TelemetryService:
       --major=1
       --minor=0
   log message/string -> none
-  report name/string value/float -> none
-  drain -> List
   static LOG-INDEX ::= 0
+
+  report name/string value/float -> none
   static REPORT-INDEX ::= 1
+
+  drain -> List
   static DRAIN-INDEX ::= 2
 
 class TelemetryServiceClient extends services.ServiceClient implements TelemetryService:
@@ -35,7 +37,10 @@ class TelemetryServiceProvider extends services.ServiceProvider
 
   handle index/int arguments/any --gid/int --client/int -> any:
     if index == TelemetryService.LOG-INDEX: return log arguments
-    if index == TelemetryService.REPORT-INDEX: return report arguments[0] arguments[1]
+    if index == TelemetryService.REPORT-INDEX:
+      value := arguments[1]
+      if value is int: value = value.to-float
+      return report arguments[0] value
     if index == TelemetryService.DRAIN-INDEX: return drain
     unreachable
 
