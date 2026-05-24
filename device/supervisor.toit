@@ -64,7 +64,13 @@ main:
 load-inventory bucket/storage.Bucket -> Inventory:
   tree := bucket.get INVENTORY-KEY --if-absent=: null
   if tree == null: return Inventory.empty
-  return Inventory.decode tree
+  inventory := Inventory.decode tree
+  installed-ids := containers.images.map: it.id
+  dropped := inventory.prune-missing installed-ids
+  if not dropped.is-empty:
+    dropped.do: | name/string | print "supervisor: dropping stale app $name (image gone)"
+    save-inventory bucket inventory
+  return inventory
 
 save-inventory bucket/storage.Bucket inventory/Inventory -> none:
   bucket[INVENTORY-KEY] = inventory.encode
@@ -120,8 +126,9 @@ poll-and-reconcile bucket/storage.Bucket inventory/Inventory id/string poll-inte
 /** Starts every installed app (deep-sleep cleared running state each wake). */
 start-installed inventory/Inventory -> none:
   inventory.apps.do: | name/string a/InstalledApp |
-    containers.start a.id
-    print "supervisor: started $name ($a.id)"
+    e := catch --trace: containers.start a.id
+    if e: print "supervisor: could not start $name ($a.id): $e"
+    else: print "supervisor: started $name ($a.id)"
 
 /** Re-arms GPIO (ext1) wake sources declared by installed apps' triggers. */
 arm-wakeups inventory/Inventory -> none:

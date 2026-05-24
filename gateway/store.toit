@@ -18,6 +18,7 @@ class Store:
   constructor.open path/string:
     db_ = sqlite.open path
     db_.execute "PRAGMA journal_mode = WAL"
+    db_.execute "PRAGMA busy_timeout = 5000"
     init-schema_
 
   /** Closes the underlying database. */

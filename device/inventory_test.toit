@@ -68,3 +68,23 @@ main:
   expect-equals 30 gm["blink"]["triggers"]["interval"]
   expect-equals 3 gm["blink"]["runlevel"]
   expect-structural-equals {:} Inventory.empty.to-goal-map
+
+  // prune-missing drops apps whose image id is gone, keeps the present ones.
+  id-a := uuid.Uuid #[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]
+  id-b := uuid.Uuid #[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2]
+  app-a := InstalledApp --name="a" --id=id-a --size=1 --crc=1 --triggers=(Triggers) --runlevel=3
+  app-b := InstalledApp --name="b" --id=id-b --size=1 --crc=1 --triggers=(Triggers) --runlevel=3
+  inv-p := Inventory {"a": app-a, "b": app-b}
+  // Only id-a is still installed → "b" is dropped.
+  dropped := inv-p.prune-missing [id-a]
+  expect-equals 1 dropped.size
+  expect-equals "b" dropped[0]
+  expect (inv-p.apps.contains "a")
+  expect (not inv-p.apps.contains "b")
+  // Nothing installed → both dropped, inventory empty.
+  inv2 := Inventory {"a": app-a}
+  expect-equals 1 (inv2.prune-missing []).size
+  expect inv2.apps.is-empty
+  // All present → nothing dropped.
+  dropped3 := (Inventory {"a": app-a}).prune-missing [id-a, id-b]
+  expect-equals 0 dropped3.size
