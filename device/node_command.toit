@@ -7,6 +7,7 @@ VERB-RUN ::= "run"
 VERB-STOP ::= "stop"
 VERB-SET-POLL-INTERVAL ::= "set-poll-interval"
 VERB-SET-CONSOLE ::= "set-console"
+VERB-SET ::= "set"
 
 /** One command pulled from the gateway, as a verb plus its argument map. */
 class NodeCommand:
@@ -27,6 +28,10 @@ class NodeCommand:
   interval-s -> int?: return args.get "interval"
   is-set-poll -> bool: return verb == VERB-SET-POLL-INTERVAL
   is-set-console -> bool: return verb == VERB-SET-CONSOLE
+  is-set -> bool: return verb == VERB-SET
+  app -> string?: return args.get "app"
+  config-key -> string?: return args.get "key"
+  config-value -> any: return args.get "value"
 
 /**
 Applies $command to the goal-app map $goal (name → {"size","crc","triggers",
