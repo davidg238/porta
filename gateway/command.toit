@@ -159,6 +159,42 @@ project-config commands/List -> Map:
   return config
 
 /**
+Diffs desired config (projected from the $command-log) against $observed config and
+  returns the $Command s to re-issue to self-heal divergence. For each divergent
+  (app, key) it returns that key's *latest `set` log entry replayed verbatim* — the
+  original command rebuilt via `Command verb args` from the stored row, not from
+  extracted scalars, so the re-issued args (and scalar types) are identical.
+
+A key is re-issued only when its latest `set` is already delivered
+  (`delivered_at` != null) AND the observed value diverges (absent, or
+  present-but-unequal). An undelivered latest `set` legitimately lags (in-flight) and
+  is skipped — and since a re-issued set is itself undelivered next report, re-issue is
+  self-throttling. Observed keys with no desired `set` are left alone (desired never
+  shrinks). This is the generic diff seam: goal/apps can later feed a different
+  projection of the same `command-log` shape.
+
+$command-log is `Store.command-log` output: maps carrying `verb`, decoded `args`,
+  `issued_by`, `delivered_at`. $observed is the report echo: app -> {key: value}.
+*/
+reconcile-config command-log/List observed/Map -> List:
+  // Latest set entry per (app, key), in log order — last write wins (like project-config).
+  latest := {:}  // app -> { key -> log-entry Map }
+  command-log.do: | e/Map |
+    if e["verb"] == VERB-SET:
+      args := e["args"]
+      (latest.get args["app"] --init=: {:})[args["key"]] = e
+  reissues := []
+  latest.do: | app/string keys/Map |
+    obs-app := observed.get app --if-absent=: {:}
+    keys.do: | key/string entry/Map |
+      if entry["delivered_at"] != null:
+        desired-val := entry["args"]["value"]
+        converged := (obs-app.contains key) and obs-app[key] == desired-val
+        if not converged:
+          reissues.add (Command entry["verb"] entry["args"])
+  return reissues
+
+/**
 Classifies config $key across the $desired and $observed maps for `device get`:
   "(drift)" when both are present and unequal, "(pending)" when desired is present
   but observed is absent (the node has not yet converged), else "" (equal, or the
