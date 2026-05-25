@@ -1,3 +1,4 @@
+import encoding.json
 import expect show *
 import .node_command show NodeCommand apply-to-goal
 
@@ -31,3 +32,14 @@ main:
   expect-equals 5 spi.interval-s
   apply-to-goal goal spi
   expect-structural-equals {:} goal
+
+  // set decodes with typed value; it is NOT applied to the goal-app map.
+  set-cmd := NodeCommand.decode (json.encode {"verb": "set", "app": "thermostat", "key": "target-c", "value": 21.5})
+  expect set-cmd.is-set
+  expect-equals "thermostat" set-cmd.app
+  expect-equals "target-c" set-cmd.config-key
+  expect-equals 21.5 set-cmd.config-value
+  expect (set-cmd.config-value is float)
+  goal = {:}
+  apply-to-goal goal set-cmd      // set is a no-op on the goal plane
+  expect goal.is-empty

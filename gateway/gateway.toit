@@ -53,11 +53,31 @@ build-command -> cli.Command:
       --rest=[ cli.Option "state" --help="on | off." --required ]
       --run=:: cmd-device-set-console it
 
+  device-set-cmd := cli.Command "set"
+      --help="Enqueue setting an app's config key (value typed: true/false→bool, int, float, else string)."
+      --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
+      --rest=[
+        cli.Option "app" --help="Target app name." --required,
+        cli.Option "key" --help="Config key." --required,
+        cli.Option "value" --help="Config value." --required,
+      ]
+      --run=:: cmd-device-set it
+
+  device-get-cmd := cli.Command "get"
+      --help="Show an app's desired config (projected from the set command log)."
+      --options=[ cli.Option "device" --short-name="d" --help="Node name or MAC." --required ]
+      --rest=[
+        cli.Option "app" --help="Target app name." --required,
+        cli.Option "key" --help="Optional single key; omit to show all.",
+      ]
+      --run=:: cmd-device-get it
+
   device-cmd := cli.Command "device"
       --help="Inspect and configure a node."
       --subcommands=[
         device-show-cmd, device-set-max-offline-cmd,
         device-set-poll-interval-cmd, device-name-cmd, device-set-console-cmd,
+        device-set-cmd, device-get-cmd,
       ]
 
   container-install-cmd := cli.Command "install"
@@ -260,6 +280,36 @@ cmd-device-set-console parsed/cli.Parsed -> none:
     exit 1
   cmd-id := store.enqueue-command id (Command.set-console --on=(state == "on")) --issued-by="cli" --now=now_
   print "$id: enqueued set-console $state (command #$cmd-id)"
+  store.close
+
+cmd-device-set parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  store.ensure-node id --now=now_
+  app := parsed["app"]
+  key := parsed["key"]
+  value := infer-scalar parsed["value"]
+  cmd-id := store.enqueue-command id (Command.set --app=app --key=key --value=value) --issued-by="cli" --now=now_
+  print "$id: enqueued set $app.$key=$value (command #$cmd-id)"
+  store.close
+
+cmd-device-get parsed/cli.Parsed -> none:
+  store := open-store_ parsed
+  id := resolve-node-id_ store parsed["device"]
+  app := parsed["app"]
+  key := parsed.was-provided "key" ? parsed["key"] : null
+  commands := (store.command-log id).map: | e/Map | Command e["verb"] e["args"]
+  desired := (project-config commands).get app --if-absent=: {:}
+  if key != null:
+    if desired.contains key: print "$id: $app.$key = $(desired[key])"
+    else: print "$id: $app.$key is unset"
+    store.close
+    return
+  if desired.is-empty:
+    print "$id: $app has no desired config"
+  else:
+    print "$id: desired config for $app:"
+    desired.do: | k v | print "  $k = $v"
   store.close
 
 cmd-container-install parsed/cli.Parsed -> none:

@@ -44,3 +44,41 @@ main:
   decoded := Command.decode rc.encode
   expect-equals 2048 decoded.size
   expect-equals 999 decoded.crc
+
+  // set round-trips through the wire encoding (typed value preserved).
+  st := Command.decode (Command.set --app="thermostat" --key="target-c" --value=21.5).encode
+  expect-equals VERB-SET st.verb
+  expect-equals "thermostat" st.app
+  expect-equals "target-c" st.config-key
+  expect-equals 21.5 st.config-value
+  expect (st.config-value is float)
+  // int / bool / string values survive too.
+  expect (Command.decode (Command.set --app="a" --key="n" --value=7).encode).config-value is int
+  expect-equals true (Command.decode (Command.set --app="a" --key="on" --value=true).encode).config-value
+  expect-equals "heat" (Command.decode (Command.set --app="a" --key="mode" --value="heat").encode).config-value
+
+  // project-config folds set commands to {app:{key:value}}, last-write-wins, by app.
+  cfg := project-config [
+    Command.set --app="t" --key="target" --value=20,
+    Command.set --app="t" --key="mode" --value="heat",
+    Command.set --app="t" --key="target" --value=22,   // overwrites
+    Command.set --app="s" --key="threshold" --value=100,
+  ]
+  expect-equals 22 cfg["t"]["target"]
+  expect-equals "heat" cfg["t"]["mode"]
+  expect-equals 100 cfg["s"]["threshold"]
+  // a set does not appear in the goal-app projection (separate plane).
+  expect (project [Command.set --app="t" --key="x" --value=1]).is-empty
+
+  // infer-scalar types a CLI string.
+  expect-equals true (infer-scalar "true")
+  expect-equals false (infer-scalar "false")
+  expect (infer-scalar "42") is int
+  expect-equals 42 (infer-scalar "42")
+  expect (infer-scalar "1.5") is float
+  expect-equals 1.5 (infer-scalar "1.5")
+  expect-equals "auto" (infer-scalar "auto")
+  expect-equals -42 (infer-scalar "-42")
+  expect (infer-scalar "-42") is int
+  expect-equals "nan" (infer-scalar "nan")     // not a decimal → stays a string
+  expect-equals "inf" (infer-scalar "inf")

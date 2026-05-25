@@ -29,3 +29,5 @@ host/firmware
 # Payload image build artifacts (regenerated from device/*.toit sources)
 /chatty.snapshot
 /chatty.bin
+/control_demo.snapshot
+/control_demo.bin

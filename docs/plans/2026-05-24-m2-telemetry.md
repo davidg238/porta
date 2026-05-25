@@ -1146,4 +1146,4 @@ Append a short "M2.1 hardware-verified on fwkb" note (date + what was observed) 
 
 **Type consistency:** `insert-data`/`query-data` signatures match between B1 (definition) and B2/B3 (callers); `TelemetryService` indexes/methods match between C3 (definition) and C5/chatty/tests (callers); `monitor-line_` row keys match `query-data`'s row maps; `CONSOLE-KEY` and `set-console` `{"on":bool}` shape match across B4/C4/C5.
 
-**Known minor (acceptable for M2, noted in spec):** `--follow` dedups by ts-window (`last+1`), so two rows sharing a ts at the polling boundary could be missed or repeated; the extra post-observe `data?id=` connection (only when console-forward is on) interacts with the tftp#5 TID-race, so verify at 30s+ poll.
+**Known minor (acceptable for M2, noted in spec):** `--follow` dedups by ts-window (`last+1`), so two rows sharing a ts at the polling boundary could be missed or repeated; the extra post-observe `data?id=` connection (only when console-forward is on) previously interacted with the tftp#5 TID-race; that fix is now hardware-verified (2026-05-24, fwkd), so the 30s+ poll workaround no longer applies.
