@@ -268,6 +268,32 @@ bumping the tftp version.
 - **M2.2 — fast follow (down-path):** `ControlService` + per-app NVS config store +
   `set` command verb + `set`/`get` CLI. Symmetric write-side of the data plane.
 
+## M2.2 hardware verification result (2026-05-24, node `fwkd` / `30aea41a6208`)
+
+M2.2 **hardware-verified on `fwkd`**. Built the supervisor (with the spawned
+`ControlServiceProvider` beside the telemetry provider) into a no-jaguar envelope,
+flashed, and drove it from the host gateway daemon (`serve`, db `/tmp/porta-fwkd-m22.db`):
+
+- **Down-path closed end-to-end, value typed.** `device set control-demo target 21.5`
+  (a **float**) → next wake: supervisor drained `set control-demo.target = 21.5` and
+  wrote NVS config; the `control-demo` payload (installed same wake, 38 KB image fetched
+  clean) read **its own** config via `ControlService.get "control-demo" "target"` (D4=A)
+  and echoed it back up — `gateway monitor` showed `log control-demo: target=21.5` and
+  `metric target=21.5`. The float survived the whole chain (CLI infer → JSON command wire
+  → NVS native serialization → cross-process RPC → telemetry up → monitor).
+- **Cross-process NVS read-after-write works (the flagged risk).** The `set` is written by
+  the supervisor's *main* process during poll; the `ControlServiceProvider` runs in the
+  *spawned* process and reads NVS live (`:: load-config config-bucket`) per `get`. It saw
+  the same-wake write — **no fallback to a main-process provider was needed.**
+- **Live update confirmed.** `device set control-demo target 99` → next wake's
+  `control-demo` reported `metric target=99` (also confirms an int value flows). The
+  per-get live NVS read picks up between-wake changes.
+- The `tftp#5` fix (now verified) made the 38 KB `control-demo.bin` fetch clean on first
+  try — no block-1 timeout, no retries, no TID-race.
+
+D5 (`device get` observed-config echo in the report) remains the deliberate fast-follow,
+out of M2.2 scope.
+
 ## Risks & open questions
 
 - **PrintService displacement (M2.0)** — unproven that a non-system container can
