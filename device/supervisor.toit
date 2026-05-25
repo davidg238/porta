@@ -67,8 +67,7 @@ main:
   sleep OBSERVE
 
   // Ship telemetry produced this wake (after payloads ran), if forwarding is on.
-  // This opens a second TFTP connection every wake the flag is on (not only poll
-  // wakes); keep poll-interval >= 30s to avoid the tftp TID-race (davidg238/tftp#5).
+  // This opens a second TFTP connection every wake the flag is on (not only poll wakes).
   if (bucket.get CONSOLE-KEY --if-absent=: false): flush-telemetry_ id
 
   print "supervisor: deep-sleeping for $(poll-interval-s)s"

@@ -246,12 +246,14 @@ M2.1 **hardware-verified on `fwkb`**. Built the supervisor into a no-jaguar enve
 The **explicit `TelemetryServiceClient.log` path** (the M2.0 fallback) is the one used and
 is now hardware-proven; the print-interception spike was not needed.
 
-**Caveat (transport, not M2):** the `tftp#5` TID-race (davidg238/tftp#5) bit the initial
-38 KB `chatty.bin` payload fetch repeatedly (once as a hard hang needing a power-cycle).
-It cleared on retry; once `chatty` was installed it persisted in inventory (no re-fetch),
-and the small per-wake transfers (commands / report / `data?id=` flush) carried telemetry
-fine. The principled fix remains davidg238/tftp#5 (fresh UDP socket per transfer / drain
-stale datagrams between exchanges).
+**Caveat (transport, not M2) — RESOLVED 2026-05-24:** the `tftp#5` TID-race (davidg238/tftp#5)
+originally bit the initial 38 KB `chatty.bin` payload fetch repeatedly (once a hard hang needing a
+power-cycle), forcing a `>= 30s` poll-interval workaround. The fix (fresh UDP socket per transfer /
+drain stale datagrams between exchanges) is now **hardware-verified on `fwkd`**: a supervisor envelope
+rebuilt against the fixed lib fetched the 38 KB multiblock `chatty.bin` cleanly on first try — no
+block-1 timeout, no retries, no race — and the telemetry up-path re-verified on a fresh db. The
+poll-interval floor is lifted (sub-30s dev loops are fine again). tftpClaude is committing the fix and
+bumping the tftp version.
 
 ## Milestones (within M2)
 
