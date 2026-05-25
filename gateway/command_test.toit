@@ -162,3 +162,19 @@ main:
      "issued_by": "gateway-reconcile", "delivered_at": null},  // in-flight reissue (latest)
   ]
   expect (reconcile-config throttle-log {"t": {"mode": "eco"}}).is-empty
+
+  // --- reconcile-count: how many gateway-reconcile sets targeted (app, key) ---
+  count-log := [
+    {"verb": VERB-SET, "args": {"app": "t", "key": "mode", "value": "heat"},
+     "issued_by": "cli", "delivered_at": 1},                 // cli, not counted
+    {"verb": VERB-SET, "args": {"app": "t", "key": "mode", "value": "heat"},
+     "issued_by": "gateway-reconcile", "delivered_at": 2},   // counted
+    {"verb": VERB-SET, "args": {"app": "t", "key": "mode", "value": "heat"},
+     "issued_by": "gateway-reconcile", "delivered_at": 3},   // counted
+    {"verb": VERB-SET, "args": {"app": "t", "key": "other", "value": 1},
+     "issued_by": "gateway-reconcile", "delivered_at": 4},   // different key
+  ]
+  expect-equals 2 (reconcile-count count-log "t" "mode")
+  expect-equals 1 (reconcile-count count-log "t" "other")
+  expect-equals 0 (reconcile-count count-log "t" "absent")
+  expect-equals 0 (reconcile-count [] "t" "mode")

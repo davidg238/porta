@@ -195,6 +195,21 @@ reconcile-config command-log/List observed/Map -> List:
   return reissues
 
 /**
+Counts the `gateway-reconcile` `set` commands targeting ($app, $key) in the
+  $command-log — the self-heal attempt count. Because re-issue is self-throttled
+  (one per delivered-but-still-failed report), a count >= 2 for a still-divergent key
+  means the node delivered and failed to apply twice: a real apply crash-loop, not
+  reconcile noise. Used by `device get` to surface a warning.
+*/
+reconcile-count command-log/List app/string key/string -> int:
+  count := 0
+  command-log.do: | e/Map |
+    if e["verb"] == VERB-SET and e["issued_by"] == "gateway-reconcile":
+      args := e["args"]
+      if args["app"] == app and args["key"] == key: count++
+  return count
+
+/**
 Classifies config $key across the $desired and $observed maps for `device get`:
   "(drift)" when both are present and unequal, "(pending)" when desired is present
   but observed is absent (the node has not yet converged), else "" (equal, or the
