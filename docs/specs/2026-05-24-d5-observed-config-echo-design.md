@@ -1,8 +1,14 @@
 # D5 — Observed-Config Echo Design
 
 **Date:** 2026-05-24
-**Status:** Implemented — host-verified 2026-05-24. Hardware echo confirmation
-pending a poll-wake on the device (observed config refreshes on the next report).
+**Status:** Implemented — HARDWARE-VERIFIED on fwkd (30aea41a6208) 2026-05-24.
+`device get` showed all three states across poll-wakes: converged (no marker),
+`(drift)` after a value change, `(pending)` for a not-yet-observed key; float
+`21.5`/`22.5` survived the full chain with no false drift. The hardware run also
+surfaced a pre-existing M2.2 write-path bug (NVS/tison maps are fixed-size, so
+`set-config` adding a 2nd key to a stored app threw `COLLECTION_CANNOT_CHANGE_SIZE`);
+fixed in `device/config_store.toit` (`load-config` now returns a growable copy) —
+see the config_store fix commit.
 **Context:** Fast-follow to M2.2 down-path (config/setpoints). M2.2 shipped
 `device set <app> k=v` → command queue → per-app NVS config blob → app reads its
 own config via `ControlService`. `device get` was deliberately *desired-only*
