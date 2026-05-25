@@ -1,0 +1,26 @@
+# systemd unit that supervises the porta gateway Docker container on gw85224-01.
+# Coexists with jast-gw / OTBR / compile-svc — does NOT touch them.
+# Install: see deploy/README.md. Assumes the image `porta-gw:latest` is built
+# and the db volume lives at /var/lib/porta.
+[Unit]
+Description=porta Toit gateway (command-queue control plane, :6969)
+Documentation=https://github.com/davidg238/porta/blob/master/deploy/README.md
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=simple
+# --rm so a restart never collides with a stale container of the same name.
+# --network=host: TFTP hands out ephemeral UDP ports, so the gateway must own
+# the host network namespace; :6969 then binds the host directly.
+ExecStartPre=-/usr/bin/docker rm -f porta-gw
+ExecStart=/usr/bin/docker run --rm --name porta-gw \
+    --network=host \
+    -v /var/lib/porta:/data \
+    porta-gw:latest
+ExecStop=/usr/bin/docker stop porta-gw
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

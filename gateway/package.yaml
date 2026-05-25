@@ -12,4 +12,5 @@ dependencies:
     url: github.com/toitlang/pkg-host
     version: ^1.16.0
   tftp:
-    path: /home/david/workspaceToit/tftp
+    url: github.com/davidg238/tftp
+    version: ^2.4.1

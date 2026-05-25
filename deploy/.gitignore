@@ -1,0 +1,2 @@
+# Build artifacts staged by build-kit.sh (~56 MB: binary + SDK lib/ + snapshot).
+kit/
