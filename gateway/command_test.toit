@@ -126,6 +126,9 @@ main:
   pending := reconcile-config [set-entry.call "t" "mode" "heat" 100] {"t": {:}}
   expect-equals 1 pending.size
 
+  // app entirely absent from observed → also re-issues (obs-app defaults to {:}).
+  expect-equals 1 (reconcile-config [set-entry.call "t" "mode" "heat" 100] {:}).size
+
   // undelivered + drift → SKIP (in-flight guard).
   inflight := reconcile-config [set-entry.call "t" "mode" "heat" null] {"t": {"mode": "eco"}}
   expect (inflight.is-empty)

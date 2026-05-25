@@ -160,7 +160,7 @@ project-config commands/List -> Map:
 
 /**
 Diffs desired config (projected from the $command-log) against $observed config and
-  returns the $Command s to re-issue to self-heal divergence. For each divergent
+  returns the $Command objects to re-issue to self-heal divergence. For each divergent
   (app, key) it returns that key's *latest `set` log entry replayed verbatim* — the
   original command rebuilt via `Command verb args` from the stored row, not from
   extracted scalars, so the re-issued args (and scalar types) are identical.
@@ -191,7 +191,7 @@ reconcile-config command-log/List observed/Map -> List:
         desired-val := entry["args"]["value"]
         converged := (obs-app.contains key) and obs-app[key] == desired-val
         if not converged:
-          reissues.add (Command entry["verb"] entry["args"])
+          reissues.add (Command VERB-SET entry["args"])
   return reissues
 
 /**
