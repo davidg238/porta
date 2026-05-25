@@ -298,7 +298,8 @@ cmd-device-get parsed/cli.Parsed -> none:
   id := resolve-node-id_ store parsed["device"]
   app := parsed["app"]
   key := parsed.was-provided "key" ? parsed["key"] : null
-  commands := (store.command-log id).map: | e/Map | Command e["verb"] e["args"]
+  log := store.command-log id
+  commands := log.map: | e/Map | Command e["verb"] e["args"]
   desired := (project-config commands).get app --if-absent=: {:}
   node := store.node id
   observed-all := (node == null or node["observed_state"] == null)
@@ -310,12 +311,27 @@ cmd-device-get parsed/cli.Parsed -> none:
     o-cell := observed.contains key ? "$observed[key]" : "--"
     marker := config-marker desired observed key
     print "$id: $app.$key desired=$d-cell observed=$o-cell $marker".trim
+    print-reconcile-warnings_ id app desired observed log [key]
     store.close
     return
   lines := render-config-table app desired observed
   print "$id: $lines[0]"
   lines[1..].do: print it
+  keys := config-keys desired observed
+  print-reconcile-warnings_ id app desired observed log keys
   store.close
+
+/**
+Prints a self-heal warning for each of $keys that is still divergent (a non-empty
+  $config-marker between $desired and $observed) and has been re-issued by
+  gateway-reconcile >= 2 times in $log — a node that keeps failing to apply.
+*/
+print-reconcile-warnings_ id/string app/string desired/Map observed/Map log/List keys/List -> none:
+  keys.do: | k/string |
+    if (config-marker desired observed k) != "":
+      n := reconcile-count log app k
+      if n >= 2:
+        print "$id: ⚠ $app.$k: self-healed $(n)× — node may be failing to apply"
 
 cmd-container-install parsed/cli.Parsed -> none:
   store := open-store_ parsed

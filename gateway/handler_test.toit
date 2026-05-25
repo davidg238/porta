@@ -1,7 +1,7 @@
 import expect show *
 import .handler show StoreBackedHandler parse-resource_
 import .store show Store decode-json_
-import .command show Command
+import .command show Command VERB-SET reconcile-count
 import tftp show Peer RRQ STORAGE-FILE-NOT-FOUND STORAGE-ACCESS-DENIED
 
 /** A minimal $Peer for transfer-complete tests (the handler never dereferences it). */
@@ -126,3 +126,32 @@ main:
   h3.on-transfer-complete --op=RRQ --resource="payload?id=aabbccddeeff&crc=1" --peer=peer --bytes=4 --ok=true
   expect-equals c3 (store3.next-undelivered "aabbccddeeff")["id"]
   store3.close
+
+  // --- reconcile-on-report: a delivered-but-divergent config re-issues exactly once ---
+  store4 := Store.open ":memory:"
+  h4 := StoreBackedHandler store4
+  store4.ensure-node "aabbccddeeff" --now=4000
+  // A cli set lands and is delivered, but the node will report a different value.
+  cid := store4.enqueue-command "aabbccddeeff" (Command.set --app="thermostat" --key="mode" --value="heat") --issued-by="cli" --now=4000
+  store4.mark-delivered cid --now=4001
+  // Node reports observed mode=eco (the set did not take).
+  rbody := "{\"apps\":{},\"config\":{\"thermostat\":{\"mode\":\"eco\"}},\"health\":{\"wakes\":1}}".to-byte-array
+  rw := h4.writer-for "report?id=aabbccddeeff"
+  rw.write rbody
+  rw.close
+  // Reconcile enqueued exactly one gateway-reconcile set for the divergent key.
+  undel := store4.undelivered-commands "aabbccddeeff"
+  expect-equals 1 undel.size
+  expect-equals VERB-SET undel[0]["verb"]
+  expect-equals "thermostat" undel[0]["args"]["app"]
+  expect-equals "heat" undel[0]["args"]["value"]
+  reissue-log := store4.command-log "aabbccddeeff"
+  expect-equals 1 (reconcile-count reissue-log "thermostat" "mode")
+
+  // Self-throttle: a second report BEFORE the reissue delivers must NOT double-issue.
+  rw2 := h4.writer-for "report?id=aabbccddeeff"
+  rw2.write rbody
+  rw2.close
+  expect-equals 1 (store4.undelivered-commands "aabbccddeeff").size
+  expect-equals 1 (reconcile-count (store4.command-log "aabbccddeeff") "thermostat" "mode")
+  store4.close

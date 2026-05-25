@@ -108,3 +108,79 @@ main:
   // observed-only key still appears (abnormal but rendered).
   oo := render-config-table "a" {:} {"k": 9}
   expect ((oo.join "\n").contains "k")
+
+  // --- reconcile-config: diff desired (set log) vs observed, re-issue divergent delivered sets ---
+  // Build a command-log entry the way Store.command-log returns it.
+  set-entry := : | app/string key/string value/any delivered/any |
+    {"verb": VERB-SET, "args": {"app": app, "key": key, "value": value},
+     "issued_by": "cli", "delivered_at": delivered}
+
+  // delivered + drift (observed present but unequal) → re-issue, replayed verbatim.
+  drift-log := [set-entry.call "t" "mode" "heat" 100]
+  drift := reconcile-config drift-log {"t": {"mode": "eco"}}
+  expect-equals 1 drift.size
+  expect-equals VERB-SET drift[0].verb
+  expect-structural-equals {"app": "t", "key": "mode", "value": "heat"} drift[0].args
+
+  // delivered + pending (observed absent) → re-issue.
+  pending := reconcile-config [set-entry.call "t" "mode" "heat" 100] {"t": {:}}
+  expect-equals 1 pending.size
+
+  // app entirely absent from observed → also re-issues (obs-app defaults to {:}).
+  expect-equals 1 (reconcile-config [set-entry.call "t" "mode" "heat" 100] {:}).size
+
+  // undelivered + drift → SKIP (in-flight guard).
+  inflight := reconcile-config [set-entry.call "t" "mode" "heat" null] {"t": {"mode": "eco"}}
+  expect (inflight.is-empty)
+
+  // converged (delivered + equal) → skip.
+  expect (reconcile-config [set-entry.call "t" "mode" "heat" 100] {"t": {"mode": "heat"}}).is-empty
+
+  // observed-only key (no desired set) → skip (desired never shrinks).
+  expect (reconcile-config [] {"t": {"ghost": 1}}).is-empty
+
+  // multi-app/key: only divergent delivered keys re-issue.
+  multi-log := [
+    set-entry.call "t" "mode" "heat" 100,    // drift → reissue
+    set-entry.call "t" "sp" 22 100,          // converged → skip
+    set-entry.call "s" "thr" 5 100,          // pending → reissue
+  ]
+  multi := reconcile-config multi-log {"t": {"mode": "eco", "sp": 22}, "s": {:}}
+  expect-equals 2 multi.size
+
+  // scalar type fidelity: a float that round-trips equal does NOT re-issue (no false drift),
+  // and a re-issued command's args equal the original row's args (verbatim replay).
+  expect (reconcile-config [set-entry.call "t" "f" 21.5 100] {"t": {"f": 21.5}}).is-empty
+  fid := reconcile-config [set-entry.call "t" "f" 21.5 100] {"t": {"f": 22.5}}
+  expect (fid[0].args["value"] is float)
+  expect-equals 21.5 fid[0].args["value"]
+
+  // self-throttle: latest set for the key is an undelivered gateway-reconcile set → skip.
+  throttle-log := [
+    set-entry.call "t" "mode" "heat" 100,    // delivered cli set
+    {"verb": VERB-SET, "args": {"app": "t", "key": "mode", "value": "heat"},
+     "issued_by": "gateway-reconcile", "delivered_at": null},  // in-flight reissue (latest)
+  ]
+  expect (reconcile-config throttle-log {"t": {"mode": "eco"}}).is-empty
+
+  // --- reconcile-count: how many gateway-reconcile sets targeted (app, key) ---
+  count-log := [
+    {"verb": VERB-SET, "args": {"app": "t", "key": "mode", "value": "heat"},
+     "issued_by": "cli", "delivered_at": 1},                 // cli, not counted
+    {"verb": VERB-SET, "args": {"app": "t", "key": "mode", "value": "heat"},
+     "issued_by": "gateway-reconcile", "delivered_at": 2},   // counted
+    {"verb": VERB-SET, "args": {"app": "t", "key": "mode", "value": "heat"},
+     "issued_by": "gateway-reconcile", "delivered_at": 3},   // counted
+    {"verb": VERB-SET, "args": {"app": "t", "key": "other", "value": 1},
+     "issued_by": "gateway-reconcile", "delivered_at": 4},   // different key
+  ]
+  expect-equals 2 (reconcile-count count-log "t" "mode")
+  expect-equals 1 (reconcile-count count-log "t" "other")
+  expect-equals 0 (reconcile-count count-log "t" "absent")
+  expect-equals 0 (reconcile-count [] "t" "mode")
+
+  // --- config-keys: desired keys first, then observed-only keys ---
+  expect-equals ["a", "b", "c"] (config-keys {"a": 1, "b": 2} {"b": 9, "c": 3})
+  expect-equals ["a"] (config-keys {"a": 1} {:})
+  expect-equals ["x"] (config-keys {:} {"x": 1})
+  expect-structural-equals [] (config-keys {:} {:})

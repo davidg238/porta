@@ -159,6 +159,57 @@ project-config commands/List -> Map:
   return config
 
 /**
+Diffs desired config (projected from the $command-log) against $observed config and
+  returns the $Command objects to re-issue to self-heal divergence. For each divergent
+  (app, key) it returns that key's *latest `set` log entry replayed verbatim* — the
+  original command rebuilt via `Command verb args` from the stored row, not from
+  extracted scalars, so the re-issued args (and scalar types) are identical.
+
+A key is re-issued only when its latest `set` is already delivered
+  (`delivered_at` != null) AND the observed value diverges (absent, or
+  present-but-unequal). An undelivered latest `set` legitimately lags (in-flight) and
+  is skipped — and since a re-issued set is itself undelivered next report, re-issue is
+  self-throttling. Observed keys with no desired `set` are left alone (desired never
+  shrinks). This is the generic diff seam: goal/apps can later feed a different
+  projection of the same `command-log` shape.
+
+$command-log is `Store.command-log` output: maps carrying `verb`, decoded `args`,
+  `issued_by`, `delivered_at`. $observed is the report echo: app -> {key: value}.
+*/
+reconcile-config command-log/List observed/Map -> List:
+  // Latest set entry per (app, key), in log order — last write wins (like project-config).
+  latest := {:}  // app -> { key -> log-entry Map }
+  command-log.do: | e/Map |
+    if e["verb"] == VERB-SET:
+      args := e["args"]
+      (latest.get args["app"] --init=: {:})[args["key"]] = e
+  reissues := []
+  latest.do: | app/string keys/Map |
+    obs-app := observed.get app --if-absent=: {:}
+    keys.do: | key/string entry/Map |
+      if entry["delivered_at"] != null:
+        desired-val := entry["args"]["value"]
+        converged := (obs-app.contains key) and obs-app[key] == desired-val
+        if not converged:
+          reissues.add (Command VERB-SET entry["args"])
+  return reissues
+
+/**
+Counts the `gateway-reconcile` `set` commands targeting ($app, $key) in the
+  $command-log — the self-heal attempt count. Because re-issue is self-throttled
+  (one per delivered-but-still-failed report), a count >= 2 for a still-divergent key
+  means the node delivered and failed to apply twice: a real apply crash-loop, not
+  reconcile noise. Used by `device get` to surface a warning.
+*/
+reconcile-count command-log/List app/string key/string -> int:
+  count := 0
+  command-log.do: | e/Map |
+    if e["verb"] == VERB-SET and e["issued_by"] == "gateway-reconcile":
+      args := e["args"]
+      if args["app"] == app and args["key"] == key: count++
+  return count
+
+/**
 Classifies config $key across the $desired and $observed maps for `device get`:
   "(drift)" when both are present and unequal, "(pending)" when desired is present
   but observed is absent (the node has not yet converged), else "" (equal, or the
@@ -172,6 +223,16 @@ config-marker desired/Map observed/Map key/string -> string:
   return ""
 
 /**
+Returns the union of config keys for a desired-vs-observed view: every key in
+  $desired (in iteration order), then each key in $observed that is not in $desired.
+*/
+config-keys desired/Map observed/Map -> List:
+  keys := []
+  desired.do --keys: keys.add it
+  observed.do --keys: | k | if not desired.contains k: keys.add k
+  return keys
+
+/**
 Renders the desired-vs-observed config table for app $app as a list of printable
   lines (caller adds any node-id prefix). Covers the union of $desired and
   $observed keys (desired order first, then observed-only keys); an absent value
@@ -181,9 +242,7 @@ Renders the desired-vs-observed config table for app $app as a list of printable
 render-config-table app/string desired/Map observed/Map -> List:
   if desired.is-empty and observed.is-empty:
     return ["$app has no config"]
-  keys := []
-  desired.do --keys: keys.add it
-  observed.do --keys: | k | if not desired.contains k: keys.add k
+  keys := config-keys desired observed
   lines := ["config for $app", "  $(pad-col_ "KEY" 12)$(pad-col_ "DESIRED" 12)OBSERVED"]
   keys.do: | k/string |
     d-cell := desired.contains k ? "$desired[k]" : "--"
