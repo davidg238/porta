@@ -6,6 +6,7 @@ VERB-RUN ::= "run"
 VERB-STOP ::= "stop"
 VERB-SET-POLL-INTERVAL ::= "set-poll-interval"
 VERB-SET-CONSOLE ::= "set-console"
+VERB-SET ::= "set"
 
 /**
 An operator command targeted at a node.
@@ -52,6 +53,10 @@ class Command:
   static set-console --on/bool -> Command:
     return Command VERB-SET-CONSOLE {"on": on}
 
+  /** Builds a command setting app $app's config $key to scalar $value (int/float/bool/string). */
+  static set --app/string --key/string --value -> Command:
+    return Command VERB-SET {"app": app, "key": key, "value": value}
+
   /** Serializes this command to its JSON wire form. */
   encode -> ByteArray:
     m := {"verb": verb}
@@ -72,6 +77,9 @@ class Command:
   runlevel -> int?: return args.get "runlevel"
   arguments -> List?: return args.get "arguments"
   interval-s -> int?: return args.get "interval"
+  app -> string?: return args.get "app"
+  config-key -> string?: return args.get "key"
+  config-value -> any: return args.get "value"
 
 /**
 Builds the {type:value} trigger map (device/triggers.toit form) from repeatable
@@ -81,6 +89,20 @@ Builds the {type:value} trigger map (device/triggers.toit form) from repeatable
 
 Throws on an unknown trigger type or a non-integer value.
 */
+/**
+Types a CLI value string: "true"/"false" → bool, an integer → int, a decimal →
+  float, anything else → the string unchanged. Mirrors the scalar surface of
+  TelemetryService.report so the down-path and up-path agree on value types.
+*/
+infer-scalar value-str/string -> any:
+  if value-str == "true": return true
+  if value-str == "false": return false
+  as-int := int.parse value-str --if-error=: null
+  if as-int != null: return as-int
+  as-float := float.parse value-str --if-error=: null
+  if as-float != null: return as-float
+  return value-str
+
 triggers-from-flags flags/List --interval-s/int? -> Map:
   m := {:}
   if interval-s != null: m["interval"] = interval-s
@@ -121,3 +143,15 @@ project commands/List -> Map:
     else if c.verb == VERB-STOP:
       goal.remove c.name
   return goal
+
+/**
+Folds an ordered list of $commands into the desired config map: app name →
+  {key: value}. Later sets for the same app/key win (declarative & absolute, like
+  $project). Non-set verbs are ignored — config is a plane separate from the goal.
+*/
+project-config commands/List -> Map:
+  config := {:}
+  commands.do: | c/Command |
+    if c.verb == VERB-SET:
+      (config.get c.app --init=: {:})[c.config-key] = c.config-value
+  return config
