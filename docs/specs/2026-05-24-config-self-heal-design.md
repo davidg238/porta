@@ -52,25 +52,30 @@ A new **pure, host-testable** function in `gateway/command.toit`, mirroring
 ```toit
 /**
 Diffs desired config (from the $command-log) against $observed config and returns
-  the set of (app, key, value) re-issues needed to self-heal divergence. A key is
-  re-issued only when its latest `set` is already delivered (delivered_at != null)
-  AND the observed value diverges (absent, or present-but-unequal). An undelivered
-  latest `set` legitimately lags (in-flight) and is skipped. Observed keys with no
-  desired `set` are left alone (desired never shrinks). The generic diff seam:
-  goal/apps can later feed a different projection of the same shape.
+  the `Command`s to re-issue to self-heal divergence. For each divergent (app, key)
+  it returns that key's *latest `set` log entry replayed verbatim* — the original
+  command rebuilt via `Command verb args` from the stored row, not reconstructed
+  from extracted scalars. A key is re-issued only when its latest `set` is already
+  delivered (delivered_at != null) AND the observed value diverges (absent, or
+  present-but-unequal). An undelivered latest `set` legitimately lags (in-flight)
+  and is skipped. Observed keys with no desired `set` are left alone (desired never
+  shrinks). The generic diff seam: goal/apps can later feed a different projection
+  of the same shape.
 */
-reconcile-config command-log/List observed/Map -> List:
+reconcile-config command-log/List observed/Map -> List:  // -> List<Command>
 ```
 
 - `command-log` is `Store.command-log` output: a list of maps each carrying
-  `verb`, `args` (decoded), and crucially **`delivered_at`** (already returned —
-  `store.toit:176`). This is the enriched projection D5's `project-config`
-  lacked: per `(app, key)` we need not just the latest value but whether the
-  latest `set` is delivered.
+  `verb`, decoded `args`, **`delivered_at`** and `issued_by` — all durable
+  `command_queue` columns, already selected (`store.toit:173-177`). This is the
+  enriched input D5's `project-config` discarded: per `(app, key)` we need the
+  latest `set`'s value *and* whether it is delivered.
 - `observed` is the report echo: `app → {key: value}` (D5's
   `observed_state.config`).
-- Returns a list of re-issue specs, e.g. maps `{"app":…, "key":…, "value":…}`,
-  for the caller to enqueue. Empty when everything is converged or in-flight.
+- Returns the `Command`s to re-issue — the **replayed latest `set` rows**, built
+  with the primary constructor `Command entry["verb"] entry["args"]`
+  (`command.toit:24`). Empty when everything is converged or in-flight. The caller
+  enqueues each verbatim; no value re-extraction, no second construction path.
 
 **Per `(app, key)` decision** (iterate desired keys only):
 
@@ -78,10 +83,14 @@ reconcile-config command-log/List observed/Map -> List:
 |---|---|---|
 | no (`delivered_at == null`) | any | **skip** (in-flight — will deliver next wake) |
 | yes | equal | **skip** (converged) |
-| yes | unequal or observed-absent | **re-issue** `Command.set app key <desired-value>` |
+| yes | unequal or observed-absent | **re-issue** (replay the latest `set` row verbatim) |
 
 "Latest" = last `set` for that `(app, key)` in command-log order (same
 last-write-wins / declarative-absolute rule as `project-config`).
+
+Replaying the stored row rather than rebuilding from `app/key/value` means the
+re-issued `args` map is *identical* to the original — scalar type fidelity
+(int/float/bool/string) is preserved by construction, not re-inference.
 
 ## In-flight guard (the crux)
 
@@ -133,10 +142,8 @@ close_ -> none:
   if obj.contains "config":
     catch --trace:
       reissues := reconcile-config (store_.command-log id_) config
-      reissues.do: | r/Map |
-        store_.enqueue-command id_
-            (Command.set --app=r["app"] --key=r["key"] --value=r["value"])
-            --issued-by="gateway-reconcile" --now=now_
+      reissues.do: | cmd/Command |
+        store_.enqueue-command id_ cmd --issued-by="gateway-reconcile" --now=now_
 ```
 
 - `config` here is the observed blob just parsed from the report — the same map
@@ -144,10 +151,12 @@ close_ -> none:
 - The `obj.contains "config"` gate is the pre-echo distinction the
   `observed_state` fold deliberately collapses (it defaults absent→`{:}`): a node
   that omits `config` has *unknown* observed config, so reconcile must not run.
-- `enqueue-command` / `Command.set` / `command-log` all already exist; this is
-  pure wiring on top. **No schema change.**
+- `enqueue-command` / `command-log` / the `Command` constructor all already
+  exist; this is pure wiring on top. **No schema change.**
 - Re-issue is idempotent (sets are absolute / last-write-wins), so even a stray
-  duplicate is harmless.
+  duplicate is harmless. The full command history persists in `command_queue`
+  (never deleted on delivery — the M1 audit-log decision), so each re-issue is a
+  durable, replayable row, not transient state.
 
 ## Warning surface (`gateway/gateway.toit` `cmd-device-get`)
 
@@ -165,8 +174,14 @@ re-issued by reconcile **≥ 2×**:
   ⚠ thermostat.mode: self-healed 3× — node may be failing to apply
   ```
 
-This reads the existing `issued_by` column; **no schema change**. Per
-self-throttle, the count is a faithful crash-loop signal, not reconcile chatter.
+`issued_by` and `delivered_at` are durable `command_queue` columns, so this is a
+pure read of the existing audit log — **no schema change**, no derived
+"reconciled?" flag to keep in sync. One wiring note for the implementer:
+`cmd-device-get` currently maps the log down to `Command` objects
+(`(store.command-log id).map: Command e["verb"] e["args"]`), which drops the
+metadata *for that local only*; the warning path keeps the **raw** log rows
+(which already carry `issued_by`) for `reconcile-count`. Per self-throttle, the
+count is a faithful crash-loop signal, not reconcile chatter.
 
 ## Edge cases
 
@@ -217,7 +232,9 @@ existing `project-config` / `config-marker` tests — each test a `main` with
 - observed-only key (no desired set) → skip.
 - multi-app / multi-key — only the divergent delivered keys re-issue.
 - scalar type fidelity — int/float/bool/string equal-after-round-trip do **not**
-  re-issue (no false drift; same `==`-on-decoded-JSON basis as `config-marker`).
+  re-issue (no false drift; same `==`-on-decoded-JSON basis as `config-marker`),
+  and a re-issued `Command`'s `args` equals the original row's `args` (verbatim
+  replay — the returned command is the latest `set` rebuilt, not reconstructed).
 - self-throttle: a `gateway-reconcile` set with `delivered_at == null` as the
   latest set → skip (proves one-re-issue-per-failed-report).
 
