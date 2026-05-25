@@ -1,7 +1,8 @@
 # D5 — Observed-Config Echo Design
 
 **Date:** 2026-05-24
-**Status:** Approved
+**Status:** Implemented — host-verified 2026-05-24. Hardware echo confirmation
+pending a poll-wake on the device (observed config refreshes on the next report).
 **Context:** Fast-follow to M2.2 down-path (config/setpoints). M2.2 shipped
 `device set <app> k=v` → command queue → per-app NVS config blob → app reads its
 own config via `ControlService`. `device get` was deliberately *desired-only*

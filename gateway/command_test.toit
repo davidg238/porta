@@ -82,3 +82,29 @@ main:
   expect (infer-scalar "-42") is int
   expect-equals "nan" (infer-scalar "nan")     // not a decimal → stays a string
   expect-equals "inf" (infer-scalar "inf")
+
+  // config-marker classifies a key across desired/observed.
+  cd := {"setpoint": 21.5, "mode": "eco", "hyst": 0.5}
+  co := {"setpoint": 21.5, "mode": "heat"}
+  expect-equals "" (config-marker cd co "setpoint")        // present & equal
+  expect-equals "(drift)" (config-marker cd co "mode")     // present & unequal
+  expect-equals "(pending)" (config-marker cd co "hyst")   // desired only
+  expect-equals "" (config-marker cd co "extra")           // neither present
+  expect-equals "" (config-marker {:} {"x": 1} "x")        // observed only → no marker
+
+  // render-config-table emits a header + one row per union key, "--" for absent cells.
+  lines := render-config-table "thermostat" cd co
+  joined := lines.join "\n"
+  expect (joined.contains "config for thermostat")
+  expect (joined.contains "setpoint")
+  expect (joined.contains "21.5")
+  expect (joined.contains "(drift)")     // mode row
+  expect (joined.contains "(pending)")   // hyst row
+  expect (joined.contains "--")          // hyst observed cell
+  // Empty on both sides → a single "no config" line.
+  empty-lines := render-config-table "x" {:} {:}
+  expect-equals 1 empty-lines.size
+  expect (empty-lines[0].contains "no config")
+  // observed-only key still appears (abnormal but rendered).
+  oo := render-config-table "a" {:} {"k": 9}
+  expect ((oo.join "\n").contains "k")

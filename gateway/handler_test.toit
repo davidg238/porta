@@ -66,7 +66,7 @@ main:
   h2 := StoreBackedHandler store2
   store2.ensure-node "aabbccddeeff" --now=2000
   body := #[]
-  body = "{\"apps\":{\"blink\":{\"crc\":999,\"runlevel\":3}},\"health\":{\"wakes\":4}}".to-byte-array
+  body = "{\"apps\":{\"blink\":{\"crc\":999,\"runlevel\":3}},\"config\":{\"blink\":{\"target\":21.5}},\"health\":{\"wakes\":4}}".to-byte-array
   w := h2.writer-for "report?id=aabbccddeeff"
   w.write body
   w.close
@@ -74,11 +74,24 @@ main:
   expect-equals 1 reps.size
   observed := decode-json_ reps[0]["observed_state"]
   expect-equals 999 observed["apps"]["blink"]["crc"]
+  // Observed config rides in the same observed_state blob.
+  expect-equals 21.5 observed["config"]["blink"]["target"]
   health := decode-json_ reps[0]["health"]
   expect-equals 4 health["wakes"]
   // The node row's cached observed_state was refreshed too.
   node := store2.node "aabbccddeeff"
   expect ((decode-json_ node["observed_state"])["apps"].contains "blink")
+  // A report body without "config" stores an empty config (old/pre-D5 nodes).
+  noconf := "{\"apps\":{},\"health\":{\"wakes\":5}}".to-byte-array
+  w2 := h2.writer-for "report?id=aabbccddeeff"
+  w2.write noconf
+  w2.close
+  all-reps := store2.reports "aabbccddeeff"
+  expect-equals 2 all-reps.size
+  noconf-rows := all-reps.filter: (decode-json_ it["health"])["wakes"] == 5
+  expect-equals 1 noconf-rows.size
+  latest := decode-json_ noconf-rows[0]["observed_state"]
+  expect-structural-equals {:} latest["config"]
   // A WRQ to anything but "report" is refused.
   expect-throw STORAGE-ACCESS-DENIED: h2.writer-for "payload?id=aabbccddeeff&crc=1"
   store2.close

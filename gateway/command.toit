@@ -157,3 +157,43 @@ project-config commands/List -> Map:
     if c.verb == VERB-SET:
       (config.get c.app --init=: {:})[c.config-key] = c.config-value
   return config
+
+/**
+Classifies config $key across the $desired and $observed maps for `device get`:
+  "(drift)" when both are present and unequal, "(pending)" when desired is present
+  but observed is absent (the node has not yet converged), else "" (equal, or the
+  key is desired-absent). Values compare with `==` on the JSON-decoded scalars.
+*/
+config-marker desired/Map observed/Map key/string -> string:
+  has-d := desired.contains key
+  has-o := observed.contains key
+  if has-d and has-o: return desired[key] == observed[key] ? "" : "(drift)"
+  if has-d: return "(pending)"
+  return ""
+
+/**
+Renders the desired-vs-observed config table for app $app as a list of printable
+  lines (caller adds any node-id prefix). Covers the union of $desired and
+  $observed keys (desired order first, then observed-only keys); an absent value
+  cell renders "--", and each row carries the $config-marker. Both maps empty →
+  a single "$app has no config" line.
+*/
+render-config-table app/string desired/Map observed/Map -> List:
+  if desired.is-empty and observed.is-empty:
+    return ["$app has no config"]
+  keys := []
+  desired.do --keys: keys.add it
+  observed.do --keys: | k | if not desired.contains k: keys.add k
+  lines := ["config for $app", "  $(pad-col_ "KEY" 12)$(pad-col_ "DESIRED" 12)OBSERVED"]
+  keys.do: | k/string |
+    d-cell := desired.contains k ? "$desired[k]" : "--"
+    o-cell := observed.contains k ? "$observed[k]" : "--"
+    marker := config-marker desired observed k
+    row := "  $(pad-col_ k 12)$(pad-col_ d-cell 12)$(pad-col_ o-cell 10)$marker"
+    lines.add (row.trim --right)
+  return lines
+
+/** Right-pads $s with spaces to at least $width columns (one trailing space min). */
+pad-col_ s/string width/int -> string:
+  pad := width - s.size
+  return pad > 0 ? "$s$(" " * pad)" : "$s "
