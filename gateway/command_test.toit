@@ -78,3 +78,7 @@ main:
   expect (infer-scalar "1.5") is float
   expect-equals 1.5 (infer-scalar "1.5")
   expect-equals "auto" (infer-scalar "auto")
+  expect-equals -42 (infer-scalar "-42")
+  expect (infer-scalar "-42") is int
+  expect-equals "nan" (infer-scalar "nan")     // not a decimal → stays a string
+  expect-equals "inf" (infer-scalar "inf")

@@ -89,20 +89,6 @@ Builds the {type:value} trigger map (device/triggers.toit form) from repeatable
 
 Throws on an unknown trigger type or a non-integer value.
 */
-/**
-Types a CLI value string: "true"/"false" → bool, an integer → int, a decimal →
-  float, anything else → the string unchanged. Mirrors the scalar surface of
-  TelemetryService.report so the down-path and up-path agree on value types.
-*/
-infer-scalar value-str/string -> any:
-  if value-str == "true": return true
-  if value-str == "false": return false
-  as-int := int.parse value-str --if-error=: null
-  if as-int != null: return as-int
-  as-float := float.parse value-str --if-error=: null
-  if as-float != null: return as-float
-  return value-str
-
 triggers-from-flags flags/List --interval-s/int? -> Map:
   m := {:}
   if interval-s != null: m["interval"] = interval-s
@@ -120,6 +106,22 @@ triggers-from-flags flags/List --interval-s/int? -> Map:
         m["$type:$value"] = value
       else: throw "unknown trigger: $type"
   return m
+
+/**
+Types a CLI value string: "true"/"false" → bool, an integer → int, a decimal →
+  float, anything else → the string unchanged. Mirrors the scalar surface of
+  TelemetryService.report so the down-path and up-path agree on value types.
+
+"nan" and "inf" are not decimals and pass through as strings.
+*/
+infer-scalar value-str/string -> any:
+  if value-str == "true": return true
+  if value-str == "false": return false
+  as-int := int.parse value-str --if-error=: null
+  if as-int != null: return as-int
+  as-float := float.parse value-str --if-error=: null
+  if as-float != null and as-float.is-finite: return as-float
+  return value-str
 
 /**
 Folds an ordered list of $commands into the goal-app map a node would converge
