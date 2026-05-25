@@ -22,7 +22,20 @@ main:
   expect-equals 30 obj["apps"]["blink"]["triggers"]["interval"]
   expect-equals 7 obj["health"]["wakes"]
   expect-equals 1_000_000 obj["health"]["uptime_us"]
+  expect-structural-equals {:} obj["config"]
 
   // An empty inventory still produces a well-formed report.
   empty := build-report Inventory.empty --uptime-us=5 --wakes=1
   expect-structural-equals {:} (json.decode empty)["apps"]
+
+  // The report carries the applied per-app config blob verbatim.
+  with-config := build-report inv
+      --config=({"blink": {"target": 21.5, "mode": "heat"}})
+      --uptime-us=2
+      --wakes=3
+  cfg := (json.decode with-config)["config"]
+  expect-equals 21.5 cfg["blink"]["target"]
+  expect-equals "heat" cfg["blink"]["mode"]
+
+  // An omitted config defaults to an empty object (uniform body shape).
+  expect-structural-equals {:} (json.decode empty)["config"]

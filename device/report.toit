@@ -5,11 +5,12 @@ import .inventory show Inventory InstalledApp
 
 /**
 Builds the report body as a JSON object {"apps":{name:{crc,runlevel,triggers}},
-  "health":{uptime_us,wakes}}. Carries no per-app logs and is bounded by the app
-  count (M1's soft cap lives in the supervisor). $uptime-us is monotonic time;
-  $wakes is the cumulative wake count.
+  "config":{app:{key:value}}, "health":{uptime_us,wakes}}. $config is the node's
+  applied per-app config blob (see device/config_store.toit); it defaults to empty.
+  Carries no per-app logs and is bounded by the app/config count. $uptime-us is
+  monotonic time; $wakes is the cumulative wake count.
 */
-build-report inventory/Inventory --uptime-us/int --wakes/int -> ByteArray:
+build-report inventory/Inventory --config/Map={:} --uptime-us/int --wakes/int -> ByteArray:
   apps := {:}
   inventory.apps.do: | name/string a/InstalledApp |
     apps[name] = {
@@ -19,5 +20,6 @@ build-report inventory/Inventory --uptime-us/int --wakes/int -> ByteArray:
     }
   return json.encode {
     "apps": apps,
+    "config": config,
     "health": {"uptime_us": uptime-us, "wakes": wakes},
   }

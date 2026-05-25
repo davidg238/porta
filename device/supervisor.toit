@@ -140,7 +140,7 @@ poll-and-reconcile bucket/storage.Bucket inventory/Inventory id/string poll-inte
     save-inventory bucket inventory
 
     // Report observed state before sleeping (audit + convergence).
-    body := build-report inventory --uptime-us=clock-us --wakes=store.wakes
+    body := build-report inventory --config=(load-config bucket) --uptime-us=clock-us --wakes=store.wakes
     client.put "report?id=$id" body
     print "supervisor: reported $(inventory.apps.size) app(s)"
     return poll-interval-s
