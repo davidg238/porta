@@ -16,6 +16,8 @@ import .schedule_store show ScheduleStore clock-us
 import .telemetry_buffer show TelemetryBuffer
 import .telemetry_service show TelemetryServiceClient TelemetryServiceProvider
 import .telemetry_codec show build-data-body
+import .config_store show load-config save-config set-config
+import .control_service show ControlServiceProvider
 
 /** Gateway LAN address. Adjust to the host running `gateway serve`. */
 GATEWAY-HOST ::= "192.168.0.175"
@@ -112,6 +114,11 @@ poll-and-reconcile bucket/storage.Bucket inventory/Inventory id/string poll-inte
         on := command.args.get "on" --if-absent=: false
         bucket[CONSOLE-KEY] = on
         print "supervisor: console-forward now $on"
+      else if command.is-set:
+        config := load-config bucket
+        set-config config command.app command.config-key command.config-value
+        save-config bucket config
+        print "supervisor: set $(command.app).$(command.config-key) = $(command.config-value)"
       else:
         apply-to-goal goal-map command
         print "supervisor: applied $command.verb $(command.name)"
@@ -161,7 +168,12 @@ spawn-remoting_ -> none:
     catch --trace:
       provider := TelemetryServiceProvider (TelemetryBuffer --cap=128)
       provider.install
-      print "supervisor: telemetry provider registered"
+      // ControlService reads the NVS config blob live (its own bucket handle in
+      // this spawned process), so a `set` drained later this wake is visible.
+      config-bucket := storage.Bucket.open --flash BUCKET-NAME
+      control := ControlServiceProvider:: load-config config-bucket
+      control.install
+      print "supervisor: telemetry + control providers registered"
       while true: sleep (Duration --s=3600)  // outlive the wake window; deep-sleep ends it
 
 /**
