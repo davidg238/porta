@@ -102,8 +102,10 @@ class StoreBackedHandler extends Storage:
 
 /**
 An $io.CloseableWriter that buffers a WRQ "report" body and, on close, splits it
-  into the observed-app state and the health struct and records both via
-  $Store.insert-report. The body is one JSON object {"apps":{…}, "health":{…}}.
+  into the observed-app state (with the applied config blob) and the health struct,
+  recording both via $Store.insert-report. The body is one JSON object
+  {"apps":{…}, "config":{…}, "health":{…}}; "config" is absent on pre-D5 nodes and
+  defaults to empty.
 */
 class ReportWriter_ extends io.CloseableWriter:
   store_/Store
@@ -119,9 +121,10 @@ class ReportWriter_ extends io.CloseableWriter:
   close_ -> none:
     obj := decode-json_ buffer_.bytes.to-string
     apps := obj.get "apps" --if-absent=: {:}
+    config := obj.get "config" --if-absent=: {:}
     health := obj.get "health" --if-absent=: {:}
     store_.insert-report id_
-        --observed-state=(encode-json_ {"apps": apps})
+        --observed-state=(encode-json_ {"apps": apps, "config": config})
         --health=(encode-json_ health)
         --now=now_
 
