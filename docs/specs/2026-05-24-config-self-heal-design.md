@@ -41,8 +41,8 @@ warning in `device get`.
 - **No `unset` verb / desired never shrinks.** An observed key with no desired
   `set` (only possible after a DB reset) is left alone.
 - **No migration / back-compat shim** (pre-1.0, no deployments — see
-  `porta-no-legacy`). Pre-D5 reports carry no observed config; those keys read
-  as not-yet-converged and are guarded by the in-flight rule below.
+  `porta-no-legacy`). Every node runs current echo firmware; the design assumes
+  reports always carry observed `config` and does not defend against older nodes.
 
 ## The reconcile seam (the generic core)
 
@@ -136,21 +136,17 @@ close_ -> none:
       --observed-state=(encode-json_ {"apps": apps, "config": config})
       --health=(encode-json_ health)
       --now=now_
-  // Self-heal — only for nodes that actually echo config (D5+). A report with no
-  // "config" key is a pre-echo node: its observed config is unknown, not empty, so
-  // reconciling would re-issue forever. A failure here must not lose the report.
-  if obj.contains "config":
-    catch --trace:
-      reissues := reconcile-config (store_.command-log id_) config
-      reissues.do: | cmd/Command |
-        store_.enqueue-command id_ cmd --issued-by="gateway-reconcile" --now=now_
+  // Self-heal: re-issue delivered-but-divergent config sets. The report is already
+  // committed, so a reconcile failure must never lose it.
+  catch --trace:
+    reissues := reconcile-config (store_.command-log id_) config
+    reissues.do: | cmd/Command |
+      store_.enqueue-command id_ cmd --issued-by="gateway-reconcile" --now=now_
 ```
 
 - `config` here is the observed blob just parsed from the report — the same map
-  folded into `observed_state`. No extra read.
-- The `obj.contains "config"` gate is the pre-echo distinction the
-  `observed_state` fold deliberately collapses (it defaults absent→`{:}`): a node
-  that omits `config` has *unknown* observed config, so reconcile must not run.
+  folded into `observed_state`. No extra read. Every node runs current (echo)
+  firmware, so the report always carries `config`.
 - `enqueue-command` / `command-log` / the `Command` constructor all already
   exist; this is pure wiring on top. **No schema change.**
 - Re-issue is idempotent (sets are absolute / last-write-wins), so even a stray
@@ -190,12 +186,6 @@ count is a faithful crash-loop signal, not reconcile chatter.
 - **Observed-only key** (desired absent — only after a DB reset) — not iterated
   (we walk desired keys); left alone. No `unset` exists, so desired never
   shrinks.
-- **Pre-D5 report** (report body omits `config`) — reconcile is **skipped**
-  entirely (the `obj.contains "config"` gate). Observed config is *unknown*, not
-  empty; without the gate every delivered key would look divergent and re-issue
-  forever (and falsely warn). All live firmware is D5+, so this is the
-  belt-and-suspenders path, not the common one. A D5 node legitimately running
-  with no config sends `config: {}`, which *is* present and reconciles normally.
 - **Reconcile throws** — caught with `--trace`; the report still commits, the
   failure is logged, and reconcile retries next wake.
 
@@ -241,8 +231,7 @@ existing `project-config` / `config-marker` tests — each test a `main` with
 **Daemon-wiring integration** (`gateway/integration_test.toit` or
 `handler_test.toit`): a report with a divergent delivered config → exactly one
 expected `set` enqueued; a second report before the reissue delivers → **no**
-double-issue (self-throttle holds); a report body that **omits** `config` →
-**no** reconcile (pre-echo gate).
+double-issue (self-throttle holds).
 
 **`reconcile-count` / warning unit** (`gateway/command_test.toit`): counts only
 `gateway-reconcile` entries for the key; warning fires at ≥2× + still divergent.
