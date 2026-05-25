@@ -178,3 +178,9 @@ main:
   expect-equals 1 (reconcile-count count-log "t" "other")
   expect-equals 0 (reconcile-count count-log "t" "absent")
   expect-equals 0 (reconcile-count [] "t" "mode")
+
+  // --- config-keys: desired keys first, then observed-only keys ---
+  expect-equals ["a", "b", "c"] (config-keys {"a": 1, "b": 2} {"b": 9, "c": 3})
+  expect-equals ["a"] (config-keys {"a": 1} {:})
+  expect-equals ["x"] (config-keys {:} {"x": 1})
+  expect-structural-equals [] (config-keys {:} {:})

@@ -317,9 +317,7 @@ cmd-device-get parsed/cli.Parsed -> none:
   lines := render-config-table app desired observed
   print "$id: $lines[0]"
   lines[1..].do: print it
-  keys := []
-  desired.do --keys: keys.add it
-  observed.do --keys: | k | if not desired.contains k: keys.add k
+  keys := config-keys desired observed
   print-reconcile-warnings_ id app desired observed log keys
   store.close
 

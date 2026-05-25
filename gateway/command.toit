@@ -223,6 +223,16 @@ config-marker desired/Map observed/Map key/string -> string:
   return ""
 
 /**
+Returns the union of config keys for a desired-vs-observed view: every key in
+  $desired (in iteration order), then each key in $observed that is not in $desired.
+*/
+config-keys desired/Map observed/Map -> List:
+  keys := []
+  desired.do --keys: keys.add it
+  observed.do --keys: | k | if not desired.contains k: keys.add k
+  return keys
+
+/**
 Renders the desired-vs-observed config table for app $app as a list of printable
   lines (caller adds any node-id prefix). Covers the union of $desired and
   $observed keys (desired order first, then observed-only keys); an absent value
@@ -232,9 +242,7 @@ Renders the desired-vs-observed config table for app $app as a list of printable
 render-config-table app/string desired/Map observed/Map -> List:
   if desired.is-empty and observed.is-empty:
     return ["$app has no config"]
-  keys := []
-  desired.do --keys: keys.add it
-  observed.do --keys: | k | if not desired.contains k: keys.add k
+  keys := config-keys desired observed
   lines := ["config for $app", "  $(pad-col_ "KEY" 12)$(pad-col_ "DESIRED" 12)OBSERVED"]
   keys.do: | k/string |
     d-cell := desired.contains k ? "$desired[k]" : "--"
