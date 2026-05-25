@@ -9,7 +9,7 @@ import io.buffer show Buffer
 import encoding.json
 import tftp show Storage Request Peer RRQ STORAGE-FILE-NOT-FOUND STORAGE-ACCESS-DENIED
 import .store show Store encode-json_ decode-json_
-import .command show Command
+import .command show Command reconcile-config
 
 /**
 Splits a raw resource name "base?k=v&k2=v2" into [base/string, params/Map].
@@ -127,6 +127,12 @@ class ReportWriter_ extends io.CloseableWriter:
         --observed-state=(encode-json_ {"apps": apps, "config": config})
         --health=(encode-json_ health)
         --now=now_
+    // Self-heal: re-issue delivered-but-divergent config sets. The report is already
+    // committed, so a reconcile failure must never lose it.
+    catch --trace:
+      reissues := reconcile-config (store_.command-log id_) config
+      reissues.do: | cmd/Command |
+        store_.enqueue-command id_ cmd --issued-by="gateway-reconcile" --now=now_
 
 /**
 An $io.CloseableWriter that buffers a WRQ "data" body (JSONL — one telemetry entry
