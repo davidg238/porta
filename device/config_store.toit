@@ -17,9 +17,25 @@ get-config config/Map app/string key/string -> any:
   app-map := config.get app --if-absent=: return null
   return app-map.get key
 
-/** Loads the config blob from NVS, or an empty map if none stored yet. */
+/**
+Returns a deep, growable copy of the {app:{key:value}} config $blob.
+
+NVS/tison deserialization yields FIXED-SIZE maps: replacing an existing value is
+  fine, but adding a new key throws COLLECTION_CANNOT_CHANGE_SIZE. Rebuilding both
+  levels into fresh map literals (as $load-config does) lets later $set-config calls
+  add keys/apps. Mirrors how the inventory blob is rebuilt via Inventory.decode.
+*/
+mutable-config-copy blob/Map -> Map:
+  result := {:}
+  blob.do: | app/string app-map/Map |
+    fresh := {:}
+    app-map.do: | k v | fresh[k] = v
+    result[app] = fresh
+  return result
+
+/** Loads the config blob from NVS as a growable map, or empty if none stored yet. */
 load-config bucket/storage.Bucket -> Map:
-  return bucket.get CONFIG-KEY --if-absent=: {:}
+  return mutable-config-copy (bucket.get CONFIG-KEY --if-absent=: {:})
 
 /** Persists the config blob to NVS. */
 save-config bucket/storage.Bucket config/Map -> none:
