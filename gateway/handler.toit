@@ -133,6 +133,7 @@ class ReportWriter_ extends io.CloseableWriter:
       reissues := reconcile-config (store_.command-log id_) config
       reissues.do: | cmd/Command |
         store_.enqueue-command id_ cmd --issued-by="gateway-reconcile" --now=now_
+        print "gateway: reconcile re-issued $(cmd.app).$(cmd.config-key)=$(cmd.config-value) for $id_ (observed diverged)"
 
 /**
 An $io.CloseableWriter that buffers a WRQ "data" body (JSONL — one telemetry entry
