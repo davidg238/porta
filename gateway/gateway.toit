@@ -300,16 +300,21 @@ cmd-device-get parsed/cli.Parsed -> none:
   key := parsed.was-provided "key" ? parsed["key"] : null
   commands := (store.command-log id).map: | e/Map | Command e["verb"] e["args"]
   desired := (project-config commands).get app --if-absent=: {:}
+  node := store.node id
+  observed-all := (node == null or node["observed_state"] == null)
+      ? {:}
+      : ((decode-json_ node["observed_state"]).get "config" --if-absent=: {:})
+  observed := observed-all.get app --if-absent=: {:}
   if key != null:
-    if desired.contains key: print "$id: $app.$key = $(desired[key])"
-    else: print "$id: $app.$key is unset"
+    d-cell := desired.contains key ? "$desired[key]" : "--"
+    o-cell := observed.contains key ? "$observed[key]" : "--"
+    marker := config-marker desired observed key
+    print "$id: $app.$key desired=$d-cell observed=$o-cell $marker".trim
     store.close
     return
-  if desired.is-empty:
-    print "$id: $app has no desired config"
-  else:
-    print "$id: desired config for $app:"
-    desired.do: | k v | print "  $k = $v"
+  lines := render-config-table app desired observed
+  print "$id: $lines[0]"
+  lines[1..].do: print it
   store.close
 
 cmd-container-install parsed/cli.Parsed -> none:
