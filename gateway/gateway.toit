@@ -93,6 +93,7 @@ build-command -> cli.Command:
         cli.Option "interval" --help="Run-interval shorthand, e.g. 30s (a --trigger interval=…).",
         cli.Option "trigger" --multi --help="Repeatable trigger: boot | interval=<s> | gpio-high=<pin> | gpio-low=<pin> | gpio-touch=<pin>.",
         cli.OptionInt "runlevel" --help="Container runlevel." --default=3,
+        cli.Option "lifecycle" --help="Container lifecycle: run-once (default) | run-loop." --default="run-once",
       ]
       --rest=[
         cli.Option "name" --help="App name on the node." --required,
@@ -338,6 +339,10 @@ cmd-container-install parsed/cli.Parsed -> none:
   id := resolve-node-id_ store parsed["device"]
   store.ensure-node id --now=now_
   name := parsed["name"]
+  lifecycle := parsed["lifecycle"]
+  if not is-valid-lifecycle lifecycle:
+    print "Error: invalid --lifecycle '$lifecycle' (expected run-once or run-loop)."
+    exit 1
   path := parsed["file"]
 
   if path.ends-with ".pod":
@@ -358,7 +363,7 @@ cmd-container-install parsed/cli.Parsed -> none:
     print "Note: no triggers given — '$name' will be installed but not started until a trigger is added."
 
   store.register-payload --crc=crc --name=name --image=image
-  run-cmd := Command.run --name=name --crc=crc --size=image.size --triggers=triggers --runlevel=parsed["runlevel"]
+  run-cmd := Command.run --name=name --crc=crc --size=image.size --triggers=triggers --runlevel=parsed["runlevel"] --lifecycle=lifecycle
   cmd-id := store.enqueue-command id run-cmd --issued-by="cli" --now=now_
   print "$id: registered $name@$crc ($(image.size) B); enqueued run (command #$cmd-id)"
   store.close
