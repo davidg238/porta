@@ -64,11 +64,23 @@ main:
       poll-interval-s = poll-and-reconcile bucket inventory id poll-interval-s store
       store.last-poll-us = now
 
-  start-installed inventory
+  run-once-handles := start-installed inventory
   arm-wakeups inventory
 
-  print "supervisor: observing for $OBSERVE"
-  sleep OBSERVE
+  if run-once-handles.is-empty:
+    // No run-once payloads to await: preserve the M1-verified deep-sleep timing.
+    print "supervisor: observing for $OBSERVE"
+    sleep OBSERVE
+  else:
+    print "supervisor: waiting on $(run-once-handles.size) run-once payload(s) (cap $MAX-AWAKE)"
+    e := catch:
+      with-timeout MAX-AWAKE:
+        run-once-handles.do: | c/containers.Container | c.wait
+    if e:
+      // Graceful, local, no reboot. (Northbound cap-health reporting is a follow-up.)
+      print "supervisor: payload cap hit after $MAX-AWAKE ($e) — proceeding to sleep"
+    else:
+      print "supervisor: run-once payload(s) finished; proceeding to sleep"
 
   // Ship telemetry produced this wake (after payloads ran), if forwarding is on.
   // This opens a second TFTP connection every wake the flag is on (not only poll wakes).
