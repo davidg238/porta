@@ -131,7 +131,7 @@ infer-scalar value-str/string -> any:
 
 /**
 Folds an ordered list of $commands into the goal-app map a node would converge
-  to: app name → {"crc", "triggers", "runlevel", "arguments"}.
+  to: app name → {"crc", "triggers", "runlevel", "lifecycle", "arguments"}.
 
 A run sets (or replaces) its app; a stop removes it; set-poll-interval does not
   affect the app set. Because commands are absolute, re-applying a run is a no-op
@@ -146,6 +146,7 @@ project commands/List -> Map:
         "crc": c.crc,
         "triggers": c.triggers,
         "runlevel": c.runlevel,
+        "lifecycle": c.lifecycle,
         "arguments": c.arguments,
       }
     else if c.verb == VERB-STOP:
