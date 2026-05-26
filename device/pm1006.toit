@@ -21,12 +21,12 @@ pm1006-valid-frame bytes/ByteArray -> bool:
 pm1006-pm25 bytes/ByteArray -> int:
   return (bytes[5] << 8) | bytes[6]
 
-/** A PM1006 sensor on a UART RX pin (9600 baud, 8N1). TX is unused by the sensor. */
+/** A PM1006 sensor on a UART RX pin (9600 baud, 8N1). Only RX is used; TX is null. */
 class Pm1006:
   port_/uart.Port
 
-  constructor --rx/int --tx/int=17:
-    port_ = uart.Port --tx=(gpio.Pin tx) --rx=(gpio.Pin rx) --baud-rate=9600
+  constructor --rx/int:
+    port_ = uart.Port --tx=null --rx=(gpio.Pin rx) --baud-rate=9600
 
   /** Blocks reading the UART until a valid frame arrives; returns its PM2.5 µg/m³ value. */
   read-pm25 -> int:
