@@ -1,6 +1,6 @@
 // device/inventory.toit
 import uuid
-import .goal_state show GoalState App
+import .goal_state show GoalState App LIFECYCLE-RUN-ONCE
 import .triggers show Triggers
 
 /** A container currently installed on the node, as recorded in NVS. */
@@ -11,8 +11,9 @@ class InstalledApp:
   crc/int
   triggers/Triggers
   runlevel/int
+  lifecycle/string
 
-  constructor --.name --.id --.size --.crc --.triggers --.runlevel:
+  constructor --.name --.id --.size --.crc --.triggers --.runlevel --.lifecycle=LIFECYCLE-RUN-ONCE:
 
 /** What the supervisor must do to match a goal. */
 class Reconciliation:
@@ -37,7 +38,7 @@ class Inventory:
     (tree.get "apps" --if-absent=: {:}).do: | name/string m/Map |
       id := uuid.Uuid m["id"]
       trig := Triggers.parse m["triggers"]
-      app := InstalledApp --name=name --id=id --size=m["size"] --crc=m["crc"] --triggers=trig --runlevel=m["runlevel"]
+      app := InstalledApp --name=name --id=id --size=m["size"] --crc=m["crc"] --triggers=trig --runlevel=m["runlevel"] --lifecycle=(m.get "lifecycle" --if-absent=: LIFECYCLE-RUN-ONCE)
       apps[name] = app
     return Inventory apps
 
@@ -51,6 +52,7 @@ class Inventory:
         "crc": a.crc,
         "triggers": a.triggers.to-map,
         "runlevel": a.runlevel,
+        "lifecycle": a.lifecycle,
       }
     return {"apps": m}
 
@@ -67,6 +69,7 @@ class Inventory:
         "crc": a.crc,
         "triggers": a.triggers.to-map,
         "runlevel": a.runlevel,
+        "lifecycle": a.lifecycle,
         "arguments": [],
       }
     return goal
