@@ -131,7 +131,7 @@ poll-and-reconcile bucket/storage.Bucket inventory/Inventory id/string poll-inte
       writer := ImageStreamWriter installer --size=app.size --crc=app.crc
       client.fetch "payload?id=$id&name=$app.name&crc=$app.crc" --to-writer=writer
       image-id := writer.commit
-      inventory.apps[app.name] = InstalledApp --name=app.name --id=image-id --size=app.size --crc=app.crc --triggers=app.triggers --runlevel=app.runlevel
+      inventory.apps[app.name] = InstalledApp --name=app.name --id=image-id --size=app.size --crc=app.crc --triggers=app.triggers --runlevel=app.runlevel --lifecycle=app.lifecycle
       print "supervisor: installed $app.name -> $image-id"
     recon.to-remove.do: | a/InstalledApp |
       print "supervisor: removing $a.name"
