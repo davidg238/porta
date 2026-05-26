@@ -8,12 +8,18 @@ main:
   expect-equals "run" run.verb
   expect-equals "blink" run.name
 
-  // run inserts/replaces the app in the goal map with the fields GoalState needs.
+  // run inserts/replaces the app in the goal map with the fields GoalState needs,
+  // defaulting lifecycle to run-once when the command omits it.
   goal := {:}
   apply-to-goal goal run
   expect-structural-equals
-      {"blink": {"size": 2048, "crc": 999, "triggers": {"interval": 30}, "runlevel": 3, "arguments": []}}
+      {"blink": {"size": 2048, "crc": 999, "triggers": {"interval": 30}, "runlevel": 3, "lifecycle": "run-once", "arguments": []}}
       goal
+
+  // An explicit lifecycle is carried through.
+  run-loop := NodeCommand.decode "{\"verb\":\"run\",\"name\":\"svc\",\"crc\":1,\"size\":2,\"triggers\":{\"boot\":1},\"runlevel\":3,\"lifecycle\":\"run-loop\",\"arguments\":[]}".to-byte-array
+  apply-to-goal goal run-loop
+  expect-equals "run-loop" goal["svc"]["lifecycle"]
 
   // A later run for the same name wins (absolute/idempotent).
   run2 := NodeCommand.decode "{\"verb\":\"run\",\"name\":\"blink\",\"crc\":1000,\"size\":4096,\"triggers\":{\"boot\":1},\"runlevel\":2,\"arguments\":[]}".to-byte-array
@@ -24,6 +30,8 @@ main:
   // stop removes the app.
   stop := NodeCommand.decode "{\"verb\":\"stop\",\"name\":\"blink\"}".to-byte-array
   apply-to-goal goal stop
+  stop-svc := NodeCommand.decode "{\"verb\":\"stop\",\"name\":\"svc\"}".to-byte-array
+  apply-to-goal goal stop-svc
   expect-structural-equals {:} goal
 
   // set-poll-interval does not touch the goal; it exposes its interval.

@@ -45,6 +45,7 @@ apply-to-goal goal/Map command/NodeCommand -> none:
       "crc": command.args["crc"],
       "triggers": command.args.get "triggers" --if-absent=: {:},
       "runlevel": command.args.get "runlevel" --if-absent=: 3,
+      "lifecycle": command.args.get "lifecycle" --if-absent=: "run-once",
       "arguments": command.args.get "arguments" --if-absent=: [],
     }
   else if command.verb == VERB-STOP:
