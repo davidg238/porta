@@ -16,6 +16,7 @@ build-report inventory/Inventory --config/Map={:} --uptime-us/int --wakes/int ->
     apps[name] = {
       "crc": a.crc,
       "runlevel": a.runlevel,
+      "lifecycle": a.lifecycle,
       "triggers": a.triggers.to-map,
     }
   return json.encode {
