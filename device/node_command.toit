@@ -35,7 +35,7 @@ class NodeCommand:
 
 /**
 Applies $command to the goal-app map $goal (name → {"size","crc","triggers",
-  "runlevel","arguments"}, the shape GoalState.parse consumes). A run sets/replaces
+  "runlevel","lifecycle","arguments"}, the shape GoalState.parse consumes). A run sets/replaces
   its app; a stop removes it; set-poll-interval does not affect the app set.
 */
 apply-to-goal goal/Map command/NodeCommand -> none:

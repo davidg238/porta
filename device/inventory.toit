@@ -58,7 +58,7 @@ class Inventory:
 
   /**
   Reconstructs the goal-app map (name → {"size","crc","triggers","runlevel",
-    "arguments"}, the shape GoalState.parse consumes) from the installed apps, so a
+    "lifecycle","arguments"}, the shape GoalState.parse consumes) from the installed apps, so a
     wake can apply freshly drained commands on top of the node's current goal.
   */
   to-goal-map -> Map:
