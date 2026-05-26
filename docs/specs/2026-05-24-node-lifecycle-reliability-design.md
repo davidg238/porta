@@ -19,8 +19,9 @@ The clarifying lens for everything below: a node is a tiny OS in **three layers*
   node's PID 1: brings up the link, drains commands, reconciles containers, owns the
   watchdog and the power decision, and hosts the always-present node services. Privileged
   *relative to apps* — but itself just a container on L0.
-- **L2 — applications: user containers.** vin, chatty, control-demo. They do work and
-  speak only to L1's services.
+- **L2 — applications: user containers.** vin, chatty, control-demo. They do work,
+  building on the standard library and any installed packages, and speak to the node
+  only through L1's services.
 
 **Soft privilege — the load-bearing caveat.** L1's "privilege" is by *capability and
 convention*, **not** hardware enforcement: there is no MMU ring between L1 and L2; by
@@ -39,7 +40,11 @@ A container's lifecycle is **declared at install** — it cannot be inferred, si
 - **daemon** (`run-loop`): never returns; a long-running service. L1 must **not** `wait`.
 
 `task`/`daemon` is the conceptual pair (standard Unix meaning); `run-once`/`run-loop` is
-the literal install flag.
+the literal install flag. The flag is *not* `task`/`daemon` because **`Task` is already a
+core Toit primitive** that lives *inside* a container (`Task.group`, see below) — reusing
+it at container granularity would collide head-on with the task-vs-container distinction
+this spec depends on; `run-once`/`run-loop` instead names the one mechanical fact the
+supervisor branches on (does `main` return, or not).
 
 ```
    task   (run-once):  start ─▶ work ─▶ return ✔      L1 `wait`s (cap), then proceeds
@@ -119,13 +124,12 @@ its containers' demands**:
 So *always-on is not a separate per-container knob* — it is **induced**: `any hosted
 daemon ⇒ always-on node`.
 
-**Open — derived vs declared power mode.** Should installing a daemon *silently* flip a
-node to always-on (derived), or should power mode be an explicit node setting and a
-daemon-on-a-duty-cycle-node be **rejected** (declared + validated)? Recommendation:
-**declared + validated** (default duty-cycle) — silently going always-on can wreck a
-battery node's life; reconciling a daemon onto a duty-cycle node should be an error unless
-the node is (or is explicitly promoted to) always-on. *(Supersedes the matching bullet in
-"Open items".)*
+**Decided — declared + validated power mode.** Power mode is an explicit node setting
+(default duty-cycle), **not** derived. Reconciling a `run-loop` (daemon) container onto a
+duty-cycle node is an **error** unless the node is (or is explicitly promoted to)
+always-on — installing a daemon never *silently* flips a node, because a silent always-on
+can wreck a battery node's life. Fail loud, promote on purpose. *(Resolves the
+derived-vs-declared question; the matching "Open items" bullet is closed.)*
 
 ### Comms windows: intake before, egress after
 
@@ -193,6 +197,49 @@ bring up link → drain commands → reconcile → flush telemetry buffer → re
 - **always-on node:** don't sleep — leave payload tasks running; `sleep` the
   supervisor task until the next poll is due; loop.
 
+A periodic deep-sleep task is *not* just a run-forever loop with the chip powered
+down between iterations — it differs in two ways that change how you write the
+payload:
+
+1. **The scheduler owns the repeat scaffolding.** A continuous payload carries its
+   own loop and its own pacing:
+
+   ```
+   <init-code>
+   while true:
+       <code>
+       sleep --ms=60000
+   ```
+
+   Under deep-sleep, the wake/sleep *is* the loop — the supervisor lifts the
+   `while true` and the `sleep` out of your program. The payload shrinks to the body:
+
+   ```
+   <init-code>
+   <code>
+   ```
+
+   It runs once per wake and returns; the cadence lives in the supervisor's poll
+   budget, not in the payload. (This is exactly why the run-once vs run-loop
+   per-container lifecycle below has to be *declared* — the scheduler can't infer
+   which shape it lifted.)
+
+2. **There is no memory between runs.** Each wake is a fresh boot: all RAM is lost,
+   so any state you want carried across executions must be written explicitly to
+   Flash (NVS / the config + telemetry buffers). A continuous loop keeps its
+   variables on the heap for free; a deep-sleep payload must persist or recompute.
+   (This is the flip side of decision 5 below — the reboot-per-cycle clean slate
+   that hides slow leaks is the same clean slate that erases your working state.)
+
+   A subtler consequence: in a continuous program `<init-code>` sits structurally
+   *outside* the loop, so it runs exactly once and "is this the first run?" is free —
+   it's just program position. Under deep-sleep that boundary is gone: every wake
+   re-runs `<init-code>` *and* `<code>`, so both are effectively *inside* the forever
+   loop. Genuinely once-only work (seed defaults, create schema, first-boot
+   calibration) can no longer rely on "I'm at the top of `main`" — the payload must
+   record a first-run flag in Flash and branch on it to tell a cold first boot from
+   an ordinary wake.
+
 Because the cycle is shared, the telemetry/command/report machinery is mode-agnostic.
 The fork is localized to (a) the supervisor's between-cycle behavior and (b) the
 watchdog flavor.
@@ -208,16 +255,30 @@ messy middle. (Light-sleep / ULP are out of scope.)
 2. **Add the always-on branch *beside* the deep-sleep branch, not woven through it.**
    The M1-verified deep-sleep path must stay behaviorally identical and have its
    hardware verification re-run unchanged.
-3. **Two watchdog flavors, selected by mode:**
-   - **deep-sleep:** a **hardware/RTC watchdog** armed at wake, sized to
-     `(poll budget + OBSERVE + margin)`; if the supervisor doesn't reach `deep-sleep`
-     in time (WiFi/TFTP/sensor hang), the chip **resets** — which is just another
-     wake: safe and idempotent. Plus **`with-timeout` on every blocking call**
+3. **Three layered reliability concerns — not two mode-exclusive watchdogs.**
+   *(Revised after the 2026-05-26 watchdog spike — see "Watchdog spike" below.)*
+   The earlier framing paired one watchdog per power mode; the spike showed they
+   **layer** instead, because each guards a different scope:
+
+   | Concern | Scope | Mechanism | Modes |
+   |---|---|---|---|
+   | **Payload liveness** | cross-container | `Container.wait` + `with-timeout` cap *(decided above)* | both |
+   | **Supervisor internal-task liveness** | intra-process | vindriktning-style **software task-restart** watchdog — run each job as a task, `ping` to prove liveness, restart late/dead tasks | always-on only |
+   | **Supervisor *wedge* recovery** | whole-chip | **`esp32` hardware watchdog** (`watchdog-init --ms` / `watchdog-reset` / `watchdog-deinit`) — if the supervisor never feeds it (WiFi/TFTP hang), the chip **resets** | both (backstop) |
+
+   - The **hardware watchdog is a last-resort whole-chip backstop in *both* modes.**
+     Deep-sleep: arm at wake sized to `(poll budget + cap + margin)`; reaching
+     `deep-sleep` (deinit) before it fires is the success path, and a reset is just
+     another wake — safe/idempotent. Always-on: feed it from the main loop, because
+     if the whole supervisor *process* wedges, the software task-restart watchdog
+     (which runs *inside* that process) can't fire — only a hardware reset can.
+   - The **software task-restart watchdog is always-on-only:** it recovers a dead
+     *task* within the supervisor process; the never-returning `run` loop *is* the
+     always-on main loop. It cannot span to payload *containers* (same tasks-vs-
+     containers boundary as the `wait` discussion) — payloads are covered by row 1.
+   - Independent of all three: **`with-timeout` on every blocking call**
      (connect / fetch / read), which the code largely lacks today (`catch --trace`
      does not catch a *hang*).
-   - **always-on:** vindriktning's **task-restart watchdog** — run each job as a
-     task, `ping` to prove liveness, restart late/dead tasks; the never-returning
-     `run` loop *is* the always-on main loop.
 4. **Aggregation is the app's job** (always-on samples ≫ report-rate). Bounded
    buffers everywhere (vindriktning bounds its deque for exactly this reason).
 5. **Long-running reliability is first-class for always-on.** A deep-sleep node
@@ -278,13 +339,21 @@ the group," done at the **container** granularity where these two things really 
 
 - `with-timeout` around `wait` = a **deadline on the supervisor's own wait**: "wait up to
   N s for the run-once payloads, then give up and deep-sleep." Graceful, local, no reboot.
-  Handles the *expected* slow/silent-sensor case.
+  Handles the *expected* slow/silent-sensor case. Graceful must **not** mean silent: a cap
+  hit is a node-health event — the supervisor **logs it locally and reports it northbound**
+  (a typed `data_log` event + a flag folded into observed-state), so a repeatedly-capping
+  container (dying sensor, wrong baud, unplugged) is visible/trendable via `device get` /
+  `gateway monitor` rather than vanishing into a clean deep-sleep.
 - A **watchdog** (the section above) = **liveness/recovery**: must be fed, else **hard
   reset**. Whole-node scope. It earns its keep only when the *supervisor itself* wedges
-  (WiFi/TFTP hang) before it can reach `deep-sleep`. The SDK surfaces watchdog *reset
-  causes* (`esp32.RESET-TASK-WATCHDOG`) but no high-level feed API — vindriktning rolls
-  its own software watchdog. The two are complementary: `with-timeout` for the payload,
-  watchdog for the supervisor.
+  (WiFi/TFTP hang) before it can reach `deep-sleep`. The SDK exposes both the *reset
+  cause* (`esp32.RESET-TASK-WATCHDOG`) **and** a high-level hardware-watchdog feed API
+  (`esp32.watchdog-init --ms` / `watchdog-reset` / `watchdog-deinit`) — so the supervisor
+  wedge-watchdog needs no custom code (see "Watchdog spike" below). vindriktning's own
+  software watchdog is a *different* layer: intra-process task-restart, not whole-chip
+  reset. The two watchdog roles + the cap are complementary: `with-timeout` for the
+  payload `wait`, software task-restart for always-on supervisor tasks, hardware reset
+  for a wedged supervisor process.
 
 ### The second dimension: run-once vs run-loop (declared, not inferred)
 
@@ -353,16 +422,52 @@ This is the bridge between this update and the node-level power-mode decision ab
 (Per-wake burst was chosen over a one-sample-per-wake NVS ring: it honours "report every
 minute" and keeps the payload stateless; the cost is ~8 s awake/min, bounded by the cap.)
 
+## Watchdog spike (2026-05-26)
+
+De-risked the always-on/watchdog half before planning. Source: jaguar SDK **v1.64.0**
+(`.../sdk/lib/toit/lib/esp32/esp32.toit`) + `~/workspaceToit/vindriktning/watchdog.toit`.
+
+1. **Hardware watchdog feed API exists** (`esp32.toit:273-288`): `watchdog-init --ms`,
+   `watchdog-reset`, `watchdog-deinit` — arm/feed/disarm a whole-chip reset timer. This
+   *corrects* an earlier spec claim that the SDK had "no high-level feed API." The
+   deep-sleep wedge-watchdog (decision 3) is therefore three SDK calls, no custom code.
+2. **vindriktning's watchdog is intra-process task-restart** (70 lines): `add name code
+   --period` → `run` cancels+restarts any task whose `ping` is overdue. No hardware, no
+   chip reset; recovers a dead *task*. Groups tasks within **one process**, so it guards
+   the always-on supervisor's own jobs but **cannot** span to payload containers (same
+   boundary as `Container.wait`). → drove the **layered** revision of decision 3.
+3. **Hardware-verified** on an ESP32 rev 1.0 node (`classic-minute`, jaguar v1.64.0):
+   `watchdog-init --ms=3000` + never feeding → chip resets in ~3 s. Findings:
+   - The primitive arms the ESP-IDF **Task Watchdog Timer (TWDT)**; on expiry it panics
+     → software CPU reset → clean reboot (jaguar came back up unaided). A reset is just
+     another boot — safe/idempotent, as decision 3 assumes.
+   - **The reset is detectable from Toit:** despite the bootloader banner reading
+     `rst:0xc (SW_CPU_RESET)`, `esp32.reset-reason` on the next boot returns
+     **`6` = `RESET-TASK-WATCHDOG`** — so the supervisor can recognise + report a
+     wedge-reset (feeds the same node-health path as the cap event).
+   - Caveat to size the timer well above the *task-scheduling* granularity, not just the
+     work budget: the TWDT watches task liveness, so `--ms` must exceed the longest
+     legitimately-blocking stretch between Toit scheduler yields, or it false-trips.
+
 ## Open items (for this spec's own design pass)
 
-- Exact ESP32 hardware/RTC watchdog SDK API in Toit (confirm + prototype).
+- ~~Exact ESP32 hardware/RTC watchdog SDK API in Toit (confirm + prototype).~~
+  **DONE — API + on-device reset both hardware-verified** (`esp32.watchdog-init/reset/
+  deinit`; reset detectable as `reset-reason == RESET-TASK-WATCHDOG`). See "Watchdog spike".
 - Where the power-mode setting lives in NVS and the command verb to set it
   (`set-power-mode`?), and how it interacts with `set-poll-interval`.
 - **Lifecycle field plumbing:** CLI flag on `container install`, goal-map key,
-  `InstalledApp` field, and how `run-loop` on a `deep-sleep` node is reconciled (reject?
-  implicitly promote the node to always-on?).
+  `InstalledApp` field. (How `run-loop` on a `deep-sleep` node is reconciled is now
+  **decided**: reject unless explicitly promoted — see "declared + validated" above.)
 - **`wait` + cap mechanics:** one shared max-awake budget vs per-app timeout; what to do
-  with a `run-once` container that hits the cap (stop it? trace? mark unhealthy?).
+  with a `run-once` container that hits the cap (stop it? let deep-sleep kill it?). Cap
+  hits are reported as a node-health event (decided above), and escalation **mirrors the
+  shipped config-self-heal threshold**: `gateway monitor` / `device get` **warn at ≥2
+  consecutive caps** (matching self-heal's "warns ≥2×"), the daemon logs each cap like it
+  logs each re-issue. Still open: the exact `data_log` event shape + how the unhealthy
+  flag rides observed-state, and what (if anything) the gateway does *past* the warn (stop
+  reconciling the container? alert?) — self-heal's in-flight-guard/self-throttle pattern is
+  the reference.
 - Whether telemetry-flush cadence should decouple from command-poll cadence for
   always-on (noted in the M2 spec as an open question).
 - Concurrency/mutex discipline for the always-on case (supervisor + remoting + payload
