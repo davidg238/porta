@@ -41,6 +41,11 @@ A container's lifecycle is **declared at install** — it cannot be inferred, si
 `task`/`daemon` is the conceptual pair (standard Unix meaning); `run-once`/`run-loop` is
 the literal install flag.
 
+```
+   task   (run-once):  start ─▶ work ─▶ return ✔      L1 `wait`s (cap), then proceeds
+   daemon (run-loop):  start ─▶ work ─▶ work ─▶ ⋯     never returns; L1 must not `wait`
+```
+
 ### Communications: northbound / southbound, L1 as broker
 
 L1 sits between two comms domains and **brokers** them.
@@ -71,6 +76,33 @@ one line: **project northbound desired-config into southbound config; aggregate 
 telemetry into northbound reports/data.** (The southbound boundary is convention, same
 soft-privilege caveat as above — an app *should* use only config+telemetry, but isn't
 forced to.)
+
+```
+          ┌─────────────────────────────────────────────────┐
+          │                     GATEWAY                       │  the controller
+          │             desired state   ·   reports           │
+          └────────────────────────┬──────────────────────────┘
+                                    │
+              NORTHBOUND  (TFTP/UDP):   desired ↓     observed ↑
+                                    │
+   ╔════════════════════════════════╪════════════════════════════════╗
+   ║ NODE                            │                                 ║
+   ║   ┌──────────────────────────────┴──────────────────────────┐    ║
+   ║   │ L1  SUPERVISOR   —   init / PID 1 · the broker           │    ║
+   ║   │     link · drain · reconcile · watchdog · power          │    ║
+   ║   │     ┌──────────────┐              ┌──────────────────┐   │    ║
+   ║   │     │  config svc  │              │  telemetry svc   │   │    ║
+   ║   │     └──────┬───────┘              └────────▲─────────┘   │    ║
+   ║   └────────────┼───────────────────────────────┼────────────┘    ║
+   ║                │     SOUTHBOUND (service RPC)    │                 ║
+   ║         config ↓                                 ↑ telemetry      ║
+   ║   ┌────────────┴───────────┐     ┌───────────────┴───────────┐    ║
+   ║   │ L2   vin   (task)      │     │ L2   blink   (daemon)      │    ║
+   ║   └────────────────────────┘     └────────────────────────────┘   ║
+   ║   ──────────────────────────────────────────────────────────────  ║
+   ║   L0   TOIT VM   —   scheduler · GC · deep-sleep syscall           ║
+   ╚═══════════════════════════════════════════════════════════════════╝
+```
 
 ### Node lifecycle is induced by what it hosts
 
@@ -105,6 +137,17 @@ For a **task-node**, frame each wake as two northbound windows bracketing task e
 - **W2 — egress (close):** ship what this wake produced — task telemetry/data + a fresh
   report — then sleep.
 
+```
+   TASK-NODE wake   (link up only at the ends; node deep-sleeps between wakes)
+
+  …sleep ─▶┌─ W1 intake ──┬───── tasks run ──────┬─ W2 egress ──┐─▶ deep-sleep…
+           │ open link    │ L1 `wait`s (cap)     │ ship telem.  │
+           │ drain cmds   │ vin: 8 frames →      │ + fresh rpt  │
+           │ reconcile    │ olympic     (~8 s)   │ close link   │
+           └──────────────┴──────────────────────┴──────────────┘
+             desired ↓ (NB)                          observed ↑ (NB)
+```
+
 This improves **liveness/freshness by a full cycle**: a value a task computes reaches the
 gateway *this* wake instead of next. Today this is half-built — the post-`OBSERVE`
 telemetry flush is a nascent W2, but it is gated on `console-forward` and ships telemetry
@@ -118,6 +161,16 @@ paper.
 A **daemon-node** has no "after all tasks complete": the always-on supervisor runs
 *periodic* northbound windows on its poll cadence; daemons stream telemetry into the
 bounded buffer between windows.
+
+```
+   DAEMON-NODE   (always-on): supervisor never sleeps; daemons stream into the buffer
+
+   L2 daemon   ████████████████████████████████████████████████  runs continuously
+    telemetry   ·    ·    ·    ·    ·    ·    ·    ·    ·    ·      → bounded buffer
+   L1 windows  [W]──────────[W]──────────[W]──────────[W]────────  periodic (poll cadence)
+                ↕            ↕            ↕            ↕
+              gateway      gateway      gateway      gateway        (northbound each window)
+```
 
 ## Why this exists
 
