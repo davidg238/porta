@@ -20,7 +20,7 @@ import .config_store show load-config save-config set-config
 import .control_service show ControlServiceProvider
 
 /** Gateway LAN address. Adjust to the host running `gateway serve`. */
-GATEWAY-HOST ::= "192.168.0.175"
+GATEWAY-HOST ::= "192.168.0.176"
 GATEWAY-PORT ::= 6969
 
 /** Fallback poll cadence (seconds) before the node has been told otherwise. */
