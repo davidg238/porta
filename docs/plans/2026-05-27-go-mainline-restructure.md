@@ -298,11 +298,13 @@ jobs:
       - run: go build ./...
       - run: go test ./...
 
-  # NOTE: the Toit example (examples/toit-gateway) is NOT built in CI — its sqlite
-  # dependency is a local, unpublished package referenced by absolute path, and it
-  # requires the custom toit-sqlite runtime. Test it locally with:
-  #   ./examples/toit-gateway/run-host-tests.sh
-  # This is revisited if/when sqlite is published (relates to sub-project C tooling).
+  # NOTE: the Toit example (examples/toit-gateway) is NOT built in CI here. Its sqlite
+  # dependency is referenced by a machine-specific absolute path in package.yaml, and
+  # running sqlite-linked tests needs the custom toit-sqlite runtime (external C lib).
+  # Test it locally with:  ./examples/toit-gateway/run-host-tests.sh
+  # Future CI path (sub-project C): switch the dep to the git package
+  # github.com/davidg238/sqlite and build the toit-sqlite runtime in the job. tftp is
+  # already a git dep (github.com/davidg238/tftp ^2.4.1).
 ```
 
 - [ ] **Step 2: Verify the workflow's commands locally**
