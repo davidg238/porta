@@ -13,7 +13,7 @@ import .pm1006 show Pm1006
 import .olympic show olympic-mean
 import .telemetry_service show TelemetryServiceClient
 
-RX-PIN ::= 25     // PM1006 TX -> ESP32 RX. Adjust to your wiring.
+RX-PIN ::= 21     // PM1006 TX -> ESP32 RX (matches the vindriktning module wiring).
 LED-PIN ::= 13    // Sampling-feedback LED, active-low (set 0 = on).
 SAMPLES ::= 8
 
