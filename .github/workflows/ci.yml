@@ -1,0 +1,24 @@
+name: ci
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go test ./...
+
+  # NOTE: the Toit example (examples/toit-gateway) is NOT built in CI here. Its sqlite
+  # dependency is referenced by a machine-specific absolute path in package.yaml, and
+  # running sqlite-linked tests needs the custom toit-sqlite runtime (external C lib).
+  # Test it locally with:  ./examples/toit-gateway/run-host-tests.sh
+  # Future CI path (sub-project C): switch the dep to the git package
+  # github.com/davidg238/sqlite and build the toit-sqlite runtime in the job. tftp is
+  # already a git dep (github.com/davidg238/tftp ^2.4.1).
