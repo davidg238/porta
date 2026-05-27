@@ -15,3 +15,6 @@ designs and `docs/plans/` for the implementation plans.
 - `st-zephyr` — local symlink to the parent project (gitignored)
 
 The node side lives in the separate **`nodus`** repo (repo URL set at extraction).
+
+#### Links
+* [Logging MQTT Sensor Data to SQLite DataBase With Python](http://www.steves-internet-guide.com/logging-mqtt-sensor-data-to-sql-database-with-python/)

@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/davidg238/jast-gw/debug"
-	"github.com/davidg238/jast-gw/store"
+	"github.com/davidg238/porta/internal/debug"
+	"github.com/davidg238/porta/internal/store"
 )
 
 //go:embed static/debug.html

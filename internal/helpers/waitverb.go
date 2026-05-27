@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/davidg238/jast-gw/store"
+	"github.com/davidg238/porta/internal/store"
 )
 
 // WaitForVerb queues a command verb to a device and waits up to 5 seconds

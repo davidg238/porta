@@ -3,7 +3,7 @@ package debug
 import (
 	"testing"
 
-	"github.com/davidg238/jast-gw/store"
+	"github.com/davidg238/porta/internal/store"
 )
 
 func testManager(t *testing.T) *Manager {

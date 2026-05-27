@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davidg238/jast-gw/store"
-	"github.com/davidg238/jast-gw/tftp"
+	"github.com/davidg238/porta/internal/store"
+	"github.com/davidg238/porta/internal/tftp"
 )
 
 // testGateway opens an in-memory store, creates a Gateway, and registers cleanup.

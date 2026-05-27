@@ -10,12 +10,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/davidg238/jast-gw/cli"
-	"github.com/davidg238/jast-gw/debug"
-	"github.com/davidg238/jast-gw/debugui"
-	"github.com/davidg238/jast-gw/gateway"
-	"github.com/davidg238/jast-gw/mcpserver"
-	"github.com/davidg238/jast-gw/store"
+	"github.com/davidg238/porta/internal/cli"
+	"github.com/davidg238/porta/internal/debug"
+	"github.com/davidg238/porta/internal/debugui"
+	"github.com/davidg238/porta/internal/gateway"
+	"github.com/davidg238/porta/internal/mcpserver"
+	"github.com/davidg238/porta/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
