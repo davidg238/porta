@@ -4,12 +4,13 @@
 // Telemetry forwarding must be on (`gateway device set-console --on`) for the value
 // to ship to the gateway.
 //
+// Uses the hardware-proven .vindriktning driver (preamble-synced PM1006 reader).
+//
 // LED feedback (single LED on LED-PIN, active-low): solid on while sampling, a brief
 // blink as each frame arrives, off when sampling completes. A stuck-on LED therefore
-// means "sampling but no frames" (check the sensor wiring/power) — the supervisor's
-// MAX-AWAKE cap ends the wake either way.
+// means "sampling but no frames" — the supervisor's MAX-AWAKE cap ends the wake anyway.
 import gpio
-import .pm1006 show Pm1006
+import .vindriktning show Vindriktning
 import .olympic show olympic-mean
 import .telemetry_service show TelemetryServiceClient
 
@@ -20,12 +21,12 @@ SAMPLES ::= 8
 main:
   led := gpio.Pin LED-PIN --output
   led.set 0                       // active-low: ON — sampling in progress
-  sensor := Pm1006 --rx=RX-PIN
+  sensor := Vindriktning RX-PIN
   samples := []
   SAMPLES.repeat:
-    samples.add sensor.read-pm25
+    sensor.next                   // blocks until a valid preamble-framed reading
+    samples.add sensor.air-quality
     led.set 1; sleep --ms=40; led.set 0   // brief blink to mark each received frame
-  sensor.close
   led.set 1                       // OFF — sampling complete
   led.close
 
