@@ -20,9 +20,22 @@ three-repo world:
 - **porta** — the *one* Go server/gateway (mainline). Owns the canonical wire protocol
   (`docs/PROTOCOL.md`), serves heterogeneous nodes, and holds server-side language
   tooling under `/tools/toit` + `/tools/smalltalk`.
-- **nodus** — the Toit node (already its own repo).
-- **st-zephyr** — to be stripped to the Smalltalk/berry **node** only (the ST analogue
-  of nodus).
+- **nodus-toit** — the Toit node (already its own repo; currently still named `nodus`).
+- **nodus-st** — the Smalltalk/berry node (currently `st-zephyr`, to be stripped to
+  node-only).
+
+The two node repos share a `nodus-` prefix to signal they are sibling implementations
+of the same node concept — the heterogeneous nodes porta's protocol exists to serve.
+The renames are **deferred**, not part of any porta sub-project's file moves:
+
+- `nodus` → `nodus-toit`: after the in-flight `feat/always-on-vin` work merges (renaming
+  out from under that live working tree would break it). GitHub auto-redirects old URLs,
+  so cross-links degrade gracefully in the meantime.
+- `st-zephyr` → `nodus-st`: folded into sub-project D, which already renovates that repo
+  to node-only.
+
+This spec uses the target names throughout; references to the current `nodus` /
+`st-zephyr` names remain valid until each rename lands.
 
 Key cross-cutting decisions (locked during brainstorming):
 
@@ -43,13 +56,13 @@ The renovation decomposes into four independently spec'd sub-projects:
 - **B. Go protocol parity** — bring the Go server up to current `docs/PROTOCOL.md`
   (new TFTP delivery: raw image + `size`/CRC32 in the `run` command; typed telemetry
   up-path; config down-path `device set`→NVS; observed-config echo; config self-heal),
-  prove it serving live **nodus** end-to-end, and refresh MCP + htmx for Toit nodes.
+  prove it serving live **nodus-toit** end-to-end, and refresh MCP + htmx for Toit nodes.
   *Critical path — the actual reason this is worth doing.*
 - **C. Language tooling** — `/tools/smalltalk` (move transpiler in) + `/tools/toit`
   (jag/SDK build), wired into the symmetric compile-and-deliver flow, with per-node SDK
   matching.
-- **D. st-zephyr → node-only** — strip server/tooling/transpiler; leave the
-  Smalltalk/berry node.
+- **D. st-zephyr → node-only (`nodus-st`)** — strip server/tooling/transpiler; leave
+  the Smalltalk/berry node, and rename the repo `st-zephyr` → `nodus-st`.
 
 Each gets its own spec → plan → implementation cycle. **This spec covers A only.**
 
