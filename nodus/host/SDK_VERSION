@@ -1,9 +1,0 @@
-# Pinned SDK for the Toit-over-TFTP loader smoke test.
-# Every payload image MUST be built with this exact SDK, and the device MUST be
-# flashed with the matching Jaguar firmware (see docs/specs).
-#
-# Captured 2026-05-21 from `jag version` / `toit version`:
-jag-sdk-version: v2.0.0-alpha.192
-jag-sdk-build-date: 2026-04-29T20:56:27Z
-jaguar-cache-sdk: v1.64.0   # ~/.cache/jaguar/v1.64.0/sdk
-toit-version: v2.0.0-alpha.192
