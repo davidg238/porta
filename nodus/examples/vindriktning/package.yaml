@@ -1,0 +1,4 @@
+name: vindriktning
+dependencies:
+  nodus:
+    path: ../..
