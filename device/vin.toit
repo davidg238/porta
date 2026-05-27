@@ -6,9 +6,9 @@
 //
 // Uses the hardware-proven .vindriktning driver (preamble-synced PM1006 reader).
 //
-// LED feedback (single LED on LED-PIN, active-low): solid on while sampling, a brief
-// blink as each frame arrives, off when sampling completes. A stuck-on LED therefore
-// means "sampling but no frames" — the supervisor's MAX-AWAKE cap ends the wake anyway.
+// LED feedback (single LED on LED-PIN, active-low): idle off, a 40ms ON pulse as each
+// frame arrives. So ~8 visible flashes => frames flowing; dark => no frames (the
+// supervisor's MAX-AWAKE cap ends the wake either way).
 import gpio
 import .vindriktning show Vindriktning
 import .olympic show olympic-mean
@@ -20,15 +20,14 @@ SAMPLES ::= 8
 
 main:
   led := gpio.Pin LED-PIN --output
-  led.set 0                       // active-low: ON — sampling in progress
+  led.set 1                       // active-low: OFF — idle
   sensor := Vindriktning RX-PIN
   samples := []
   SAMPLES.repeat:
     sensor.next                   // blocks until a valid preamble-framed reading
     samples.add sensor.air-quality
-    led.set 1; sleep --ms=40; led.set 0   // brief blink to mark each received frame
-  led.set 1                       // OFF — sampling complete
-  led.close
+    led.set 0; sleep --ms=40; led.set 1   // 40ms ON pulse to mark each received frame
+  led.close                       // leaves the pin released (off)
 
   pm25 := olympic-mean samples
 
