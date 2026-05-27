@@ -24,7 +24,7 @@ cd ~/workspaceToit/porta
 ./deploy/build-kit.sh        # → deploy/kit/  (~56 MB, gitignored)
 ```
 
-This compiles a fresh `gateway.snapshot` from `gateway/gateway.toit` and stages
+This compiles a fresh `gateway.snapshot` from `examples/toit-gateway/gateway.toit` and stages
 the `toit-sqlite` binary + `lib/` tree + `Dockerfile`.
 
 ## 2. Ship the kit and build the image on gw
