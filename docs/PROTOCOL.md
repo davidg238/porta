@@ -1,0 +1,356 @@
+# Porta wire protocol
+
+This is the **canonical, authoritative** contract between the **porta gateway**
+(the northbound controller) and any **node** that it commands. The gateway owns
+the command vocabulary, the report schema, and the TFTP transfer surface. Nodes
+conform to this document; they do not define it.
+
+`nodus` is one conforming node implementation (Toit, classic ESP32). Any future
+node implementation — including a planned Smalltalk node — MUST be implementable
+from this document alone, without reading `nodus` source. Where this document and
+the code disagree, the code wins and this document is the bug.
+
+Source of truth in code:
+- Commands: `gateway/command.toit` (encode), `nodus/src/node_command.toit` (decode/apply).
+- Report: `nodus/src/report.toit` (build), `gateway/handler.toit` (ingest).
+- App/goal shape & defaults: `nodus/src/goal_state.toit`, `nodus/src/inventory.toit`.
+- Triggers: `nodus/src/triggers.toit`.
+- TFTP resources / framing: `gateway/handler.toit`, `nodus/src/supervisor.toit`.
+
+---
+
+## 1. Transport: TFTP over UDP
+
+All traffic is TFTP. The node is the TFTP **client**; the gateway is the TFTP
+**server**. The node identifies itself in every request via a `?id=<mac>` query
+suffix on the TFTP resource name, where `<mac>` is the node's 12-hex-digit MAC
+(lowercase, no separators, e.g. `aabbccddeeff`).
+
+The resource name is `base?key=value&key2=value2`. A key with no `=` maps to the
+empty string. The gateway parses this with `parse-resource_` in
+`gateway/handler.toit`.
+
+| Direction | TFTP op | Resource | Meaning |
+|-----------|---------|----------|---------|
+| node → gw | RRQ | `commands?id=<mac>` | Pull the oldest undelivered command. Empty body = queue drained. |
+| node → gw | RRQ | `payload?id=<mac>&name=<app>&crc=<crc>` | Download a container image (raw bytes) selected by `crc`. |
+| node → gw | WRQ | `report?id=<mac>` | Upload the observed-state report. |
+| node → gw | WRQ | `data?id=<mac>` | Upload buffered telemetry (JSONL). |
+
+Notes:
+- Any RRQ/WRQ carrying `id` causes the gateway to **touch** (last-seen) the node.
+- `commands` is served one command per RRQ. The node drains by RRQ-ing
+  repeatedly until it receives a **zero-byte body**, which is the
+  "queue is empty" sentinel (every real command encodes to at least one byte).
+- A `commands` RRQ that transfers a real (non-empty) command is marked
+  **delivered** on the gateway only on the TFTP transfer-complete event with
+  `ok=true` (`on-transfer-complete` in `gateway/handler.toit`). A failed or
+  drain (empty) transfer marks nothing.
+- A WRQ to any base other than `report` or `data`, or any WRQ missing `id`, is
+  rejected (`STORAGE-ACCESS-DENIED`). A `payload` RRQ whose `crc` does not match
+  a stored image throws `STORAGE-FILE-NOT-FOUND`.
+
+---
+
+## 2. Commands (gateway → node)
+
+A command is a single JSON object. It always carries a `"verb"` string; the
+remaining keys are the verb-specific arguments. On the wire, encode is:
+`{"verb": <verb>, <...args flattened at top level...>}` — the args map is
+**flattened into the top-level object**, not nested under an `"args"` key
+(`Command.encode` in `gateway/command.toit`). Decode reverses this: every key
+except `"verb"` becomes an arg (`NodeCommand.decode`).
+
+Commands are **declarative and absolute**: applying one is idempotent, and a
+later command for the same target wins. This makes redelivery safe.
+
+Verb constants (identical in `gateway/command.toit` and
+`nodus/src/node_command.toit`):
+
+| Verb string | Constant |
+|-------------|----------|
+| `run` | `VERB-RUN` |
+| `stop` | `VERB-STOP` |
+| `set-poll-interval` | `VERB-SET-POLL-INTERVAL` |
+| `set-console` | `VERB-SET-CONSOLE` |
+| `set` | `VERB-SET` |
+
+### 2.1 `run` — install/run an app
+
+Tells the node it should be running app `name` from image `crc` (of `size`
+bytes), under the given `triggers`, at `runlevel`, with the declared `lifecycle`
+and container `arguments`.
+
+| Key | Type | Required | Default | Meaning |
+|-----|------|----------|---------|---------|
+| `verb` | string | yes | — | `"run"` |
+| `name` | string | yes | — | App name (identity within the node). |
+| `crc` | int | yes | — | CRC32-IEEE of the image. Identity + change detection; also the `payload` selector. |
+| `size` | int | yes | — | Image byte count. Lets the node size its image writer from the command alone. |
+| `triggers` | object | yes | — | `{type: value}` trigger map (see §4). |
+| `runlevel` | int | no | `3` | Start ordering / level. |
+| `lifecycle` | string | no | `"run-once"` | `"run-once"` or `"run-loop"` (see §2.6). |
+| `arguments` | array | no | `[]` | Container arguments. |
+
+Example:
+```json
+{
+  "verb": "run",
+  "name": "blink",
+  "crc": 305419896,
+  "size": 81920,
+  "triggers": {"boot": 1, "interval": 60},
+  "runlevel": 3,
+  "lifecycle": "run-once",
+  "arguments": []
+}
+```
+
+When the node decodes a `run` (`apply-to-goal`), it sets/replaces its goal entry
+for `name` with `{size, crc, triggers, runlevel, lifecycle, arguments}`. Absent
+`triggers`/`runlevel`/`lifecycle`/`arguments` default to `{}` / `3` /
+`"run-once"` / `[]` respectively. (`size`/`crc`/`name` have no defaults — they
+are required.)
+
+### 2.2 `stop` — remove an app
+
+| Key | Type | Required | Meaning |
+|-----|------|----------|---------|
+| `verb` | string | yes | `"stop"` |
+| `name` | string | yes | App to remove from the goal/inventory. |
+
+```json
+{"verb": "stop", "name": "blink"}
+```
+
+The node removes `name` from its goal; reconcile then uninstalls the image.
+
+### 2.3 `set-poll-interval` — wake/poll cadence
+
+| Key | Type | Required | Meaning |
+|-----|------|----------|---------|
+| `verb` | string | yes | `"set-poll-interval"` |
+| `interval` | int | yes | Seconds between wakes/polls. |
+
+```json
+{"verb": "set-poll-interval", "interval": 300}
+```
+
+The node persists this and uses it as its deep-sleep / re-poll cadence.
+
+### 2.4 `set-console` — telemetry forwarding toggle
+
+| Key | Type | Required | Meaning |
+|-----|------|----------|---------|
+| `verb` | string | yes | `"set-console"` |
+| `on` | bool | yes | Enable/disable console/telemetry forwarding. |
+
+```json
+{"verb": "set-console", "on": true}
+```
+
+The node persists the flag (defaults to `false` if absent at read time).
+
+### 2.5 `set` — per-app config key
+
+Sets one scalar config key for one app. Config is a plane **separate** from the
+goal/triggers; it does not change which apps run.
+
+| Key | Type | Required | Meaning |
+|-----|------|----------|---------|
+| `verb` | string | yes | `"set"` |
+| `app` | string | yes | Target app name. |
+| `key` | string | yes | Config key. |
+| `value` | scalar | yes | int, float, bool, or string. |
+
+```json
+{"verb": "set", "app": "sampler", "key": "interval", "value": 30}
+```
+
+The node stores `value` under `app → {key: value}` and echoes the applied blob
+back in the report's `config` field (§3), enabling desired-vs-observed
+reconciliation. The runtime type of `value` is significant and is preserved
+end to end. `set` for the same `(app, key)` is last-write-wins.
+
+### 2.6 `lifecycle` semantics
+
+Declared per app on the `run` command. The halting behaviour of a container
+cannot be inferred, so it is declared:
+
+- `"run-once"` (`LIFECYCLE-RUN-ONCE`, the default): the container is expected to
+  **return**. The supervisor may `wait` on it (with a cap) before sleeping.
+- `"run-loop"` (`LIFECYCLE-RUN-LOOP`): the container **never returns**
+  (always-on). The supervisor starts it but must not block waiting for it to
+  exit.
+
+---
+
+## 3. Report / observed state (node → gateway)
+
+Each wake, after reconciling, the node PUTs (WRQ) one JSON object to
+`report?id=<mac>` (`build-report` in `nodus/src/report.toit`):
+
+```json
+{
+  "apps": {
+    "blink": {
+      "crc": 305419896,
+      "runlevel": 3,
+      "lifecycle": "run-once",
+      "triggers": {"boot": 1, "interval": 60}
+    }
+  },
+  "config": {
+    "sampler": {"interval": 30}
+  },
+  "health": {
+    "uptime_us": 1234567,
+    "wakes": 42
+  }
+}
+```
+
+Fields:
+
+| Path | Type | Meaning |
+|------|------|---------|
+| `apps` | object | Observed installed apps, keyed by app name. |
+| `apps.<name>.crc` | int | Installed image CRC32-IEEE (what is actually on flash). |
+| `apps.<name>.runlevel` | int | Observed runlevel. |
+| `apps.<name>.lifecycle` | string | Observed lifecycle (`"run-once"` / `"run-loop"`). |
+| `apps.<name>.triggers` | object | Observed `{type: value}` trigger map (§4). |
+| `config` | object | Applied per-app config blob: `app → {key: value}`. May be empty `{}`. |
+| `health.uptime_us` | int | Monotonic uptime in microseconds. |
+| `health.wakes` | int | Cumulative wake count. |
+
+Gateway ingest (`ReportWriter_` in `gateway/handler.toit`):
+- `apps`, `config`, `health` each default to `{}` if absent (a node that does
+  not implement `config` is tolerated; `config` then defaults empty).
+- The gateway stores `{"apps":…, "config":…}` as observed-state and `health`
+  separately.
+- After committing the report, the gateway runs config **self-heal**: it diffs
+  the desired config (projected from delivered `set` commands) against the
+  reported `config` and re-enqueues any delivered-but-divergent `set` (tagged
+  `gateway-reconcile`). The node need do nothing special for this — it just keeps
+  echoing its applied `config`.
+
+There is no `goal` resource the node fetches: the node seeds its goal from its
+own persistent inventory and applies drained commands on top. The report is the
+node's only northbound state declaration.
+
+---
+
+## 4. Triggers
+
+The trigger map is `{type: value}` (`nodus/src/triggers.toit`,
+`gateway/command.toit:triggers-from-flags`). Recognised entries:
+
+| Key | Value | Meaning |
+|-----|-------|---------|
+| `boot` | `1` | Run on (cold) boot. |
+| `install` | int | Run on the Nth install generation. |
+| `interval` | int (seconds) | Periodic wake. |
+| `gpio-high:<pin>` | `<pin>` (int) | Wake/run on GPIO `<pin>` high (ext1). |
+| `gpio-low:<pin>` | `<pin>` (int) | Wake/run on GPIO `<pin>` low. |
+| `gpio-touch:<pin>` | `<pin>` (int) | Wake/run on touch pin `<pin>`. |
+
+The key carries the pin for the GPIO/touch variants (e.g. `"gpio-high:33": 33`).
+An unrecognised key makes the node throw on parse.
+
+---
+
+## 5. Image payload delivery (TFTP)
+
+> **Framing note (current vs. retired).** Earlier porta/nodus smoke-test specs
+> describe a self-describing delivery blob `[u32 size_le][u32 crc32_le][image
+> bytes]` with an 8-byte header read before streaming. **That header has been
+> removed.** In the shipping protocol the `payload` resource is the **raw image
+> bytes only** — size and CRC ride in the `run` command (§2.1), not in a blob
+> header. See the comment in `nodus/src/image_writer.toit`. Document and
+> implement the current form below.
+
+To install an app, the node:
+
+1. Receives a `run` command carrying `name`, `crc`, `size` (§2.1).
+2. Issues an RRQ for `payload?id=<mac>&name=<name>&crc=<crc>`. The gateway
+   selects the stored image by `crc` and returns the **raw image bytes**
+   (no header). The TFTP transfer size equals `size`.
+3. Streams the bytes straight into its image writer, sized from the command's
+   `size`. It does **not** parse any leading header.
+4. On completion, verifies:
+   - **length** equals the command's `size` (else "truncated stream"), and
+   - **CRC32-IEEE** of the streamed bytes equals the command's `crc`
+     (else "CRC32 mismatch").
+   Only then does it commit the image.
+
+### CRC32-IEEE parameters
+
+The checksum is standard CRC32-IEEE (`ImageStreamWriter` in
+`nodus/src/image_writer.toit`):
+
+| Parameter | Value |
+|-----------|-------|
+| Width | 32 |
+| Polynomial | `0xEDB88320` (reversed/little-endian form) |
+| Initial state | `0xFFFFFFFF` |
+| XOR out | `0xFFFFFFFF` |
+| Reflected | yes (little-endian CRC) |
+
+This is the same CRC used by `jag` for its `X-Jaguar-CRC32` and by the gateway.
+
+---
+
+## 6. Telemetry data (node → gateway)
+
+When console/telemetry forwarding is enabled (§2.4) and the node buffered
+entries this wake, it PUTs (WRQ) a **JSONL** body (one JSON object per line) to
+`data?id=<mac>` (`build-data-body` in `nodus/src/telemetry_codec.toit`).
+
+Each line is one entry:
+
+| Key | Type | Required | Default at gateway | Meaning |
+|-----|------|----------|--------------------|---------|
+| `kind` | string | no | `"log"` | Entry kind, e.g. `"log"` or `"metric"`. |
+| `name` | string | no | `null` | Metric/series name. |
+| `value` | scalar | no | `null` | int / float / bool — typed scalar value. |
+| `text` | string | no | `null` | Log text (or string-valued reading). |
+| `ts` | int | no | gateway receive time | Timestamp (epoch seconds). |
+| `seq` | int | no | line index | Sequence within the batch. |
+
+Entries the node emits in practice:
+```json
+{"kind": "log", "text": "hello from node"}
+{"kind": "metric", "name": "pm2_5", "value": 12}
+```
+
+Gateway ingest (`DataWriter_` in `gateway/handler.toit`) decodes each line and
+appends it to the data_log, preserving the runtime type of `value` via a
+`value_type` tag: `bool → 0/1` + `"bool"`; `int → "int"`; `float → "float"`;
+`string` value lands in the text column + `"string"`; `null`/array/object →
+no scalar value. A line that fails to decode (e.g. a truncated final line) is
+skipped; the rest of the batch is unaffected.
+
+---
+
+## 7. Conformance
+
+A conforming node MUST:
+
+- Identify itself with `?id=<12-hex-mac>` on every TFTP request.
+- Drain `commands?id=` by repeated RRQ until a zero-byte body, treating commands
+  as absolute/idempotent (last write wins per target).
+- Honour the five verbs (`run`, `stop`, `set-poll-interval`, `set-console`,
+  `set`) with the arg schemas and defaults in §2, including the `lifecycle`
+  declaration (default `run-once`) and `runlevel` (default `3`).
+- Download images via `payload?id=&name=&crc=` as **raw bytes** and verify
+  length against the command's `size` and CRC32-IEEE (§5 parameters) against the
+  command's `crc` before committing.
+- Report observed state to `report?id=` with the `apps` / `config` / `health`
+  shape in §3, echoing per-app `crc`/`runlevel`/`lifecycle`/`triggers` and the
+  applied `config` blob.
+- (If it forwards telemetry) ship JSONL to `data?id=` per §6.
+
+A conforming node MAY omit `config` from its report (it defaults to empty),
+omit optional command args (defaults apply), and implement any transport that
+presents the same TFTP RRQ/WRQ resource surface (WiFi is the only transport
+today; ESP-NOW / BT-mesh are planned behind the same interface).

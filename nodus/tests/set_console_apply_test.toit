@@ -1,7 +1,7 @@
 // device/set_console_apply_test.toit
 import expect show *
 import encoding.json
-import .node_command show NodeCommand
+import nodus.node_command show NodeCommand
 
 main:
   bytes := json.encode {"verb": "set-console", "on": true}

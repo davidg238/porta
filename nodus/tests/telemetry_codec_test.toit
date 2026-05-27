@@ -1,7 +1,7 @@
 // device/telemetry_codec_test.toit
 import expect show *
 import encoding.json
-import .telemetry_codec show build-data-body
+import nodus.telemetry_codec show build-data-body
 
 main:
   entries := [

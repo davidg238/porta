@@ -1,9 +1,9 @@
 import expect show *
 import encoding.json
 import uuid
-import .report show build-report
-import .inventory show Inventory InstalledApp
-import .triggers show Triggers
+import nodus.report show build-report
+import nodus.inventory show Inventory InstalledApp
+import nodus.triggers show Triggers
 
 main:
   app := InstalledApp

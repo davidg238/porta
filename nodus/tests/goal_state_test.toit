@@ -1,7 +1,7 @@
 // device/goal_state_test.toit
 import expect show *
 import encoding.json as json-lib
-import .goal_state show GoalState App
+import nodus.goal_state show GoalState App
 
 main:
   json := """{"apps":{"payload":{"size":38016,"crc":2157114022,

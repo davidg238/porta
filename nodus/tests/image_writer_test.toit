@@ -3,7 +3,7 @@ import expect show *
 import io
 import crypto.crc
 import uuid
-import .image_writer show ImageStreamWriter ImageInstaller
+import nodus.image_writer show ImageStreamWriter ImageInstaller
 
 class FakeInstaller implements ImageInstaller:
   begun-size/int := -1

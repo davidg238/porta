@@ -1,8 +1,8 @@
 // device/control_demo.toit — M2.2 hardware demo. Reads its own config via
 // ControlService and echoes it back up via TelemetryService, so the down-path is
 // observable in `gateway monitor`. Install as app name "control-demo".
-import .control_service show ControlServiceClient
-import .telemetry_service show TelemetryServiceClient
+import nodus.control_service show ControlServiceClient
+import nodus.telemetry_service show TelemetryServiceClient
 
 APP ::= "control-demo"
 

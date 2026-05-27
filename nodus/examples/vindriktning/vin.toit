@@ -12,7 +12,7 @@
 import gpio
 import .vindriktning show Vindriktning
 import .olympic show olympic-mean
-import .telemetry_service show TelemetryServiceClient
+import nodus.telemetry_service show TelemetryServiceClient
 
 RX-PIN ::= 21     // PM1006 TX -> ESP32 RX (matches the vindriktning module wiring).
 LED-PIN ::= 13    // Sampling-feedback LED, active-low (set 0 = on).
