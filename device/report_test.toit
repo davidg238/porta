@@ -39,3 +39,9 @@ main:
 
   // An omitted config defaults to an empty object (uniform body shape).
   expect-structural-equals {:} (json.decode empty)["config"]
+
+  // The report echoes each app's declared lifecycle (parallel to runlevel).
+  vin-app := InstalledApp --name="vin" --id=(uuid.Uuid.uuid5 "" "vin") --size=1 --crc=2 --triggers=(Triggers --boot) --runlevel=3 --lifecycle="run-loop"
+  vin-body := build-report (Inventory {"vin": vin-app}) --uptime-us=0 --wakes=1
+  decoded := json.decode vin-body
+  expect-equals "run-loop" decoded["apps"]["vin"]["lifecycle"]

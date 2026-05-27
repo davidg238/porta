@@ -8,6 +8,10 @@ VERB-SET-POLL-INTERVAL ::= "set-poll-interval"
 VERB-SET-CONSOLE ::= "set-console"
 VERB-SET ::= "set"
 
+/** Whether $lc is a valid container lifecycle declaration. */
+is-valid-lifecycle lc/string -> bool:
+  return lc == "run-once" or lc == "run-loop"
+
 /**
 An operator command targeted at a node.
 
@@ -31,13 +35,14 @@ class Command:
   $size is required so the device can size its image writer from the command alone,
     without reading the payload first.
   */
-  static run --name/string --crc/int --size/int --triggers/Map --runlevel/int=3 --arguments/List=[] -> Command:
+  static run --name/string --crc/int --size/int --triggers/Map --runlevel/int=3 --lifecycle/string="run-once" --arguments/List=[] -> Command:
     return Command VERB-RUN {
       "name": name,
       "crc": crc,
       "size": size,
       "triggers": triggers,
       "runlevel": runlevel,
+      "lifecycle": lifecycle,
       "arguments": arguments,
     }
 
@@ -75,6 +80,7 @@ class Command:
   size -> int?: return args.get "size"
   triggers -> Map?: return args.get "triggers"
   runlevel -> int?: return args.get "runlevel"
+  lifecycle -> string?: return args.get "lifecycle"
   arguments -> List?: return args.get "arguments"
   interval-s -> int?: return args.get "interval"
   app -> string?: return args.get "app"
@@ -125,7 +131,7 @@ infer-scalar value-str/string -> any:
 
 /**
 Folds an ordered list of $commands into the goal-app map a node would converge
-  to: app name → {"crc", "triggers", "runlevel", "arguments"}.
+  to: app name → {"crc", "triggers", "runlevel", "lifecycle", "arguments"}.
 
 A run sets (or replaces) its app; a stop removes it; set-poll-interval does not
   affect the app set. Because commands are absolute, re-applying a run is a no-op
@@ -140,6 +146,7 @@ project commands/List -> Map:
         "crc": c.crc,
         "triggers": c.triggers,
         "runlevel": c.runlevel,
+        "lifecycle": c.lifecycle,
         "arguments": c.arguments,
       }
     else if c.verb == VERB-STOP:

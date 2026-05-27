@@ -1,5 +1,6 @@
 // device/goal_state_test.toit
 import expect show *
+import encoding.json as json-lib
 import .goal_state show GoalState App
 
 main:
@@ -24,3 +25,11 @@ main:
   g3 := GoalState.parse """{"apps":{"x":{"size":1,"crc":2}}}""".to-byte-array
   expect-equals 3 (g3.apps["x"] as App).runlevel
   expect-equals [] (g3.apps["x"] as App).arguments
+
+  // lifecycle defaults to run-once and round-trips through parse/to-json.
+  g-default := GoalState.parse (json-lib.encode {"apps": {"a": {"size": 1, "crc": 2, "triggers": {"boot": 1}, "runlevel": 3}}})
+  expect-equals "run-once" g-default.apps["a"].lifecycle
+  g-loop := GoalState.parse (json-lib.encode {"apps": {"b": {"size": 1, "crc": 2, "triggers": {"boot": 1}, "runlevel": 3, "lifecycle": "run-loop"}}})
+  expect-equals "run-loop" g-loop.apps["b"].lifecycle
+  reparsed := GoalState.parse g-loop.to-json
+  expect-equals "run-loop" reparsed.apps["b"].lifecycle

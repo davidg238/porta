@@ -37,6 +37,7 @@ main:
   expect (project [run-x, (Command.stop --name="x")]).is-empty  // stop removes
   later := project [run-x, (Command.run --name="x" --crc=2 --size=1024 --triggers={:})]
   expect-equals 2 later["x"]["crc"]                             // later run wins
+  expect-equals "run-loop" (project [Command.run --name="x" --crc=1 --size=512 --triggers={:} --lifecycle="run-loop"])["x"]["lifecycle"]
 
   // run carries size so the device can size its image writer from the command alone.
   rc := Command.run --name="blink" --crc=999 --size=2048 --triggers={"interval": 30}
@@ -184,3 +185,14 @@ main:
   expect-equals ["a"] (config-keys {"a": 1} {:})
   expect-equals ["x"] (config-keys {:} {"x": 1})
   expect-structural-equals [] (config-keys {:} {:})
+
+  // lifecycle defaults to run-once and round-trips through the wire codec.
+  r0 := Command.run --name="vin" --crc=1 --size=2 --triggers={:}
+  expect-equals "run-once" r0.lifecycle
+  r1 := Command.run --name="vin" --crc=1 --size=2 --triggers={:} --lifecycle="run-loop"
+  expect-equals "run-loop" (Command.decode r1.encode).lifecycle
+  // validator
+  expect (is-valid-lifecycle "run-once")
+  expect (is-valid-lifecycle "run-loop")
+  expect-not (is-valid-lifecycle "forever")
+  expect-not (is-valid-lifecycle "")

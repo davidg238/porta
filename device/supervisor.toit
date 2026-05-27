@@ -4,7 +4,7 @@ import encoding.json
 import system.storage
 import system.containers
 
-import .goal_state show GoalState
+import .goal_state show GoalState LIFECYCLE-RUN-ONCE
 import .inventory show Inventory InstalledApp
 import .node_command show NodeCommand apply-to-goal
 import .node_id show mac-to-id
@@ -27,6 +27,8 @@ GATEWAY-PORT ::= 6969
 DEFAULT-POLL-S ::= 30
 /** How long to stay awake observing started payloads before sleeping. */
 OBSERVE ::= Duration --s=5
+/** Upper bound on how long the supervisor waits for run-once payloads before sleeping. */
+MAX-AWAKE ::= Duration --s=20
 
 /** NVS bucket + keys for persistent node-local state. */
 BUCKET-NAME ::= "porta"
@@ -62,11 +64,23 @@ main:
       poll-interval-s = poll-and-reconcile bucket inventory id poll-interval-s store
       store.last-poll-us = now
 
-  start-installed inventory
+  run-once-handles := start-installed inventory
   arm-wakeups inventory
 
-  print "supervisor: observing for $OBSERVE"
-  sleep OBSERVE
+  if run-once-handles.is-empty:
+    // No run-once payloads to await: preserve the M1-verified deep-sleep timing.
+    print "supervisor: observing for $OBSERVE"
+    sleep OBSERVE
+  else:
+    print "supervisor: waiting on $(run-once-handles.size) run-once payload(s) (cap $MAX-AWAKE)"
+    e := catch:
+      with-timeout MAX-AWAKE:
+        run-once-handles.do: | c/containers.Container | c.wait
+    if e:
+      // Graceful, local, no reboot. (Northbound cap-health reporting is a follow-up.)
+      print "supervisor: payload cap hit after $MAX-AWAKE ($e) — proceeding to sleep"
+    else:
+      print "supervisor: run-once payload(s) finished; proceeding to sleep"
 
   // Ship telemetry produced this wake (after payloads ran), if forwarding is on.
   // This opens a second TFTP connection every wake the flag is on (not only poll wakes).
@@ -131,7 +145,7 @@ poll-and-reconcile bucket/storage.Bucket inventory/Inventory id/string poll-inte
       writer := ImageStreamWriter installer --size=app.size --crc=app.crc
       client.fetch "payload?id=$id&name=$app.name&crc=$app.crc" --to-writer=writer
       image-id := writer.commit
-      inventory.apps[app.name] = InstalledApp --name=app.name --id=image-id --size=app.size --crc=app.crc --triggers=app.triggers --runlevel=app.runlevel
+      inventory.apps[app.name] = InstalledApp --name=app.name --id=image-id --size=app.size --crc=app.crc --triggers=app.triggers --runlevel=app.runlevel --lifecycle=app.lifecycle
       print "supervisor: installed $app.name -> $image-id"
     recon.to-remove.do: | a/InstalledApp |
       print "supervisor: removing $a.name"
@@ -147,12 +161,22 @@ poll-and-reconcile bucket/storage.Bucket inventory/Inventory id/string poll-inte
   finally:
     client.close
 
-/** Starts every installed app (deep-sleep cleared running state each wake). */
-start-installed inventory/Inventory -> none:
+/**
+Starts every installed app (deep-sleep cleared running state each wake) and returns
+  the $containers.Container handles of the run-once apps, so the caller can `wait` on
+  them. run-loop apps are started but their handles are not returned — the caller must
+  not block on a container that never exits.
+*/
+start-installed inventory/Inventory -> List:
+  handles := []
   inventory.apps.do: | name/string a/InstalledApp |
-    e := catch --trace: containers.start a.id
+    container/containers.Container? := null
+    e := catch --trace: container = containers.start a.id
     if e: print "supervisor: could not start $name ($a.id): $e"
-    else: print "supervisor: started $name ($a.id)"
+    else:
+      print "supervisor: started $name ($a.id, $a.lifecycle)"
+      if a.lifecycle == LIFECYCLE-RUN-ONCE: handles.add container
+  return handles
 
 /** Re-arms GPIO (ext1) wake sources declared by installed apps' triggers. */
 arm-wakeups inventory/Inventory -> none:

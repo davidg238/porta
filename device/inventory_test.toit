@@ -88,3 +88,14 @@ main:
   // All present → nothing dropped.
   dropped3 := (Inventory {"a": app-a}).prune-missing [id-a, id-b]
   expect-equals 0 dropped3.size
+
+  // lifecycle survives the NVS encode->decode round-trip and appears in to-goal-map,
+  // defaulting to run-once when an older stored tree omits it.
+  vin-app := InstalledApp --name="vin" --id=(uuid.Uuid.uuid5 "" "vin") --size=10 --crc=20 --triggers=(Triggers --boot) --runlevel=3 --lifecycle="run-loop"
+  vin-inv := Inventory {"vin": vin-app}
+  round := Inventory.decode vin-inv.encode
+  expect-equals "run-loop" round.apps["vin"].lifecycle
+  expect-equals "run-loop" (vin-inv.to-goal-map)["vin"]["lifecycle"]
+  // Missing key in a stored tree defaults to run-once.
+  legacy := Inventory.decode {"apps": {"old": {"id": (uuid.Uuid.uuid5 "" "old").to-byte-array, "size": 1, "crc": 2, "triggers": {"boot": 1}, "runlevel": 3}}}
+  expect-equals "run-once" legacy.apps["old"].lifecycle

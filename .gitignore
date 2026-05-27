@@ -31,3 +31,5 @@ host/firmware
 /chatty.bin
 /control_demo.snapshot
 /control_demo.bin
+/vin.snapshot
+/vin.bin
