@@ -1,6 +1,6 @@
 import encoding.json
 import expect show *
-import .node_command show NodeCommand apply-to-goal
+import nodus.node_command show NodeCommand apply-to-goal
 
 main:
   // Decode a run command from its wire JSON.

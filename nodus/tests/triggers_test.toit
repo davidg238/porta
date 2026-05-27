@@ -1,6 +1,6 @@
 // device/triggers_test.toit
 import expect show *
-import .triggers show Triggers
+import nodus.triggers show Triggers
 
 main:
   t := Triggers.parse {"boot": 1, "interval": 60, "gpio-high:33": 33, "gpio-touch:4": 4}

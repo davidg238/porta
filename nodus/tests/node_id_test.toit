@@ -1,5 +1,5 @@
 import expect show *
-import .node_id show mac-to-id
+import nodus.node_id show mac-to-id
 
 main:
   expect-equals "a0b1c2d3e4f5" (mac-to-id #[0xa0, 0xb1, 0xc2, 0xd3, 0xe4, 0xf5])

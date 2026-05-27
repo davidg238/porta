@@ -1,7 +1,7 @@
 // device/telemetry_service_test.toit
 import expect show *
-import .telemetry_buffer show TelemetryBuffer
-import .telemetry_service show TelemetryServiceClient TelemetryServiceProvider
+import nodus.telemetry_buffer show TelemetryBuffer
+import nodus.telemetry_service show TelemetryServiceClient TelemetryServiceProvider
 
 main:
   spawn::

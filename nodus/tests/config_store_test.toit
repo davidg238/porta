@@ -1,7 +1,7 @@
 // device/config_store_test.toit
 import encoding.tison
 import expect show *
-import .config_store show set-config get-config mutable-config-copy
+import nodus.config_store show set-config get-config mutable-config-copy
 
 main:
   c := {:}

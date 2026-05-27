@@ -1,6 +1,6 @@
 // device/telemetry_buffer_test.toit
 import expect show *
-import .telemetry_buffer show TelemetryBuffer
+import nodus.telemetry_buffer show TelemetryBuffer
 
 main:
   buf := TelemetryBuffer --cap=3

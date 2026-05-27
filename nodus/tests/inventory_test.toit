@@ -1,9 +1,9 @@
 // device/inventory_test.toit
 import expect show *
 import uuid
-import .goal_state show GoalState App
-import .triggers show Triggers
-import .inventory show Inventory InstalledApp
+import nodus.goal_state show GoalState App
+import nodus.triggers show Triggers
+import nodus.inventory show Inventory InstalledApp
 
 make-goal crc/int -> GoalState:
   t := Triggers --interval-s=60

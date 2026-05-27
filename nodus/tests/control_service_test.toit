@@ -1,6 +1,6 @@
 // device/control_service_test.toit
 import expect show *
-import .control_service show ControlServiceClient ControlServiceProvider
+import nodus.control_service show ControlServiceClient ControlServiceProvider
 
 main:
   config := {
