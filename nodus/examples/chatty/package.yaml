@@ -1,0 +1,4 @@
+name: chatty
+dependencies:
+  nodus:
+    path: ../..

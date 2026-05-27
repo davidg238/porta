@@ -2,7 +2,7 @@
 // M2 up-path end to end. Exercises every scalar value type (bool/string/int/float)
 // plus a log line, so `gateway monitor` shows the full typed surface. Install it via
 // `gateway container install`.
-import .telemetry_service show TelemetryServiceClient
+import nodus.telemetry_service show TelemetryServiceClient
 
 main:
   client := TelemetryServiceClient

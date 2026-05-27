@@ -1,0 +1,4 @@
+name: control-demo
+dependencies:
+  nodus:
+    path: ../..
