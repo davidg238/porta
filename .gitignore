@@ -1,8 +1,9 @@
 # Local-only reference symlink to the parent project (machine-specific absolute path)
 /st-zephyr
 
-# Go gateway build output
-gateway/jast-gw
+# Go server build output
+/porta
+/cmd/porta/porta
 *.db
 
 # Build artifacts / caches

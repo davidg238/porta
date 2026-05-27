@@ -6,8 +6,8 @@ import (
 	"net"
 	"testing"
 
-	"github.com/davidg238/jast-gw/gateway"
-	"github.com/davidg238/jast-gw/store"
+	"github.com/davidg238/porta/internal/gateway"
+	"github.com/davidg238/porta/internal/store"
 )
 
 // testListener opens an in-memory store, creates a Gateway and TCP listener on

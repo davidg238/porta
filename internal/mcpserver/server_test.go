@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidg238/jast-gw/debug"
-	"github.com/davidg238/jast-gw/store"
+	"github.com/davidg238/porta/internal/debug"
+	"github.com/davidg238/porta/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

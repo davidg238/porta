@@ -8,8 +8,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/davidg238/jast-gw/store"
-	"github.com/davidg238/jast-gw/tftp"
+	"github.com/davidg238/porta/internal/store"
+	"github.com/davidg238/porta/internal/tftp"
 )
 
 // Gateway connects the TFTP server to the SQLite store.

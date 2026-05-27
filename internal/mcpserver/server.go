@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davidg238/jast-gw/debug"
-	"github.com/davidg238/jast-gw/debugui"
-	"github.com/davidg238/jast-gw/helpers"
-	"github.com/davidg238/jast-gw/store"
+	"github.com/davidg238/porta/internal/debug"
+	"github.com/davidg238/porta/internal/debugui"
+	"github.com/davidg238/porta/internal/helpers"
+	"github.com/davidg238/porta/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

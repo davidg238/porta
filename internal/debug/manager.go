@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/davidg238/jast-gw/store"
+	"github.com/davidg238/porta/internal/store"
 )
 
 // moduleKey uniquely identifies a module on a device.

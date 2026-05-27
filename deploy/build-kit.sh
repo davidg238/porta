@@ -24,7 +24,7 @@ KIT="$HERE/kit"
 echo "==> Compiling gateway snapshot"
 rm -rf "$KIT"
 mkdir -p "$KIT"
-( cd "$REPO/gateway" && "$TS" compile --snapshot -o "$KIT/gateway.snapshot" gateway.toit )
+( cd "$REPO/examples/toit-gateway" && "$TS" compile --snapshot -o "$KIT/gateway.snapshot" gateway.toit )
 
 echo "==> Staging toit-sqlite runtime (bin/ + lib/)"
 mkdir -p "$KIT/bin"
