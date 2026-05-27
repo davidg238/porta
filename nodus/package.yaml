@@ -2,8 +2,8 @@
 # The on-device install code (flash-image, container_registry) is lifted from
 # ~/workspaceToit/jaguar/src and uses the SDK's system.containers (no package
 # dependency). See ../docs/specs.
-name: loader
-description: On-device loader that pulls a container image over UDP/TFTP and installs it.
+name: nodus
+description: Porta node — on-device loader/supervisor (the keeper) + node services.
 dependencies:
   # NOTE: machine-specific absolute path (per CLAUDE.md, packages live under
   # ~/workspaceToit/). A clone on a different layout must adjust this path.
