@@ -1,9 +1,15 @@
 package portacli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"sort"
+	"text/tabwriter"
 
+	"github.com/davidg238/porta/internal/config"
+	"github.com/davidg238/porta/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -165,6 +171,7 @@ func newDeviceCmd() *cobra.Command {
 	parent := &cobra.Command{Use: "device", Short: "Per-node operations"}
 	parent.AddCommand(
 		newDeviceShowCmd(),
+		newDeviceGetCmd(),
 		newDeviceSetCmd(),
 		newDeviceSetPollIntervalCmd(),
 		newDeviceSetMaxOfflineCmd(),
@@ -252,6 +259,140 @@ func newContainerListCmd() *cobra.Command {
 				fmt.Printf("%-16s crc=%-12d runlevel=%d\n", a.Name, a.CRC, a.Runlevel)
 			}
 			return nil
+		},
+	}
+	deviceFlag(cmd, &device)
+	return cmd
+}
+
+// configFromObserved decodes a node's cached observed_state JSON into the
+// app→{key:value} map for config display + comparison. Uses UseNumber() so
+// values match the desired side under EqualScalars.
+func configFromObserved(observed string) map[string]map[string]any {
+	if observed == "" {
+		return map[string]map[string]any{}
+	}
+	var obj struct {
+		Config map[string]map[string]any `json:"config"`
+	}
+	dec := json.NewDecoder(bytes.NewReader([]byte(observed)))
+	dec.UseNumber()
+	if err := dec.Decode(&obj); err != nil || obj.Config == nil {
+		return map[string]map[string]any{}
+	}
+	return obj.Config
+}
+
+// renderScalar formats a scalar for the desired/observed cells. json.Number
+// prints as its canonical text; bool/string print as-is; nil renders as "--".
+func renderScalar(v any) string {
+	if v == nil {
+		return "--"
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// unionKeys returns a sorted slice of all keys present in either map.
+func unionKeys(a, b map[string]any) []string {
+	seen := map[string]struct{}{}
+	for k := range a {
+		seen[k] = struct{}{}
+	}
+	for k := range b {
+		seen[k] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// printWarnings emits the ≥2× self-heal footer for each still-divergent key.
+func printWarnings(out io.Writer, id, app string, keys []string, desired, observed map[string]any, cmds []store.Command) {
+	for _, k := range keys {
+		d, dOK := desired[k]
+		o, oOK := observed[k]
+		if config.Marker(d, o, dOK, oOK) == "" {
+			continue
+		}
+		if n := config.ReconcileCount(cmds, app, k); n >= 2 {
+			fmt.Fprintf(out, "%s: ⚠ %s.%s: self-healed %d× — node may be failing to apply\n", id, app, k, n)
+		}
+	}
+}
+
+// runDeviceGet is the testable core of `porta device get`. If key is empty,
+// it renders a table over the union of desired ∪ observed keys for app;
+// otherwise it renders the single-key one-liner. Either form prints a ≥2×
+// self-heal warning footer for each still-divergent key.
+func runDeviceGet(out io.Writer, st *store.Store, id, app, key string) error {
+	n, err := st.GetNode(id)
+	if err != nil || n == nil {
+		return fmt.Errorf("node %s not found", id)
+	}
+	cmds, err := st.CommandLog(id)
+	if err != nil {
+		return err
+	}
+	desired := config.ProjectDesiredForApp(cmds, app)
+	observed := configFromObserved(n.ObservedState)[app]
+	if observed == nil {
+		observed = map[string]any{}
+	}
+
+	if key != "" {
+		d, dOK := desired[key]
+		o, oOK := observed[key]
+		marker := config.Marker(d, o, dOK, oOK)
+		line := fmt.Sprintf("%s: %s.%s desired=%s observed=%s", id, app, key, renderScalar(d), renderScalar(o))
+		if marker != "" {
+			line += " " + marker
+		}
+		fmt.Fprintln(out, line)
+		printWarnings(out, id, app, []string{key}, desired, observed, cmds)
+		return nil
+	}
+
+	// Multi-key: union of desired ∪ observed, sorted.
+	keys := unionKeys(desired, observed)
+	fmt.Fprintf(out, "%s: config for %s\n", id, app)
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "  KEY\tDESIRED\tOBSERVED\t")
+	for _, k := range keys {
+		d, dOK := desired[k]
+		o, oOK := observed[k]
+		marker := config.Marker(d, o, dOK, oOK)
+		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", k, renderScalar(d), renderScalar(o), marker)
+	}
+	w.Flush()
+	printWarnings(out, id, app, keys, desired, observed, cmds)
+	return nil
+}
+
+// newDeviceGetCmd builds the `device get` subcommand.
+func newDeviceGetCmd() *cobra.Command {
+	var device string
+	cmd := &cobra.Command{
+		Use:   "get <app> [key]",
+		Short: "Show desired vs observed config for an app (or one key)",
+		Args:  cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer st.Close()
+			id, err := resolveNodeID(st, device)
+			if err != nil {
+				return err
+			}
+			key := ""
+			if len(args) == 2 {
+				key = args[1]
+			}
+			return runDeviceGet(cmd.OutOrStdout(), st, id, args[0], key)
 		},
 	}
 	deviceFlag(cmd, &device)
