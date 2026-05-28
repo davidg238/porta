@@ -312,3 +312,35 @@ docs/PROTOCOL.md                 (no change — set verb + config echo already
 - `docs/specs/2026-05-24-d5-observed-config-echo-design.md` — original
   observed-config echo design.
 - `docs/PROTOCOL.md` §2.5, §3 — canonical wire protocol.
+
+## 10. Implementation deviations from §5 (review-driven hardenings)
+
+Three correctness fixes were applied during code review; they replace the
+algorithms documented above, which had latent edge cases. Listed here so
+future readers don't trust an inaccurate spec.
+
+1. **`InferScalar`** (§5 referred to a single `^-?[0-9]+$` integer regex):
+   shipped code uses `^[+-]?(0|[1-9][0-9]*)$` AND a second `leadingZeroInt`
+   guard on the float path, because `strconv.ParseFloat("007", 64)` succeeds
+   and returns `7.0` — without the second guard, `"007"` would be inferred as
+   `float64(7)` instead of staying a string. (T1 review.)
+
+2. **`EqualScalars`** (§5.1 documented "canonical-text OR float64"): shipped
+   code is "canonical-text → int64-if-both-parse → float64". The plan's
+   original algorithm was unsafe at the 2^53 boundary, where 9007199254740993
+   and 9007199254740992 both round to the same float64 and would compare
+   equal under a float-only fallback. Int64-first keeps it precision-safe
+   for any int64 config key. (T3 review.)
+
+3. **`reconcileAfterReport` null guard** (§5.3 didn't address the
+   `"config":null` case): wire-legal JSON `null` decodes successfully to a
+   `nil` Go map, which a naive implementation would treat as an empty
+   observed and re-issue every desired key on every report (storm). Shipped
+   code returns early when the decoded observed is `nil`, matching the
+   "node didn't send config" semantics. (T7 review.)
+
+Asymmetry to be aware of: when the report body OMITS the `config` key
+entirely, `field("config")` defaults to `"{}"` and reconcile runs with an
+empty observed (re-issues every desired key, throttled to one per cycle by
+the in-flight guard). This matches the Toit reference behavior. Only the
+explicit `null` payload is skipped.

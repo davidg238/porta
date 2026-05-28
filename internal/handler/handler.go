@@ -169,7 +169,11 @@ func (h *Handler) reconcileAfterReport(id string, configRaw json.RawMessage) {
 	// "config":null decodes successfully to a nil map. Treating that as an
 	// empty observed would make every desired key look diverged and trigger
 	// a re-issue storm on every report. A nil observed means "node didn't
-	// send config" — skip reconcile entirely, just like a missing key.
+	// send config" → skip reconcile entirely. Note: a report that OMITS
+	// the config key falls back to "{}" via the field() default in Write()
+	// and reconcile runs against an empty observed (parity with the Toit
+	// reference) — the in-flight guard keeps that bounded to one re-issue
+	// per cycle. The asymmetry between null and missing is intentional.
 	if observed == nil {
 		return
 	}
