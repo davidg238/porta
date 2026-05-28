@@ -173,6 +173,7 @@ func newDeviceCmd() *cobra.Command {
 		newDeviceShowCmd(),
 		newDeviceGetCmd(),
 		newDeviceSetCmd(),
+		newDeviceSetConsoleCmd(),
 		newDeviceSetPollIntervalCmd(),
 		newDeviceSetMaxOfflineCmd(),
 		newDeviceNameCmd(),

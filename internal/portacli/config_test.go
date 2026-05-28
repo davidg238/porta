@@ -98,6 +98,53 @@ func TestRunDeviceGetSingleKeyDrift(t *testing.T) {
 	}
 }
 
+func TestRunDeviceSetConsoleOn(t *testing.T) {
+	st, _ := store.Open(t.TempDir() + "/sc.db")
+	defer st.Close()
+	st.EnsureNode("dev", 1000)
+	var out bytes.Buffer
+	if err := runDeviceSetConsole(&out, st, "dev", "on", 2000); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := st.NextUndelivered("dev")
+	if c == nil || c.Verb != "set-console" {
+		t.Fatalf("expected set-console command, got %+v", c)
+	}
+	if c.Args != `{"on":true}` {
+		t.Errorf("Args=%s, want {\"on\":true}", c.Args)
+	}
+	if c.IssuedBy != "cli" {
+		t.Errorf("IssuedBy=%q, want cli", c.IssuedBy)
+	}
+	if !strings.Contains(out.String(), "enqueued set-console on") {
+		t.Errorf("stdout=%q, want enqueue message", out.String())
+	}
+}
+
+func TestRunDeviceSetConsoleOff(t *testing.T) {
+	st, _ := store.Open(t.TempDir() + "/sc.db")
+	defer st.Close()
+	st.EnsureNode("dev", 1000)
+	var out bytes.Buffer
+	if err := runDeviceSetConsole(&out, st, "dev", "off", 2000); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := st.NextUndelivered("dev")
+	if c == nil || c.Args != `{"on":false}` {
+		t.Errorf("Args=%v, want {\"on\":false}", c)
+	}
+}
+
+func TestRunDeviceSetConsoleRejectsBadState(t *testing.T) {
+	st, _ := store.Open(t.TempDir() + "/sc.db")
+	defer st.Close()
+	st.EnsureNode("dev", 1000)
+	var out bytes.Buffer
+	if err := runDeviceSetConsole(&out, st, "dev", "maybe", 2000); err == nil {
+		t.Error("expected error for state=maybe")
+	}
+}
+
 func TestRunDeviceGetSingleKeyPending(t *testing.T) {
 	st, _ := store.Open(t.TempDir() + "/g.db")
 	defer st.Close()
