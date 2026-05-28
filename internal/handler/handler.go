@@ -3,12 +3,15 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
 	"github.com/davidg238/porta/internal/command"
+	"github.com/davidg238/porta/internal/config"
 	"github.com/davidg238/porta/internal/store"
 	"github.com/davidg238/porta/internal/tftp"
 )
@@ -17,13 +20,18 @@ import (
 type Handler struct {
 	store *store.Store
 	now   func() int64
+	log   func(format string, args ...any) // injectable; defaults to log.Printf
 }
 
 // New creates a Handler. now supplies the current epoch seconds (injectable
 // for tests).
 func New(st *store.Store, now func() int64) *Handler {
-	return &Handler{store: st, now: now}
+	return &Handler{store: st, now: now, log: log.Printf}
 }
+
+// SetLog replaces the handler's log sink (used by tests; production code
+// keeps the default log.Printf).
+func (h *Handler) SetLog(fn func(format string, args ...any)) { h.log = fn }
 
 // parseResource splits "base?k=v&k2=v2" into base + params. A bare key maps to "".
 func parseResource(raw string) (string, map[string]string) {
@@ -111,18 +119,17 @@ func (h *Handler) AcceptWrite(resource, peer string) error {
 	return nil
 }
 
-// Write ingests a completed report body: cache {apps,config} as observed_state
-// (config stored, not reconciled — that's B2) and append to the report log.
+// Write ingests a completed report body: persist {apps,config} as
+// observed_state, append to the report log, then run the self-heal reconcile
+// best-effort. Reconcile failure NEVER fails the report ingest.
 func (h *Handler) Write(resource, peer string, data []byte) error {
 	base, params := parseResource(resource)
 	id := params["id"]
 	if base != "report" || id == "" {
 		return fmt.Errorf("access denied")
 	}
-	if id != "" {
-		if err := h.store.TouchNode(id, peer, h.now()); err != nil {
-			return err
-		}
+	if err := h.store.TouchNode(id, peer, h.now()); err != nil {
+		return err
 	}
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(data, &obj); err != nil {
@@ -136,7 +143,52 @@ func (h *Handler) Write(resource, peer string, data []byte) error {
 	}
 	observed := fmt.Sprintf(`{"apps":%s,"config":%s}`, field("apps"), field("config"))
 	health := string(field("health"))
-	return h.store.InsertReport(id, observed, health, h.now())
+	if err := h.store.InsertReport(id, observed, health, h.now()); err != nil {
+		return err
+	}
+	h.reconcileAfterReport(id, field("config"))
+	return nil
+}
+
+// reconcileAfterReport is the post-report self-heal hook. Best-effort:
+// every error path (panic, SQL, decode) is caught and logged; nothing
+// propagates to the TFTP layer.
+func (h *Handler) reconcileAfterReport(id string, configRaw json.RawMessage) {
+	defer func() {
+		if r := recover(); r != nil {
+			h.log("porta: reconcile panic for %s: %v", id, r)
+		}
+	}()
+	dec := json.NewDecoder(bytes.NewReader(configRaw))
+	dec.UseNumber()
+	var observed map[string]map[string]any
+	if err := dec.Decode(&observed); err != nil {
+		h.log("porta: reconcile decode error for %s: %v", id, err)
+		return
+	}
+	// "config":null decodes successfully to a nil map. Treating that as an
+	// empty observed would make every desired key look diverged and trigger
+	// a re-issue storm on every report. A nil observed means "node didn't
+	// send config" → skip reconcile entirely. Note: a report that OMITS
+	// the config key falls back to "{}" via the field() default in Write()
+	// and reconcile runs against an empty observed (parity with the Toit
+	// reference) — the in-flight guard keeps that bounded to one re-issue
+	// per cycle. The asymmetry between null and missing is intentional.
+	if observed == nil {
+		return
+	}
+	cmds, err := h.store.CommandLog(id)
+	if err != nil {
+		h.log("porta: reconcile command-log error for %s: %v", id, err)
+		return
+	}
+	for _, r := range config.Reconcile(cmds, observed) {
+		if _, err := h.store.EnqueueCommand(id, r.Verb, r.Args, "gateway-reconcile", h.now()); err != nil {
+			h.log("porta: reconcile enqueue error for %s %s.%s: %v", id, r.App, r.Key, err)
+			continue
+		}
+		h.log("porta: reconcile re-issued %s.%s for %s (observed diverged)", r.App, r.Key, id)
+	}
 }
 
 // Complete marks a command delivered after a successful commands RRQ transfer —

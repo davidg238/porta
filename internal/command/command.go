@@ -77,6 +77,29 @@ func SetPollInterval(intervalS int64) Command {
 	return Command{Verb: "set-poll-interval", ArgsJSON: fmt.Sprintf(`{"interval":%d}`, intervalS)}
 }
 
+// Set builds a set command for one (app, key, scalar value). value must be
+// one of int64, float64, bool, or string — the four scalar kinds InferScalar
+// produces. Marshalled args are stable-ordered (app, key, value) so tests
+// can compare the literal JSON string.
+func Set(app, key string, value any) (Command, error) {
+	switch value.(type) {
+	case int64, float64, bool, string:
+	default:
+		return Command{}, fmt.Errorf("set: unsupported value type %T (want int64, float64, bool, or string)", value)
+	}
+	// Build by hand to guarantee key order — encoding/json on map sorts keys
+	// alphabetically (app, key, value) which is what we want, but spelling
+	// it out makes the wire shape obvious.
+	vb, err := json.Marshal(value)
+	if err != nil {
+		return Command{}, err
+	}
+	ab, _ := json.Marshal(app)
+	kb, _ := json.Marshal(key)
+	args := fmt.Sprintf(`{"app":%s,"key":%s,"value":%s}`, ab, kb, vb)
+	return Command{Verb: "set", ArgsJSON: args}, nil
+}
+
 // EncodeWire produces the flat wire JSON {"verb":<verb>, <args flattened>}.
 // The args object is spliced in via json.RawMessage so number tokens are
 // copied byte-for-byte — int stays int, float stays float.
