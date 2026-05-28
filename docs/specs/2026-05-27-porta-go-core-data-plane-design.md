@@ -155,7 +155,10 @@ the Toit and Go gateways. The subcommand structure replaces the current `flag`-o
   payload register, command enqueue/next-undelivered/mark-delivered, report insert +
   observed_state cache), handler (drain + zero-byte sentinel + deliver-on-complete,
   `payload?crc` raw bytes + not-found, `report` ingest, WRQ rejection), and a CRC32-IEEE
-  vector check.
+  vector check. **Required regression test for the drain footgun:** an error path (unknown
+  node / forced store error) on a `commands` RRQ yields a **TFTP ERROR**, while a genuinely
+  empty queue yields an **empty success** — the two must never collapse into the same
+  response.
 - **Hardware:** run `cmd/porta serve` on the dev box; **repoint jolly-pine** to it; verify
   it **installs an image, runs it, and reports observed apps** end-to-end. (gw deployment
   of the Go binary — including the CGO/`go-sqlite3` glibc-2.36 question on gw85224-01 — is
@@ -174,7 +177,12 @@ the Go binary to gw85224-01.
   TFTP **ERROR** packet, the node reads "queue drained" and stops polling — commands never
   arrive, with no crash to notice. Return an empty body *only* for a genuinely empty queue;
   surface real errors as TFTP ERROR packets. (This is the exact bug the old jast-gw had —
-  it returned `nil` for both "no command" and error cases.)
+  it returned `nil` for both "no command" and error cases.) **Mitigation (structural, not
+  a protocol change):** the `commands` response is built by a single chokepoint returning
+  `([]byte, error)` — `err != nil` *always* maps to a TFTP ERROR packet (no error path can
+  fall through to an empty body), `err == nil && len == 0` is the drain sentinel, `len > 0`
+  is the command. A regression test pins it (see §7). The wire protocol is unchanged; nodus
+  is untouched.
 - **Mark `delivered_at` only on a `commands`-RRQ transfer-complete with `ok=true`** — never
   when you *pop* the command. If you mark on pop and the transfer then fails, the gateway
   believes the node received a command it never got: silent command loss. `payload` RRQs
