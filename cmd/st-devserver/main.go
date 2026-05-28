@@ -10,12 +10,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/davidg238/porta/internal/cli"
-	"github.com/davidg238/porta/internal/debug"
-	"github.com/davidg238/porta/internal/debugui"
-	"github.com/davidg238/porta/internal/gateway"
-	"github.com/davidg238/porta/internal/mcpserver"
-	"github.com/davidg238/porta/internal/store"
+	"github.com/davidg238/porta/internal/st/cli"
+	"github.com/davidg238/porta/internal/st/debug"
+	"github.com/davidg238/porta/internal/st/debugui"
+	"github.com/davidg238/porta/internal/st/gateway"
+	"github.com/davidg238/porta/internal/st/mcpserver"
+	"github.com/davidg238/porta/internal/st/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

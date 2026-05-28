@@ -1,8 +1,6 @@
 package tftp
 
 import (
-	"encoding/hex"
-	"encoding/json"
 	"strconv"
 	"sync"
 )
@@ -12,12 +10,6 @@ type GetHandler func() []byte
 
 // PutHandler is called when a PUT (WRQ) transfer completes.
 type PutHandler func(path string, data []byte)
-
-// Command represents a queued command for a device.
-type Command struct {
-	Verb    string
-	Payload []byte
-}
 
 // getTransfer tracks an in-progress read (server→client) transfer.
 type getTransfer struct {
@@ -43,7 +35,6 @@ type Server struct {
 	putHandlers map[string]PutHandler
 	gets        map[string]*getTransfer // keyed by path
 	puts        map[string]*putTransfer // keyed by path
-	commands    map[string][]*Command   // per-device FIFO
 }
 
 // NewServer creates a TFTP server with empty handler registrations.
@@ -53,7 +44,6 @@ func NewServer() *Server {
 		putHandlers: make(map[string]PutHandler),
 		gets:        make(map[string]*getTransfer),
 		puts:        make(map[string]*putTransfer),
-		commands:    make(map[string][]*Command),
 	}
 }
 
@@ -71,30 +61,6 @@ func (s *Server) RegisterPut(path string, handler PutHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.putHandlers[path] = handler
-}
-
-// QueueCommand adds a command to the per-device FIFO queue.
-func (s *Server) QueueCommand(deviceID, verb string, payload []byte) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.commands[deviceID] = append(s.commands[deviceID], &Command{
-		Verb:    verb,
-		Payload: payload,
-	})
-}
-
-// PopCommand removes and returns the next command for the device, or nil
-// if the queue is empty.
-func (s *Server) PopCommand(deviceID string) *Command {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	q := s.commands[deviceID]
-	if len(q) == 0 {
-		return nil
-	}
-	cmd := q[0]
-	s.commands[deviceID] = q[1:]
-	return cmd
 }
 
 // HandlePacket processes a TFTP packet and returns zero or more response
@@ -247,15 +213,4 @@ func (s *Server) handleDATA(pkt []byte) [][]byte {
 		return [][]byte{ack}
 	}
 	return nil
-}
-
-// CommandToJSON encodes a Command as JSON matching the firmware format:
-// {"verb":"...", "payload":"hex..."}
-func CommandToJSON(cmd *Command) []byte {
-	m := map[string]string{
-		"verb":    cmd.Verb,
-		"payload": hex.EncodeToString(cmd.Payload),
-	}
-	b, _ := json.Marshal(m)
-	return b
 }

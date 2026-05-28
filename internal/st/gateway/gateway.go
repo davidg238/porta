@@ -8,7 +8,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/davidg238/porta/internal/store"
+	"github.com/davidg238/porta/internal/st/store"
 	"github.com/davidg238/porta/internal/tftp"
 )
 
@@ -144,12 +144,12 @@ func commandsHandler(deviceID string, st *store.Store) tftp.GetHandler {
 		if cmd == nil {
 			return nil
 		}
-		// Convert store.Command to tftp.Command for JSON encoding.
-		tCmd := &tftp.Command{
+		// Convert store.Command to the local Command for JSON encoding.
+		tCmd := &Command{
 			Verb:    cmd.Verb,
 			Payload: cmd.Payload,
 		}
-		return tftp.CommandToJSON(tCmd)
+		return CommandToJSON(tCmd)
 	}
 }
 

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davidg238/porta/internal/store"
+	"github.com/davidg238/porta/internal/st/store"
 	"github.com/davidg238/porta/internal/tftp"
 )
 

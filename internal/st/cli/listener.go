@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davidg238/porta/internal/gateway"
-	"github.com/davidg238/porta/internal/helpers"
-	"github.com/davidg238/porta/internal/store"
+	"github.com/davidg238/porta/internal/st/gateway"
+	"github.com/davidg238/porta/internal/st/helpers"
+	"github.com/davidg238/porta/internal/st/store"
 )
 
 // Request is the JSON structure sent by the CLI client.
