@@ -57,8 +57,12 @@ func newServeCmd() *cobra.Command {
 			udpErr := make(chan error, 1)
 			go func() { udpErr <- serveUDPLoop(ctx, udpConn, tftpSrv) }()
 
-			// HTTP listener (B4a, optional).
-			httpErr := make(chan error, 1)
+			// HTTP listener (B4a, optional). When --http-port 0, httpErr
+			// stays nil so the select arm blocks forever — UDP keeps
+			// serving until ctx cancel. (A closed channel would fire
+			// the select immediately and exit the serve, which is the
+			// bug found in T5 review.)
+			var httpErr chan error
 			if httpPort > 0 {
 				srv, err := httpsrv.New(httpsrv.Config{
 					Bind:      httpBind,
@@ -68,10 +72,9 @@ func newServeCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+				httpErr = make(chan error, 1)
 				go func() { httpErr <- srv.Run(ctx) }()
 				log.Printf("porta: serving HTTP on %s:%d", httpBind, httpPort)
-			} else {
-				close(httpErr) // make the select symmetric — nil receive
 			}
 
 			// Either listener exiting OR ctx cancellation completes the
@@ -81,7 +84,10 @@ func newServeCmd() *cobra.Command {
 			case err := <-udpErr:
 				return err
 			case err := <-httpErr:
-				if err == nil && httpPort > 0 {
+				// Reachable only when httpPort > 0 (else httpErr is nil
+				// and this arm blocks forever). Clean HTTP exit while
+				// UDP still running → fall through to wait on UDP.
+				if err == nil {
 					return <-udpErr
 				}
 				return err

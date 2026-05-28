@@ -2,7 +2,9 @@
 package portacli
 
 import (
+	"context"
 	"testing"
+	"time"
 )
 
 func TestDefaultAllowCIDRHasRFC1918AndLoopback(t *testing.T) {
@@ -41,5 +43,51 @@ func TestNewServeCmdRegistersFlags(t *testing.T) {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("flag --%s not registered", name)
 		}
+	}
+}
+
+// TestServeNilHTTPErrChannelBlocksSelect is a focused regression guard
+// for the --http-port 0 bug found in T5 review: a closed channel fired
+// the select arm immediately, exiting the serve in microseconds. The fix
+// uses a nil channel so the arm blocks forever; the test confirms the
+// select arm is reachable but never fires when the channel is nil.
+func TestServeNilHTTPErrChannelBlocksSelect(t *testing.T) {
+	var httpErr chan error // nil, like the --http-port 0 case
+	udpErr := make(chan error, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel so ctx.Done fires immediately
+
+	got := ""
+	select {
+	case <-udpErr:
+		got = "udp"
+	case <-httpErr:
+		got = "http" // would indicate the bug is back
+	case <-ctx.Done():
+		got = "ctx"
+	}
+	if got != "ctx" {
+		t.Errorf("got %q, want ctx (nil httpErr must not fire; udpErr was empty)", got)
+	}
+
+	// Sanity guard: with a real closed channel (the bug), the http arm
+	// WOULD fire. Confirm that, so the test pins the contrast.
+	httpErr = make(chan error, 1)
+	close(httpErr)
+	got = ""
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	timer := time.NewTimer(100 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-httpErr:
+		got = "http"
+	case <-ctx2.Done():
+		got = "ctx"
+	case <-timer.C:
+		got = "timer"
+	}
+	if got != "http" {
+		t.Errorf("with closed channel, expected http arm to fire; got %q", got)
 	}
 }
