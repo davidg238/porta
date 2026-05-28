@@ -11,20 +11,42 @@ type GetHandler func() []byte
 // PutHandler is called when a PUT (WRQ) transfer completes.
 type PutHandler func(path string, data []byte)
 
+// Dispatcher routes parsed TFTP resources (full "base?k=v" strings) to the
+// application. It is the porta-side alternative to RegisterGet/RegisterPut.
+//
+// Callbacks are invoked while the Server holds its internal lock, so an
+// implementation must not re-enter the same Server (e.g. call HandlePacket or
+// SetDispatcher) from within a callback — doing so deadlocks.
+type Dispatcher interface {
+	// Read serves bytes for an RRQ. A non-nil error → TFTP ERROR packet;
+	// (nil, nil) → a valid empty body (the drain sentinel).
+	Read(resource, peer string) ([]byte, error)
+	// AcceptWrite gates a WRQ at request time. Non-nil → TFTP ERROR, no transfer.
+	AcceptWrite(resource, peer string) error
+	// Write ingests a completed WRQ body. Non-nil → TFTP ERROR.
+	Write(resource, peer string, data []byte) error
+	// Complete is called when a transfer finishes (ok=false on failure).
+	Complete(op uint16, resource, peer string, ok bool)
+}
+
 // getTransfer tracks an in-progress read (server→client) transfer.
 type getTransfer struct {
 	chunks      [][]byte
 	blockIndex  int // next chunk index to send (0-based)
 	blksize     int
 	oackPending bool
+	resource    string // dispatcher-mode resource key (empty in legacy mode)
+	peer        string
 }
 
 // putTransfer tracks an in-progress write (client→server) transfer.
 type putTransfer struct {
-	path    string
-	handler PutHandler
-	buf     []byte
-	blksize int
+	path     string
+	handler  PutHandler
+	buf      []byte
+	blksize  int
+	resource string // dispatcher-mode resource key (empty in legacy mode)
+	peer     string
 }
 
 // Server dispatches TFTP packets to registered handlers and manages
@@ -35,6 +57,7 @@ type Server struct {
 	putHandlers map[string]PutHandler
 	gets        map[string]*getTransfer // keyed by path
 	puts        map[string]*putTransfer // keyed by path
+	dispatcher  Dispatcher
 }
 
 // NewServer creates a TFTP server with empty handler registrations.
@@ -63,9 +86,22 @@ func (s *Server) RegisterPut(path string, handler PutHandler) {
 	s.putHandlers[path] = handler
 }
 
+// SetDispatcher switches the server to dispatcher mode.
+func (s *Server) SetDispatcher(d Dispatcher) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dispatcher = d
+}
+
 // HandlePacket processes a TFTP packet and returns zero or more response
-// packets.
+// packets. It is equivalent to HandlePacketFrom(pkt, "").
 func (s *Server) HandlePacket(pkt []byte) [][]byte {
+	return s.HandlePacketFrom(pkt, "")
+}
+
+// HandlePacketFrom processes a packet, threading the peer address to the
+// dispatcher. HandlePacket(pkt) is equivalent to HandlePacketFrom(pkt, "").
+func (s *Server) HandlePacketFrom(pkt []byte, peer string) [][]byte {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -76,8 +112,14 @@ func (s *Server) HandlePacket(pkt []byte) [][]byte {
 
 	switch op {
 	case OpRRQ:
+		if s.dispatcher != nil {
+			return s.dispatchRRQ(pkt, peer)
+		}
 		return s.handleRRQ(pkt)
 	case OpWRQ:
+		if s.dispatcher != nil {
+			return s.dispatchWRQ(pkt, peer)
+		}
 		return s.handleWRQ(pkt)
 	case OpACK:
 		return s.handleACK(pkt)
@@ -86,6 +128,63 @@ func (s *Server) HandlePacket(pkt []byte) [][]byte {
 	default:
 		return nil
 	}
+}
+
+func (s *Server) dispatchRRQ(pkt []byte, peer string) [][]byte {
+	resource, opts, err := ParseRequest(pkt)
+	if err != nil {
+		return [][]byte{BuildError(0, "malformed request")}
+	}
+	data, derr := s.dispatcher.Read(resource, peer)
+	if derr != nil {
+		return [][]byte{BuildError(1, derr.Error())}
+	}
+	blksize := DefaultBlockSize
+	hasBlksize := false
+	if bs, found := opts["blksize"]; found {
+		if v, err := strconv.Atoi(bs); err == nil && v > 0 {
+			blksize, hasBlksize = v, true
+		}
+	}
+	chunks := ChunkData(data, blksize)
+	xfer := &getTransfer{chunks: chunks, blksize: blksize, oackPending: hasBlksize, resource: resource, peer: peer}
+	s.gets[resource] = xfer
+	if hasBlksize {
+		return [][]byte{BuildOACK(map[string]string{"blksize": strconv.Itoa(blksize)})}
+	}
+	xfer.blockIndex = 1
+	return [][]byte{BuildData(1, chunks[0])}
+}
+
+func (s *Server) dispatchWRQ(pkt []byte, peer string) [][]byte {
+	resource, opts, err := ParseRequest(pkt)
+	if err != nil {
+		return [][]byte{BuildError(0, "malformed request")}
+	}
+	if aerr := s.dispatcher.AcceptWrite(resource, peer); aerr != nil {
+		return [][]byte{BuildError(2, aerr.Error())} // 2 = access violation
+	}
+	blksize := DefaultBlockSize
+	hasBlksize := false
+	if bs, found := opts["blksize"]; found {
+		if v, err := strconv.Atoi(bs); err == nil && v > 0 {
+			blksize, hasBlksize = v, true
+		}
+	}
+	s.puts[resource] = &putTransfer{resource: resource, peer: peer, blksize: blksize}
+	if hasBlksize {
+		return [][]byte{BuildOACK(map[string]string{"blksize": strconv.Itoa(blksize)})}
+	}
+	return [][]byte{BuildACK(0)}
+}
+
+// finishGet completes a read transfer, notifying the dispatcher on success.
+func (s *Server) finishGet(path string, xfer *getTransfer) [][]byte {
+	delete(s.gets, path)
+	if s.dispatcher != nil && xfer.resource != "" {
+		s.dispatcher.Complete(OpRRQ, xfer.resource, xfer.peer, true)
+	}
+	return nil
 }
 
 func (s *Server) handleRRQ(pkt []byte) [][]byte {
@@ -177,8 +276,7 @@ func (s *Server) handleACK(pkt []byte) [][]byte {
 		if int(block) == xfer.blockIndex {
 			// Check if transfer is complete (last block was short or empty).
 			if xfer.blockIndex >= len(xfer.chunks) {
-				delete(s.gets, path)
-				return nil
+				return s.finishGet(path, xfer)
 			}
 			// Send next block.
 			next := xfer.blockIndex // 0-based chunk index for next block
@@ -186,8 +284,7 @@ func (s *Server) handleACK(pkt []byte) [][]byte {
 				xfer.blockIndex++
 				return [][]byte{BuildData(uint16(next+1), xfer.chunks[next])}
 			}
-			delete(s.gets, path)
-			return nil
+			return s.finishGet(path, xfer)
 		}
 	}
 	return nil
@@ -202,15 +299,23 @@ func (s *Server) handleDATA(pkt []byte) [][]byte {
 	// Find the active put transfer.
 	for path, xfer := range s.puts {
 		xfer.buf = append(xfer.buf, data...)
-		ack := BuildACK(block)
 
 		if len(data) < xfer.blksize {
-			// Final block: call the handler and clean up.
-			xfer.handler(xfer.path, xfer.buf)
+			// Final block: ingest and clean up.
 			delete(s.puts, path)
+			if s.dispatcher != nil && xfer.resource != "" {
+				if werr := s.dispatcher.Write(xfer.resource, xfer.peer, xfer.buf); werr != nil {
+					s.dispatcher.Complete(OpWRQ, xfer.resource, xfer.peer, false)
+					return [][]byte{BuildError(2, werr.Error())}
+				}
+				s.dispatcher.Complete(OpWRQ, xfer.resource, xfer.peer, true)
+				return [][]byte{BuildACK(block)}
+			}
+			xfer.handler(xfer.path, xfer.buf) // legacy mode
+			return [][]byte{BuildACK(block)}
 		}
 
-		return [][]byte{ack}
+		return [][]byte{BuildACK(block)}
 	}
 	return nil
 }
