@@ -274,3 +274,51 @@ func newDeviceSetCmd() *cobra.Command {
 	deviceFlag(cmd, &device)
 	return cmd
 }
+
+// runDeviceSetConsole is the testable core of `porta device set-console`:
+// it validates the state token, enqueues a set-console command tagged
+// issued_by="cli", and prints a confirmation line.
+func runDeviceSetConsole(out io.Writer, st *store.Store, id, state string, now int64) error {
+	var on bool
+	switch state {
+	case "on":
+		on = true
+	case "off":
+		on = false
+	default:
+		return fmt.Errorf("set-console: state must be 'on' or 'off', got %q", state)
+	}
+	c := command.SetConsole(on)
+	cmdID, err := st.EnqueueCommand(id, c.Verb, c.ArgsJSON, "cli", now)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s: enqueued set-console %s (command #%d)\n", id, state, cmdID)
+	return nil
+}
+
+func newDeviceSetConsoleCmd() *cobra.Command {
+	var device string
+	cmd := &cobra.Command{
+		Use:   "set-console <on|off>",
+		Short: "Toggle a node's console/telemetry forwarding",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer st.Close()
+			id, err := resolveNodeID(st, device)
+			if err != nil {
+				return err
+			}
+			if err := st.EnsureNode(id, nowSec()); err != nil {
+				return err
+			}
+			return runDeviceSetConsole(cmd.OutOrStdout(), st, id, args[0], nowSec())
+		},
+	}
+	deviceFlag(cmd, &device)
+	return cmd
+}

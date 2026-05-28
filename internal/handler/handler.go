@@ -13,6 +13,7 @@ import (
 	"github.com/davidg238/porta/internal/command"
 	"github.com/davidg238/porta/internal/config"
 	"github.com/davidg238/porta/internal/store"
+	"github.com/davidg238/porta/internal/telemetry"
 	"github.com/davidg238/porta/internal/tftp"
 )
 
@@ -106,28 +107,39 @@ func (h *Handler) readPayload(params map[string]string) ([]byte, error) {
 	return img, nil
 }
 
-// AcceptWrite gates WRQs: only report?id= is accepted in B1. Everything else
-// (data → B3, missing id) is rejected → TFTP ERROR.
+// AcceptWrite gates WRQs: report?id= and data?id= are accepted. Everything
+// else (missing id, unknown base) → TFTP ERROR.
 func (h *Handler) AcceptWrite(resource, peer string) error {
 	base, params := parseResource(resource)
-	if base != "report" {
+	if base != "report" && base != "data" {
 		return fmt.Errorf("access denied: %s", base)
 	}
 	if params["id"] == "" {
-		return fmt.Errorf("access denied: report missing id")
+		return fmt.Errorf("access denied: %s missing id", base)
 	}
 	return nil
 }
 
-// Write ingests a completed report body: persist {apps,config} as
-// observed_state, append to the report log, then run the self-heal reconcile
-// best-effort. Reconcile failure NEVER fails the report ingest.
+// Write ingests a completed WRQ body: report → observed_state + reconcile;
+// data → JSONL telemetry ingest. Anything else is rejected.
 func (h *Handler) Write(resource, peer string, data []byte) error {
 	base, params := parseResource(resource)
 	id := params["id"]
-	if base != "report" || id == "" {
+	if id == "" {
 		return fmt.Errorf("access denied")
 	}
+	switch base {
+	case "report":
+		return h.writeReport(id, peer, data)
+	case "data":
+		return h.writeData(id, peer, data)
+	default:
+		return fmt.Errorf("access denied: %s", base)
+	}
+}
+
+// writeReport is the previous Write body, refactored out.
+func (h *Handler) writeReport(id, peer string, data []byte) error {
 	if err := h.store.TouchNode(id, peer, h.now()); err != nil {
 		return err
 	}
@@ -147,6 +159,42 @@ func (h *Handler) Write(resource, peer string, data []byte) error {
 		return err
 	}
 	h.reconcileAfterReport(id, field("config"))
+	return nil
+}
+
+// writeData ingests a JSONL telemetry body. Best-effort per line: blank
+// lines, truncated tails, and non-object lines are skipped (no error). A
+// non-scalar "value" inserts a row with Value=nil, ValueType=NULL
+// (graceful degradation). A real SQL failure on TouchNode propagates;
+// per-row InsertData failures are logged and the loop continues.
+// Parity with examples/toit-gateway/handler.toit's DataWriter_.
+func (h *Handler) writeData(id, peer string, data []byte) error {
+	if err := h.store.TouchNode(id, peer, h.now()); err != nil {
+		return err
+	}
+	now := h.now()
+	for i, raw := range bytes.Split(data, []byte("\n")) {
+		e, ok := telemetry.ParseLine(raw)
+		if !ok {
+			continue
+		}
+		ts := e.TS
+		if !e.HasTS {
+			ts = now
+		}
+		seq := e.Seq
+		if !e.HasSeq {
+			seq = int64(i)
+		}
+		kind := e.Kind
+		if kind == "" {
+			kind = "log"
+		}
+		if err := h.store.InsertData(id, ts, seq, kind, e.Name, e.Value, e.Text, e.ValueType); err != nil {
+			h.log("porta: data ingest insert error for %s seq=%d: %v", id, seq, err)
+			continue
+		}
+	}
 	return nil
 }
 
