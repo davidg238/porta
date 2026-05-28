@@ -4,6 +4,8 @@
 # Go server build output
 /porta
 /cmd/porta/porta
+/st-devserver
+/cmd/st-devserver/st-devserver
 *.db
 
 # Build artifacts / caches
