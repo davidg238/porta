@@ -132,3 +132,29 @@ func TestSetRejectsBadType(t *testing.T) {
 		t.Error("Set with slice value should error")
 	}
 }
+
+func TestSetConsole(t *testing.T) {
+	on := SetConsole(true)
+	if on.Verb != "set-console" {
+		t.Errorf("Verb=%q, want set-console", on.Verb)
+	}
+	if on.ArgsJSON != `{"on":true}` {
+		t.Errorf("ArgsJSON=%s, want {\"on\":true}", on.ArgsJSON)
+	}
+	off := SetConsole(false)
+	if off.ArgsJSON != `{"on":false}` {
+		t.Errorf("ArgsJSON=%s, want {\"on\":false}", off.ArgsJSON)
+	}
+	// Wire round-trip: verb + args spliced in flat form.
+	wire := EncodeWire(on.Verb, on.ArgsJSON)
+	verb, args, err := Decode(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verb != "set-console" {
+		t.Errorf("decoded verb=%q, want set-console", verb)
+	}
+	if v, ok := args["on"].(bool); !ok || !v {
+		t.Errorf("decoded on=%v (%T), want bool true", args["on"], args["on"])
+	}
+}

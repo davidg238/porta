@@ -77,6 +77,14 @@ func SetPollInterval(intervalS int64) Command {
 	return Command{Verb: "set-poll-interval", ArgsJSON: fmt.Sprintf(`{"interval":%d}`, intervalS)}
 }
 
+// SetConsole builds the telemetry-forwarding toggle command.
+func SetConsole(on bool) Command {
+	if on {
+		return Command{Verb: "set-console", ArgsJSON: `{"on":true}`}
+	}
+	return Command{Verb: "set-console", ArgsJSON: `{"on":false}`}
+}
+
 // Set builds a set command for one (app, key, scalar value). value must be
 // one of int64, float64, bool, or string — the four scalar kinds InferScalar
 // produces. Marshalled args are stable-ordered (app, key, value) so tests
