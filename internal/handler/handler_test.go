@@ -161,3 +161,138 @@ func TestCompletePayloadDoesNotMark(t *testing.T) {
 		t.Error("completing a payload transfer must NOT mark a command delivered")
 	}
 }
+
+func TestWriteReconcileReissuesOnDrift(t *testing.T) {
+	h, st := newH(t)
+	st.EnsureNode("dev", 1000)
+	// Operator sets a.k=30; deliver it.
+	cmdID, _ := st.EnqueueCommand("dev", "set", `{"app":"a","key":"k","value":30}`, "cli", 1100)
+	if err := st.MarkDelivered(cmdID, 1101); err != nil {
+		t.Fatal(err)
+	}
+	// Node reports a.k=25 (drift).
+	body := []byte(`{"apps":{},"config":{"a":{"k":25}},"health":{}}`)
+	if err := h.Write("report?id=dev", "1.2.3.4:5000", body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	// A gateway-reconcile re-issue should now be the next undelivered.
+	next, err := st.NextUndelivered("dev")
+	if err != nil || next == nil {
+		t.Fatalf("NextUndelivered: %v %v", next, err)
+	}
+	if next.IssuedBy != "gateway-reconcile" {
+		t.Errorf("issued_by = %q, want gateway-reconcile", next.IssuedBy)
+	}
+	if next.Args != `{"app":"a","key":"k","value":30}` {
+		t.Errorf("re-issue Args = %s, want byte-identical to source", next.Args)
+	}
+}
+
+func TestWriteReconcileSelfThrottle(t *testing.T) {
+	h, st := newH(t)
+	st.EnsureNode("dev", 1000)
+	cmdID, _ := st.EnqueueCommand("dev", "set", `{"app":"a","key":"k","value":30}`, "cli", 1100)
+	st.MarkDelivered(cmdID, 1101)
+	body := []byte(`{"apps":{},"config":{"a":{"k":25}},"health":{}}`)
+	if err := h.Write("report?id=dev", "p:1", body); err != nil {
+		t.Fatal(err)
+	}
+	// Second drifted report — re-issue from the first one is still pending
+	// (delivered_at NULL), so reconcile MUST NOT issue another.
+	if err := h.Write("report?id=dev", "p:1", body); err != nil {
+		t.Fatal(err)
+	}
+	log, _ := st.CommandLog("dev")
+	reissues := 0
+	for _, c := range log {
+		if c.IssuedBy == "gateway-reconcile" {
+			reissues++
+		}
+	}
+	if reissues != 1 {
+		t.Errorf("got %d gateway-reconcile rows, want 1 (self-throttle)", reissues)
+	}
+}
+
+func TestWriteReconcileSecondCycleAfterDelivery(t *testing.T) {
+	h, st := newH(t)
+	st.EnsureNode("dev", 1000)
+	cmdID, _ := st.EnqueueCommand("dev", "set", `{"app":"a","key":"k","value":30}`, "cli", 1100)
+	st.MarkDelivered(cmdID, 1101)
+	body := []byte(`{"apps":{},"config":{"a":{"k":25}},"health":{}}`)
+	// First report → 1 re-issue.
+	if err := h.Write("report?id=dev", "p:1", body); err != nil {
+		t.Fatalf("Write 1: %v", err)
+	}
+	// Mark the re-issue delivered, simulating the node fetching it.
+	un, _ := st.UndeliveredCommands("dev")
+	if len(un) != 1 {
+		t.Fatalf("expected 1 undelivered re-issue, got %d", len(un))
+	}
+	st.MarkDelivered(un[0].ID, 1200)
+	// Second drifted report → second re-issue is allowed (in-flight guard cleared).
+	if err := h.Write("report?id=dev", "p:1", body); err != nil {
+		t.Fatalf("Write 2: %v", err)
+	}
+	log, _ := st.CommandLog("dev")
+	reissues := 0
+	for _, c := range log {
+		if c.IssuedBy == "gateway-reconcile" {
+			reissues++
+		}
+	}
+	if reissues != 2 {
+		t.Errorf("got %d gateway-reconcile rows, want 2", reissues)
+	}
+}
+
+func TestWriteReconcilePending(t *testing.T) {
+	h, st := newH(t)
+	st.EnsureNode("dev", 1000)
+	cmdID, _ := st.EnqueueCommand("dev", "set", `{"app":"a","key":"k","value":30}`, "cli", 1100)
+	st.MarkDelivered(cmdID, 1101)
+	// Report says config has app a but not the key k (delivered but lost).
+	body := []byte(`{"apps":{},"config":{"a":{}},"health":{}}`)
+	if err := h.Write("report?id=dev", "p:1", body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	un, _ := st.UndeliveredCommands("dev")
+	if len(un) != 1 || un[0].IssuedBy != "gateway-reconcile" {
+		t.Fatalf("pending key not re-issued: %+v", un)
+	}
+}
+
+// TestWriteReconcileNullConfigNoReissues guards against the config:null trap.
+// `null` is wire-legal JSON; decoded into map[string]map[string]any it yields
+// a NIL map, which a naive implementation would treat as an empty observed
+// and re-issue every desired key on every report (storm). The handler must
+// detect nil observed and skip reconcile entirely (parity with "missing config").
+func TestWriteReconcileNullConfigNoReissues(t *testing.T) {
+	h, st := newH(t)
+	st.EnsureNode("dev", 1000)
+	cmdID, _ := st.EnqueueCommand("dev", "set", `{"app":"a","key":"k","value":30}`, "cli", 1100)
+	st.MarkDelivered(cmdID, 1101)
+	body := []byte(`{"apps":{},"config":null,"health":{}}`)
+	if err := h.Write("report?id=dev", "p:1", body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	un, _ := st.UndeliveredCommands("dev")
+	if len(un) != 0 {
+		t.Errorf("config:null should not trigger re-issues, got %d", len(un))
+	}
+}
+
+func TestWriteSucceedsEvenWithMalformedConfig(t *testing.T) {
+	h, st := newH(t)
+	st.EnsureNode("dev", 1000)
+	// config field is a string, not an object — reconcile must not fail the write.
+	body := []byte(`{"apps":{},"config":"oops","health":{}}`)
+	if err := h.Write("report?id=dev", "p:1", body); err != nil {
+		t.Fatalf("Write should swallow reconcile errors, got %v", err)
+	}
+	// Report row was still committed.
+	n, _ := st.GetNode("dev")
+	if n == nil || n.ObservedState == "" {
+		t.Error("observed_state should be set even when reconcile bails")
+	}
+}
