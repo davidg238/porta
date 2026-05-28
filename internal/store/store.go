@@ -319,6 +319,3 @@ func (s *Store) InsertReport(deviceID, observedState, health string, now int64) 
 	}
 	return tx.Commit()
 }
-
-// TEMP stub — replaced by names.go in Task 3.
-func NodeNameFor(mac string) string { return "node-" + mac }
