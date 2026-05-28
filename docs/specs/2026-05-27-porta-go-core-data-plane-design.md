@@ -126,18 +126,27 @@ the report + health to `reports`. B1 acts on `apps` only (for `container list` /
 
 ## 6. CLI surface (`cmd/porta`)
 
-Match the Toit gateway's verbs for operator muscle-memory:
+Match the Toit gateway's verbs for operator muscle-memory. `<node>` is a name or MAC;
+`<dur>` is a jag-style duration (e.g. `30s`, `5m`).
 
-`serve` (`--port`, default 6969) · `scan` (`--include-never-seen`) · `ping -d` ·
-`device show -d` · `device set-poll-interval -d <dur>` · `device set-max-offline -d <dur>`
-· `device name -d <name>` · `container install -d [--interval --trigger --runlevel
---lifecycle --crc] <app> <file.bin>` · `container uninstall -d <app>` · `container list
--d` · `log -d`.
+| Command | Args / flags | What it does |
+|---------|--------------|--------------|
+| `serve` | `--port` (default 6969) | Start the TFTP daemon serving the command queue + payloads from the store. Blocks until interrupted. |
+| `scan` | `--include-never-seen` | List nodes: id, name, last-seen (relative), online/offline. Never-seen nodes hidden unless flagged. |
+| `ping` | `-d <node>` | Report whether the node is online (`last_seen` within `max_offline_s`). |
+| `device show` | `-d <node>` | Node details: id, name, last-seen, poll-interval, max-offline, cached `observed_state`, undelivered commands. |
+| `device set-poll-interval` | `-d <node> <dur>` | Enqueue `set-poll-interval`; also cache `poll_interval_s` on the node row. |
+| `device set-max-offline` | `-d <node> <dur>` | Update the node's offline threshold (gateway-side only; not a command to the node). |
+| `device name` | `-d <node> <name>` | Override the auto-assigned friendly name. |
+| `container install` | `-d <node> [--interval <dur>] [--trigger <spec>] [--runlevel <n>] [--lifecycle <mode>] [--crc <int>] <app> <file.bin>` | Register the image (CRC32-IEEE computed from the file, or `--crc` override) and enqueue `run` with `crc`+`size`. |
+| `container uninstall` | `-d <node> <app>` | Enqueue `stop` for the app. |
+| `container list` | `-d <node>` | List apps from the latest observed report (name, crc, runlevel). |
+| `log` | `-d <node>` | Command audit history: id, verb, delivered (yes/pending), args. |
 
-(`device set`/`get`→B2; `device set-console`, `monitor`→B3.) Port the deterministic
-adjective-noun auto-naming (`names.toit`) to Go so node names match across the Toit and Go
-gateways. Subcommand structure replaces the current `flag`-only `main` (library choice —
-likely `cobra` — is a plan-level detail).
+Deferred: `device set`/`get` → B2; `device set-console`, `monitor` → B3. Port the
+deterministic adjective-noun auto-naming (`names.toit`) to Go so node names match across
+the Toit and Go gateways. The subcommand structure replaces the current `flag`-only
+`main` (library choice — likely `cobra` — is a plan-level detail).
 
 ## 7. Testing & hardware checkpoint
 
@@ -160,9 +169,16 @@ the Go binary to gw85224-01.
 
 ## Subtleties a Go port is most likely to get wrong (carried from the reference)
 
-- Zero-byte body is a **success sentinel** (queue empty), not an error.
-- Only a `commands` RRQ transfer-complete marks `delivered_at`; `payload` RRQs and all
-  WRQs never mark; failed transfers never mark.
+- **Zero-byte body is a success sentinel (queue empty), not an error — and the failure is
+  silent.** If a real error (unknown node, DB hiccup) returns an empty body instead of a
+  TFTP **ERROR** packet, the node reads "queue drained" and stops polling — commands never
+  arrive, with no crash to notice. Return an empty body *only* for a genuinely empty queue;
+  surface real errors as TFTP ERROR packets. (This is the exact bug the old jast-gw had —
+  it returned `nil` for both "no command" and error cases.)
+- **Mark `delivered_at` only on a `commands`-RRQ transfer-complete with `ok=true`** — never
+  when you *pop* the command. If you mark on pop and the transfer then fails, the gateway
+  believes the node received a command it never got: silent command loss. `payload` RRQs
+  and all WRQs never mark; failed transfers never mark.
 - JSON scalar **type fidelity** end to end (float `21.5` must not become int `21`).
 - `touch-node` (records contact) vs `ensure-node` (phantom row, no `last_seen`).
 - `config` is a plane separate from `apps`/goal, even though both live in
