@@ -2,10 +2,12 @@ package portacli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"github.com/davidg238/porta/internal/command"
+	"github.com/davidg238/porta/internal/config"
 	"github.com/davidg238/porta/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -224,6 +226,49 @@ func newDeviceNameCmd() *cobra.Command {
 				return err
 			}
 			return st.SetNodeName(id, args[0])
+		},
+	}
+	deviceFlag(cmd, &device)
+	return cmd
+}
+
+// runDeviceSet is the testable core of `porta device set`: it infers the
+// scalar type from the operator's string, enqueues a set command tagged
+// issued_by="cli", and prints a confirmation line to out.
+func runDeviceSet(out io.Writer, st *store.Store, id, app, key, valueStr string, now int64) error {
+	value := config.InferScalar(valueStr)
+	c, err := command.Set(app, key, value)
+	if err != nil {
+		return err
+	}
+	cmdID, err := st.EnqueueCommand(id, c.Verb, c.ArgsJSON, "cli", now)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s: enqueued set %s.%s=%v (command #%d)\n", id, app, key, value, cmdID)
+	return nil
+}
+
+func newDeviceSetCmd() *cobra.Command {
+	var device string
+	cmd := &cobra.Command{
+		Use:   "set <app> <key> <value>",
+		Short: "Enqueue a per-app config write (set verb)",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer st.Close()
+			id, err := resolveNodeID(st, device)
+			if err != nil {
+				return err
+			}
+			if err := st.EnsureNode(id, nowSec()); err != nil {
+				return err
+			}
+			return runDeviceSet(cmd.OutOrStdout(), st, id, args[0], args[1], args[2], nowSec())
 		},
 	}
 	deviceFlag(cmd, &device)

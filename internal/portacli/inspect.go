@@ -165,6 +165,7 @@ func newDeviceCmd() *cobra.Command {
 	parent := &cobra.Command{Use: "device", Short: "Per-node operations"}
 	parent.AddCommand(
 		newDeviceShowCmd(),
+		newDeviceSetCmd(),
 		newDeviceSetPollIntervalCmd(),
 		newDeviceSetMaxOfflineCmd(),
 		newDeviceNameCmd(),
