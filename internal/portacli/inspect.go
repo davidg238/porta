@@ -160,11 +160,15 @@ func newLogCmd() *cobra.Command {
 	return cmd
 }
 
-// newDeviceCmd builds the `device` parent with the read-only `show` subcommand.
-// Task 11 attaches set-poll-interval / set-max-offline / name.
+// newDeviceCmd builds the `device` parent with show + mutation subcommands.
 func newDeviceCmd() *cobra.Command {
 	parent := &cobra.Command{Use: "device", Short: "Per-node operations"}
-	parent.AddCommand(newDeviceShowCmd())
+	parent.AddCommand(
+		newDeviceShowCmd(),
+		newDeviceSetPollIntervalCmd(),
+		newDeviceSetMaxOfflineCmd(),
+		newDeviceNameCmd(),
+	)
 	return parent
 }
 
@@ -209,11 +213,14 @@ func newDeviceShowCmd() *cobra.Command {
 	return cmd
 }
 
-// newContainerCmd builds the `container` parent with the read-only `list`.
-// Task 11 attaches install / uninstall.
+// newContainerCmd builds the `container` parent with list + mutation subcommands.
 func newContainerCmd() *cobra.Command {
 	parent := &cobra.Command{Use: "container", Short: "Container operations"}
-	parent.AddCommand(newContainerListCmd())
+	parent.AddCommand(
+		newContainerListCmd(),
+		newContainerInstallCmd(),
+		newContainerUninstallCmd(),
+	)
 	return parent
 }
 
