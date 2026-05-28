@@ -2,6 +2,10 @@
 package portacli
 
 import (
+	"context"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/davidg238/porta/internal/store"
@@ -35,5 +39,13 @@ func NewRootCmd() *cobra.Command {
 	return root
 }
 
-// Execute runs the porta CLI.
-func Execute() error { return NewRootCmd().Execute() }
+// Execute runs the porta CLI. The root context is cancelled on
+// SIGINT/SIGTERM so long-running subcommands (serve, monitor --follow)
+// can exit cleanly. Closes the gap from porta/porta#2 — until this
+// change, runMonitor's --follow cancel path was unreachable in
+// production because cmd.Context() was context.Background().
+func Execute() error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return NewRootCmd().ExecuteContext(ctx)
+}
