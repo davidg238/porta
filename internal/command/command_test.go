@@ -98,3 +98,37 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+func TestSet(t *testing.T) {
+	cases := []struct {
+		name      string
+		app, key  string
+		value     any
+		wantArgs  string
+	}{
+		{"int", "sampler", "interval", int64(30), `{"app":"sampler","key":"interval","value":30}`},
+		{"float", "thermostat", "setpoint", 21.5, `{"app":"thermostat","key":"setpoint","value":21.5}`},
+		{"bool", "x", "on", true, `{"app":"x","key":"on","value":true}`},
+		{"string", "x", "mode", "eco", `{"app":"x","key":"mode","value":"eco"}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cmd, err := Set(c.app, c.key, c.value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cmd.Verb != "set" {
+				t.Errorf("verb = %q, want set", cmd.Verb)
+			}
+			if cmd.ArgsJSON != c.wantArgs {
+				t.Errorf("ArgsJSON = %s, want %s", cmd.ArgsJSON, c.wantArgs)
+			}
+		})
+	}
+}
+
+func TestSetRejectsBadType(t *testing.T) {
+	if _, err := Set("a", "k", []int{1, 2}); err == nil {
+		t.Error("Set with slice value should error")
+	}
+}
