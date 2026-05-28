@@ -6,7 +6,7 @@ import (
 	"html/template"
 	"strings"
 
-	"github.com/davidg238/porta/internal/store"
+	"github.com/davidg238/porta/internal/st/store"
 )
 
 // SourceData holds data for the source panel template.

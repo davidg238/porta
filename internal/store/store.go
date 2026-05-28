@@ -1,454 +1,321 @@
+// Package store is the porta gateway's sqlite data layer: node inventory,
+// payload blobs, the command queue, and the append-only report log.
 package store
 
 import (
 	"database/sql"
-	"fmt"
-	"time"
+	"errors"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// Device represents a Thread node known to the gateway.
-type Device struct {
-	EUI64      string
-	Name       string
-	SourceAddr string
-	Role       string
-	RLOC16     int
-	State      string
-	FirstSeen  time.Time
-	LastSeen   time.Time
-}
+const (
+	DefaultPollIntervalS = 30
+	DefaultMaxOfflineS   = 300
+)
 
-// Command is a queued verb+payload destined for a specific device.
-type Command struct {
-	ID      int64
-	Verb    string
-	Payload []byte
-}
+const schema = `
+CREATE TABLE IF NOT EXISTS nodes (
+  id TEXT PRIMARY KEY,
+  name TEXT,
+  source_addr TEXT,
+  kind TEXT NOT NULL DEFAULT 'toit',
+  first_seen INTEGER,
+  last_seen INTEGER,
+  poll_interval_s INTEGER DEFAULT 30,
+  max_offline_s INTEGER DEFAULT 300,
+  last_report_at INTEGER,
+  observed_state TEXT
+);
+CREATE TABLE IF NOT EXISTS payloads (
+  crc INTEGER PRIMARY KEY,
+  name TEXT,
+  size INTEGER,
+  image BLOB
+);
+CREATE TABLE IF NOT EXISTS command_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id TEXT,
+  verb TEXT,
+  args TEXT,
+  issued_at INTEGER,
+  issued_by TEXT,
+  delivered_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id TEXT,
+  ts INTEGER,
+  observed_state TEXT,
+  health TEXT
+);
+CREATE TABLE IF NOT EXISTS data_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id TEXT,
+  ts INTEGER,
+  seq INTEGER,
+  kind TEXT,
+  name TEXT,
+  value NUMERIC,
+  text TEXT,
+  value_type TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_data_device_ts ON data_log(device_id, ts);
+`
 
-// DataRow is one logged data sample from a device.
-type DataRow struct {
-	ID        int64
-	EUI64     string
-	Timestamp time.Time
-	Payload   []byte
-}
-
-// DebugBreakpoint is a persisted breakpoint for a device.
-type DebugBreakpoint struct {
-	DeviceID string
-	Module   string
-	STLine   int
-	PCStart  int
-	PCEnd    int
-}
-
-// DebugState is the last known debug state of a device.
-type DebugState struct {
-	DeviceID        string
-	Status          string // "running" or "paused"
-	PauseReason     string
-	CurrentPC       int
-	CurrentFunction string
-	CurrentModule   string
-	CurrentSTLine   int
-	UpdatedAt       time.Time
-}
-
-// Store wraps the SQLite database.
+// Store wraps the sqlite database.
 type Store struct {
 	db *sql.DB
 }
 
-// Open creates or opens a SQLite database at path and initialises the schema.
+// Node is a row from the nodes table.
+type Node struct {
+	ID            string
+	Name          string
+	SourceAddr    string
+	Kind          string
+	FirstSeen     sql.NullInt64
+	LastSeen      sql.NullInt64
+	PollIntervalS int64
+	MaxOfflineS   int64
+	LastReportAt  sql.NullInt64
+	ObservedState string
+}
+
+// Online reports whether the node has been seen within its max_offline window.
+func (n *Node) Online(now int64) bool {
+	return n.LastSeen.Valid && (now-n.LastSeen.Int64) <= n.MaxOfflineS
+}
+
+// Command is a row from the command_queue table.
+type Command struct {
+	ID          int64
+	Verb        string
+	Args        string // JSON object of flattened args
+	IssuedAt    int64
+	IssuedBy    string
+	DeliveredAt sql.NullInt64
+}
+
+// Open opens (creating if needed) the sqlite database and applies the schema.
 func Open(path string) (*Store, error) {
-	dsn := path
-	if path != ":memory:" {
-		dsn = path + "?_journal_mode=WAL"
-	}
-	db, err := sql.Open("sqlite3", dsn)
+	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL")
 	if err != nil {
-		return nil, fmt.Errorf("store open: %w", err)
+		return nil, err
 	}
-	if path == ":memory:" {
-		// Enable WAL via pragma for in-memory databases.
-		_, _ = db.Exec("PRAGMA journal_mode=WAL")
-	}
-	s := &Store{db: db}
-	if err := s.initSchema(); err != nil {
+	if _, err := db.Exec(schema); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("store init schema: %w", err)
+		return nil, err
 	}
-	return s, nil
+	return &Store{db: db}, nil
 }
 
-// Close closes the underlying database.
-func (s *Store) Close() error {
-	return s.db.Close()
+func (s *Store) Close() error { return s.db.Close() }
+
+// nullStr returns a driver value that is NULL when v is empty.
+func nullStr(v string) interface{} {
+	if v == "" {
+		return nil
+	}
+	return v
 }
 
-func (s *Store) initSchema() error {
-	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS devices (
-			eui64       TEXT PRIMARY KEY,
-			name        TEXT DEFAULT '',
-			source_addr TEXT DEFAULT '',
-			role        TEXT DEFAULT '',
-			rloc16      INTEGER DEFAULT 0,
-			first_seen  TEXT,
-			last_seen   TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS command_queue (
-			id        INTEGER PRIMARY KEY,
-			eui64     TEXT,
-			verb      TEXT,
-			payload   BLOB,
-			queued_at TEXT,
-			sent_at   TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS data_log (
-			id        INTEGER PRIMARY KEY,
-			eui64     TEXT,
-			timestamp TEXT,
-			payload   BLOB
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_cmd_eui64_sent ON command_queue(eui64, sent_at)`,
-		`CREATE INDEX IF NOT EXISTS idx_data_eui64_ts  ON data_log(eui64, timestamp)`,
-		`CREATE TABLE IF NOT EXISTS debug_breakpoints (
-			device_id   TEXT NOT NULL,
-			module_name TEXT NOT NULL,
-			st_line     INTEGER NOT NULL,
-			pc_start    INTEGER NOT NULL,
-			pc_end      INTEGER NOT NULL,
-			PRIMARY KEY (device_id, module_name, st_line)
-		)`,
-		`CREATE TABLE IF NOT EXISTS debug_state (
-			device_id        TEXT PRIMARY KEY,
-			status           TEXT NOT NULL DEFAULT 'running',
-			pause_reason     TEXT DEFAULT '',
-			current_pc       INTEGER DEFAULT 0,
-			current_function TEXT DEFAULT '',
-			current_module   TEXT DEFAULT '',
-			current_st_line  INTEGER DEFAULT 0,
-			updated_at       TEXT NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS debug_commands (
-			id        INTEGER PRIMARY KEY,
-			device_id TEXT NOT NULL,
-			command   TEXT NOT NULL,
-			queued_at TEXT NOT NULL,
-			sent_at   TEXT
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_dbgcmd_device ON debug_commands(device_id, sent_at)`,
-	}
-	for _, stmt := range stmts {
-		if _, err := s.db.Exec(stmt); err != nil {
-			return fmt.Errorf("exec %q: %w", stmt[:40], err)
-		}
-	}
-	// Add state column (may already exist).
-	s.db.Exec(`ALTER TABLE devices ADD COLUMN state TEXT DEFAULT 'active'`)
-	return nil
-}
-
-// DeviceSeen records or updates a device in the registry.
-func (s *Store) DeviceSeen(eui64, sourceAddr, role string, rloc16 int) error {
-	now := time.Now().Format(time.RFC3339Nano)
+// TouchNode records contact: creates the node on first sight (with an
+// auto-assigned name), otherwise bumps last_seen and refreshes source_addr.
+// An empty source_addr is COALESCEd so it never clobbers a known address.
+func (s *Store) TouchNode(id, sourceAddr string, now int64) error {
 	_, err := s.db.Exec(`
-		INSERT INTO devices (eui64, source_addr, role, rloc16, first_seen, last_seen)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(eui64) DO UPDATE SET
-			state       = 'active',
-			source_addr = excluded.source_addr,
-			role        = excluded.role,
-			rloc16      = excluded.rloc16,
-			last_seen   = excluded.last_seen
-	`, eui64, sourceAddr, role, rloc16, now, now)
+		INSERT INTO nodes (id, name, source_addr, first_seen, last_seen, poll_interval_s, max_offline_s)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+		  last_seen = excluded.last_seen,
+		  source_addr = COALESCE(excluded.source_addr, nodes.source_addr)`,
+		id, NodeNameFor(id), nullStr(sourceAddr), now, now,
+		DefaultPollIntervalS, DefaultMaxOfflineS)
 	return err
 }
 
-// SetDeviceName assigns a human-readable name to a device.
-func (s *Store) SetDeviceName(eui64, name string) error {
-	res, err := s.db.Exec(`UPDATE devices SET name = ? WHERE eui64 = ?`, name, eui64)
-	if err != nil {
-		return err
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return fmt.Errorf("device %q not found", eui64)
-	}
-	return nil
-}
-
-// ResolveDevice returns the EUI-64 for a device identified by EUI-64 or name.
-func (s *Store) ResolveDevice(nameOrEUI string) (string, error) {
-	var eui64 string
-	err := s.db.QueryRow(
-		`SELECT eui64 FROM devices WHERE eui64 = ? OR name = ?`,
-		nameOrEUI, nameOrEUI,
-	).Scan(&eui64)
-	if err == sql.ErrNoRows {
-		return "", fmt.Errorf("device %q not found", nameOrEUI)
-	}
-	return eui64, err
-}
-
-// ListDevices returns all known devices ordered by most recently seen.
-func (s *Store) ListDevices() ([]Device, error) {
-	rows, err := s.db.Query(`SELECT eui64, name, source_addr, role, rloc16, COALESCE(state, 'active'), first_seen, last_seen FROM devices ORDER BY last_seen DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var devs []Device
-	for rows.Next() {
-		var d Device
-		var firstSeen, lastSeen string
-		if err := rows.Scan(&d.EUI64, &d.Name, &d.SourceAddr, &d.Role, &d.RLOC16, &d.State, &firstSeen, &lastSeen); err != nil {
-			return nil, err
-		}
-		d.FirstSeen, _ = time.Parse(time.RFC3339Nano, firstSeen)
-		d.LastSeen, _ = time.Parse(time.RFC3339Nano, lastSeen)
-		devs = append(devs, d)
-	}
-	return devs, rows.Err()
-}
-
-// QueueCommand enqueues a command for a device.
-func (s *Store) QueueCommand(eui64, verb string, payload []byte) error {
-	now := time.Now().Format(time.RFC3339Nano)
-	_, err := s.db.Exec(
-		`INSERT INTO command_queue (eui64, verb, payload, queued_at) VALUES (?, ?, ?, ?)`,
-		eui64, verb, payload, now,
-	)
+// EnsureNode guarantees a row exists without recording contact (no last_seen).
+// Used to address a node by MAC before its first poll.
+func (s *Store) EnsureNode(id string, now int64) error {
+	_, err := s.db.Exec(`
+		INSERT INTO nodes (id, name, first_seen, poll_interval_s, max_offline_s)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO NOTHING`,
+		id, NodeNameFor(id), now, DefaultPollIntervalS, DefaultMaxOfflineS)
 	return err
 }
 
-// PopCommand returns and marks the oldest unsent command for a device, or nil if none.
-func (s *Store) PopCommand(eui64 string) (*Command, error) {
-	tx, err := s.db.Begin()
+const nodeCols = `id, COALESCE(name,''), COALESCE(source_addr,''), kind, first_seen, last_seen,
+	COALESCE(poll_interval_s,30), COALESCE(max_offline_s,300), last_report_at,
+	COALESCE(observed_state,'')`
+
+func scanNode(row interface{ Scan(...interface{}) error }) (*Node, error) {
+	var n Node
+	err := row.Scan(&n.ID, &n.Name, &n.SourceAddr, &n.Kind, &n.FirstSeen,
+		&n.LastSeen, &n.PollIntervalS, &n.MaxOfflineS, &n.LastReportAt, &n.ObservedState)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	return &n, nil
+}
 
-	var cmd Command
-	err = tx.QueryRow(
-		`SELECT id, verb, payload FROM command_queue WHERE eui64 = ? AND sent_at IS NULL ORDER BY id ASC LIMIT 1`,
-		eui64,
-	).Scan(&cmd.ID, &cmd.Verb, &cmd.Payload)
-	if err == sql.ErrNoRows {
+// GetNode returns the node row or (nil, nil) if absent.
+func (s *Store) GetNode(id string) (*Node, error) {
+	n, err := scanNode(s.db.QueryRow(`SELECT `+nodeCols+` FROM nodes WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-
-	now := time.Now().Format(time.RFC3339Nano)
-	if _, err := tx.Exec(`UPDATE command_queue SET sent_at = ? WHERE id = ?`, now, cmd.ID); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return &cmd, nil
+	return n, err
 }
 
-// LogData records a data sample from a device.
-func (s *Store) LogData(eui64 string, payload []byte) error {
-	now := time.Now().Format(time.RFC3339Nano)
-	_, err := s.db.Exec(
-		`INSERT INTO data_log (eui64, timestamp, payload) VALUES (?, ?, ?)`,
-		eui64, now, payload,
-	)
-	return err
+// NodeByName returns the node with the given friendly name, or (nil, nil).
+func (s *Store) NodeByName(name string) (*Node, error) {
+	n, err := scanNode(s.db.QueryRow(`SELECT `+nodeCols+` FROM nodes WHERE name = ?`, name))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return n, err
 }
 
-// QueryData returns logged data for a device within a time range.
-func (s *Store) QueryData(eui64 string, since, until time.Time) ([]DataRow, error) {
-	rows, err := s.db.Query(
-		`SELECT id, eui64, timestamp, payload FROM data_log WHERE eui64 = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC`,
-		eui64, since.Format(time.RFC3339Nano), until.Format(time.RFC3339Nano),
-	)
+// ListNodes returns all nodes ordered by id.
+func (s *Store) ListNodes() ([]Node, error) {
+	rows, err := s.db.Query(`SELECT ` + nodeCols + ` FROM nodes ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	var out []DataRow
+	var out []Node
 	for rows.Next() {
-		var r DataRow
-		var ts string
-		if err := rows.Scan(&r.ID, &r.EUI64, &ts, &r.Payload); err != nil {
+		n, err := scanNode(rows)
+		if err != nil {
 			return nil, err
 		}
-		r.Timestamp, _ = time.Parse(time.RFC3339Nano, ts)
-		out = append(out, r)
+		out = append(out, *n)
 	}
 	return out, rows.Err()
 }
 
-// PruneCommands deletes command_queue rows that have been sent and are older than maxAge.
-func (s *Store) PruneCommands(maxAge time.Duration) (int64, error) {
-	cutoff := time.Now().Add(-maxAge).Format(time.RFC3339Nano)
-	res, err := s.db.Exec(`DELETE FROM command_queue WHERE sent_at IS NOT NULL AND sent_at < ?`, cutoff)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
-}
-
-// PruneData deletes data_log rows older than maxAge. Returns count of deleted rows.
-func (s *Store) PruneData(maxAge time.Duration) (int64, error) {
-	cutoff := time.Now().Add(-maxAge).Format(time.RFC3339Nano)
-	res, err := s.db.Exec(`DELETE FROM data_log WHERE timestamp < ?`, cutoff)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
-}
-
-// AddDevice registers a device as "pending" (known but not yet on mesh).
-func (s *Store) AddDevice(eui64 string) error {
-	now := time.Now().Format(time.RFC3339Nano)
-	_, err := s.db.Exec(`
-		INSERT INTO devices (eui64, state, first_seen, last_seen)
-		VALUES (?, 'pending', ?, ?)
-		ON CONFLICT(eui64) DO NOTHING
-	`, eui64, now, now)
+func (s *Store) SetNodeName(id, name string) error {
+	_, err := s.db.Exec(`UPDATE nodes SET name = ? WHERE id = ?`, name, id)
 	return err
 }
 
-// ListPendingDevices returns devices in "pending" state.
-func (s *Store) ListPendingDevices() ([]Device, error) {
-	rows, err := s.db.Query(`SELECT eui64, name FROM devices WHERE state = 'pending'`)
+func (s *Store) SetMaxOffline(id string, secs int64) error {
+	_, err := s.db.Exec(`UPDATE nodes SET max_offline_s = ? WHERE id = ?`, secs, id)
+	return err
+}
+
+func (s *Store) SetPollInterval(id string, secs int64) error {
+	_, err := s.db.Exec(`UPDATE nodes SET poll_interval_s = ? WHERE id = ?`, secs, id)
+	return err
+}
+
+func (s *Store) RegisterPayload(crc int64, name string, image []byte) error {
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO payloads (crc, name, size, image) VALUES (?, ?, ?, ?)`,
+		crc, name, len(image), image)
+	return err
+}
+
+func (s *Store) PayloadExists(crc int64) (bool, error) {
+	var one int
+	err := s.db.QueryRow(`SELECT 1 FROM payloads WHERE crc = ?`, crc).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// Payload returns the raw image bytes for crc, or (nil, nil) if absent.
+func (s *Store) Payload(crc int64) ([]byte, error) {
+	var img []byte
+	err := s.db.QueryRow(`SELECT image FROM payloads WHERE crc = ?`, crc).Scan(&img)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return img, err
+}
+
+// EnqueueCommand appends a command and returns its new id.
+func (s *Store) EnqueueCommand(deviceID, verb, argsJSON, issuedBy string, now int64) (int64, error) {
+	res, err := s.db.Exec(`
+		INSERT INTO command_queue (device_id, verb, args, issued_at, issued_by, delivered_at)
+		VALUES (?, ?, ?, ?, ?, NULL)`,
+		deviceID, verb, argsJSON, now, issuedBy)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func scanCommand(row interface{ Scan(...interface{}) error }) (*Command, error) {
+	var c Command
+	err := row.Scan(&c.ID, &c.Verb, &c.Args, &c.IssuedAt, &c.IssuedBy, &c.DeliveredAt)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+const cmdCols = `id, verb, COALESCE(args,''), issued_at, COALESCE(issued_by,''), delivered_at`
+
+// NextUndelivered returns the oldest undelivered command, or (nil, nil).
+func (s *Store) NextUndelivered(deviceID string) (*Command, error) {
+	c, err := scanCommand(s.db.QueryRow(`SELECT `+cmdCols+`
+		FROM command_queue WHERE device_id = ? AND delivered_at IS NULL
+		ORDER BY id LIMIT 1`, deviceID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return c, err
+}
+
+func (s *Store) queryCommands(where, deviceID string) ([]Command, error) {
+	rows, err := s.db.Query(`SELECT `+cmdCols+` FROM command_queue WHERE device_id = ? `+where+` ORDER BY id`, deviceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var devs []Device
+	var out []Command
 	for rows.Next() {
-		var d Device
-		if err := rows.Scan(&d.EUI64, &d.Name); err != nil {
+		c, err := scanCommand(rows)
+		if err != nil {
 			return nil, err
 		}
-		devs = append(devs, d)
+		out = append(out, *c)
 	}
-	return devs, rows.Err()
+	return out, rows.Err()
 }
 
-// SetDebugBreakpoint adds or updates a breakpoint for a device.
-func (s *Store) SetDebugBreakpoint(deviceID, module string, stLine, pcStart, pcEnd int) error {
-	_, err := s.db.Exec(`
-		INSERT INTO debug_breakpoints (device_id, module_name, st_line, pc_start, pc_end)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(device_id, module_name, st_line) DO UPDATE SET
-			pc_start = excluded.pc_start,
-			pc_end   = excluded.pc_end
-	`, deviceID, module, stLine, pcStart, pcEnd)
+func (s *Store) UndeliveredCommands(deviceID string) ([]Command, error) {
+	return s.queryCommands("AND delivered_at IS NULL", deviceID)
+}
+
+func (s *Store) CommandLog(deviceID string) ([]Command, error) {
+	return s.queryCommands("", deviceID)
+}
+
+func (s *Store) MarkDelivered(id, now int64) error {
+	_, err := s.db.Exec(`UPDATE command_queue SET delivered_at = ? WHERE id = ?`, now, id)
 	return err
 }
 
-// ClearDebugBreakpoint removes a breakpoint.
-func (s *Store) ClearDebugBreakpoint(deviceID, module string, stLine int) error {
-	_, err := s.db.Exec(
-		`DELETE FROM debug_breakpoints WHERE device_id = ? AND module_name = ? AND st_line = ?`,
-		deviceID, module, stLine,
-	)
-	return err
-}
-
-// ListDebugBreakpoints returns all breakpoints for a device.
-func (s *Store) ListDebugBreakpoints(deviceID string) ([]DebugBreakpoint, error) {
-	rows, err := s.db.Query(
-		`SELECT device_id, module_name, st_line, pc_start, pc_end FROM debug_breakpoints WHERE device_id = ?`,
-		deviceID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var bps []DebugBreakpoint
-	for rows.Next() {
-		var bp DebugBreakpoint
-		if err := rows.Scan(&bp.DeviceID, &bp.Module, &bp.STLine, &bp.PCStart, &bp.PCEnd); err != nil {
-			return nil, err
-		}
-		bps = append(bps, bp)
-	}
-	return bps, rows.Err()
-}
-
-// UpdateDebugState records the current debug state of a device.
-func (s *Store) UpdateDebugState(deviceID, status, reason string, pc int, function, module string, stLine int) error {
-	now := time.Now().Format(time.RFC3339Nano)
-	_, err := s.db.Exec(`
-		INSERT INTO debug_state (device_id, status, pause_reason, current_pc, current_function, current_module, current_st_line, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(device_id) DO UPDATE SET
-			status           = excluded.status,
-			pause_reason     = excluded.pause_reason,
-			current_pc       = excluded.current_pc,
-			current_function = excluded.current_function,
-			current_module   = excluded.current_module,
-			current_st_line  = excluded.current_st_line,
-			updated_at       = excluded.updated_at
-	`, deviceID, status, reason, pc, function, module, stLine, now)
-	return err
-}
-
-// GetDebugState returns the current debug state for a device.
-func (s *Store) GetDebugState(deviceID string) (*DebugState, error) {
-	var ds DebugState
-	var updatedAt string
-	err := s.db.QueryRow(
-		`SELECT device_id, status, pause_reason, current_pc, current_function, current_module, current_st_line, updated_at
-		 FROM debug_state WHERE device_id = ?`, deviceID,
-	).Scan(&ds.DeviceID, &ds.Status, &ds.PauseReason, &ds.CurrentPC,
-		&ds.CurrentFunction, &ds.CurrentModule, &ds.CurrentSTLine, &updatedAt)
-	if err != nil {
-		return nil, err
-	}
-	ds.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
-	return &ds, nil
-}
-
-// QueueDebugCommand queues a debug command for a device.
-func (s *Store) QueueDebugCommand(deviceID, command string) error {
-	now := time.Now().Format(time.RFC3339Nano)
-	_, err := s.db.Exec(
-		`INSERT INTO debug_commands (device_id, command, queued_at) VALUES (?, ?, ?)`,
-		deviceID, command, now,
-	)
-	return err
-}
-
-// PopDebugCommand returns and marks the oldest unsent debug command, or "" if none.
-func (s *Store) PopDebugCommand(deviceID string) (string, error) {
+// InsertReport appends to the report log and refreshes the node's cached
+// observed_state + last_report_at.
+func (s *Store) InsertReport(deviceID, observedState, health string, now int64) error {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return "", err
+		return err
 	}
-	defer tx.Rollback()
-
-	var id int64
-	var cmd string
-	err = tx.QueryRow(
-		`SELECT id, command FROM debug_commands WHERE device_id = ? AND sent_at IS NULL ORDER BY id ASC LIMIT 1`,
-		deviceID,
-	).Scan(&id, &cmd)
-	if err == sql.ErrNoRows {
-		return "", nil
+	if _, err := tx.Exec(`INSERT INTO reports (device_id, ts, observed_state, health) VALUES (?, ?, ?, ?)`,
+		deviceID, now, observedState, health); err != nil {
+		tx.Rollback()
+		return err
 	}
-	if err != nil {
-		return "", err
+	if _, err := tx.Exec(`UPDATE nodes SET observed_state = ?, last_report_at = ? WHERE id = ?`,
+		observedState, now, deviceID); err != nil {
+		tx.Rollback()
+		return err
 	}
-
-	now := time.Now().Format(time.RFC3339Nano)
-	if _, err := tx.Exec(`UPDATE debug_commands SET sent_at = ? WHERE id = ?`, now, id); err != nil {
-		return "", err
-	}
-	return cmd, tx.Commit()
+	return tx.Commit()
 }

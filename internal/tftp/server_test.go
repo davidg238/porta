@@ -3,8 +3,6 @@ package tftp
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
-	"encoding/json"
 	"testing"
 )
 
@@ -255,70 +253,5 @@ func TestServerWRQMultiBlock(t *testing.T) {
 	expected := append(block1, block2...)
 	if !bytes.Equal(gotData, expected) {
 		t.Fatal("data mismatch")
-	}
-}
-
-func TestServerCommandQueue(t *testing.T) {
-	s := NewServer()
-
-	// Queue two commands for device A
-	s.QueueCommand("devA", "eval", []byte{1, 2})
-	s.QueueCommand("devA", "reboot", nil)
-	// Queue one for device B
-	s.QueueCommand("devB", "eval", []byte{3})
-
-	// Pop device A commands in order
-	cmd := s.PopCommand("devA")
-	if cmd == nil || cmd.Verb != "eval" {
-		t.Fatal("expected eval command for devA")
-	}
-	if !bytes.Equal(cmd.Payload, []byte{1, 2}) {
-		t.Fatal("wrong payload")
-	}
-
-	cmd = s.PopCommand("devA")
-	if cmd == nil || cmd.Verb != "reboot" {
-		t.Fatal("expected reboot command for devA")
-	}
-
-	cmd = s.PopCommand("devA")
-	if cmd != nil {
-		t.Fatal("expected nil when queue empty")
-	}
-
-	// Device B independent
-	cmd = s.PopCommand("devB")
-	if cmd == nil || cmd.Verb != "eval" {
-		t.Fatal("expected eval command for devB")
-	}
-	if !bytes.Equal(cmd.Payload, []byte{3}) {
-		t.Fatal("wrong payload for devB")
-	}
-
-	cmd = s.PopCommand("devB")
-	if cmd != nil {
-		t.Fatal("expected nil for empty devB")
-	}
-
-	// Unknown device
-	cmd = s.PopCommand("devC")
-	if cmd != nil {
-		t.Fatal("expected nil for unknown device")
-	}
-}
-
-func TestCommandToJSON(t *testing.T) {
-	cmd := &Command{Verb: "eval", Payload: []byte{0xDE, 0xAD}}
-	j := CommandToJSON(cmd)
-
-	var m map[string]string
-	if err := json.Unmarshal(j, &m); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-	if m["verb"] != "eval" {
-		t.Fatalf("verb: got %q", m["verb"])
-	}
-	if m["payload"] != hex.EncodeToString([]byte{0xDE, 0xAD}) {
-		t.Fatalf("payload: got %q", m["payload"])
 	}
 }
