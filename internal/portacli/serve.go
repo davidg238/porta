@@ -1,49 +1,120 @@
+// internal/portacli/serve.go
 package portacli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 
 	"github.com/davidg238/porta/internal/handler"
+	"github.com/davidg238/porta/internal/httpsrv"
 	"github.com/davidg238/porta/internal/tftp"
 	"github.com/spf13/cobra"
 )
 
+// defaultAllowCIDR returns the RFC1918 + loopback set, as a fresh slice
+// per invocation (cobra StringSliceVar shares the backing slice across
+// resets — see TestDefaultAllowCIDRReturnsFreshSlice).
+func defaultAllowCIDR() []string {
+	return []string{
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"127.0.0.0/8",
+		"::1/128",
+	}
+}
+
 func newServeCmd() *cobra.Command {
-	var port int
+	var port, httpPort int
+	var httpBind string
+	var httpAllowCIDR []string
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run the TFTP daemon serving the command queue + payloads",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Short: "Run the porta gateway: UDP/TFTP listener + optional HTTP operator surface",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
 			st, err := openStore()
 			if err != nil {
 				return err
 			}
 			defer st.Close()
-			srv := tftp.NewServer()
-			srv.SetDispatcher(handler.New(st, nowSec))
 
-			addr := fmt.Sprintf(":%d", port)
-			conn, err := net.ListenPacket("udp", addr)
+			// UDP listener (preserves the existing serveUDPLoop; ctx
+			// cancels via conn.Close from a sidekick goroutine, and
+			// net.ErrClosed from ReadFrom = clean shutdown).
+			udpAddr := fmt.Sprintf(":%d", port)
+			udpConn, err := net.ListenPacket("udp", udpAddr)
 			if err != nil {
 				return err
 			}
-			defer conn.Close()
-			log.Printf("porta: serving TFTP on udp %s (db=%s)", addr, dbPath)
-			return serveUDP(conn, srv)
+			defer udpConn.Close()
+			tftpSrv := tftp.NewServer()
+			tftpSrv.SetDispatcher(handler.New(st, nowSec))
+			log.Printf("porta: serving TFTP on udp %s (db=%s)", udpAddr, dbPath)
+			udpErr := make(chan error, 1)
+			go func() { udpErr <- serveUDPLoop(ctx, udpConn, tftpSrv) }()
+
+			// HTTP listener (B4a, optional).
+			httpErr := make(chan error, 1)
+			if httpPort > 0 {
+				srv, err := httpsrv.New(httpsrv.Config{
+					Bind:      httpBind,
+					Port:      httpPort,
+					AllowCIDR: httpAllowCIDR,
+				}, st)
+				if err != nil {
+					return err
+				}
+				go func() { httpErr <- srv.Run(ctx) }()
+				log.Printf("porta: serving HTTP on %s:%d", httpBind, httpPort)
+			} else {
+				close(httpErr) // make the select symmetric — nil receive
+			}
+
+			// Either listener exiting OR ctx cancellation completes the
+			// command. Errors from either propagate. A clean HTTP exit
+			// while UDP is still running falls through to wait on UDP.
+			select {
+			case err := <-udpErr:
+				return err
+			case err := <-httpErr:
+				if err == nil && httpPort > 0 {
+					return <-udpErr
+				}
+				return err
+			case <-ctx.Done():
+				return nil
+			}
 		},
 	}
-	cmd.Flags().IntVar(&port, "port", 6969, "UDP port")
+	cmd.Flags().IntVar(&port, "port", 6969, "UDP/TFTP port")
+	cmd.Flags().IntVar(&httpPort, "http-port", 6970, "operator HTTP port (0 = disabled)")
+	cmd.Flags().StringVar(&httpBind, "http-bind", "0.0.0.0", "operator HTTP bind address")
+	cmd.Flags().StringSliceVar(&httpAllowCIDR, "http-allow-cidr",
+		defaultAllowCIDR(),
+		"CIDR ranges allowed to reach the operator HTTP listener (repeatable; empty = serve any peer)")
 	return cmd
 }
 
-// serveUDP reads TFTP packets and writes the server's replies back to the peer.
-func serveUDP(conn net.PacketConn, srv *tftp.Server) error {
+// serveUDPLoop reads TFTP packets and writes the server's replies back to
+// the peer. Mirrors the pre-B4a serveUDP body, with two additions: a
+// sidekick goroutine that closes the conn when ctx fires, and clean-exit
+// recognition for the net.ErrClosed that results.
+func serveUDPLoop(ctx context.Context, conn net.PacketConn, srv *tftp.Server) error {
+	go func() {
+		<-ctx.Done()
+		conn.Close()
+	}()
 	buf := make([]byte, 2048)
 	for {
 		n, peer, err := conn.ReadFrom(buf)
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return nil
+			}
 			return err
 		}
 		pkt := make([]byte, n)
