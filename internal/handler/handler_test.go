@@ -129,11 +129,11 @@ func TestWriteReportIngest(t *testing.T) {
 
 func TestWriteRejectsNonReportAndMissingID(t *testing.T) {
 	h, _ := newH(t)
-	if err := h.AcceptWrite("data?id=dev", "p"); err == nil {
-		t.Error("data WRQ deferred to B3 → must be rejected in B1")
+	if err := h.AcceptWrite("bogus?id=dev", "p:1"); err == nil {
+		t.Error("unknown base must be rejected")
 	}
-	if err := h.AcceptWrite("report", "p"); err == nil {
-		t.Error("report without ?id= must be rejected")
+	if err := h.AcceptWrite("report", "p:1"); err == nil {
+		t.Error("report without id must be rejected")
 	}
 }
 
@@ -294,5 +294,105 @@ func TestWriteSucceedsEvenWithMalformedConfig(t *testing.T) {
 	n, _ := st.GetNode("dev")
 	if n == nil || n.ObservedState == "" {
 		t.Error("observed_state should be set even when reconcile bails")
+	}
+}
+
+func TestWriteAcceptsDataAndIngestsJSONL(t *testing.T) {
+	h, st := newH(t)
+	st.EnsureNode("aabbccddeeff", 1000)
+	body := []byte(
+		`{"ts":100,"seq":0,"kind":"metric","name":"pm","value":13}` + "\n" +
+			`{"ts":101,"seq":1,"kind":"metric","name":"t","value":20.5}` + "\n" +
+			`{"ts":102,"seq":2,"kind":"metric","name":"door","value":true}` + "\n" +
+			`{"ts":103,"seq":3,"kind":"metric","name":"mode","value":"auto"}` + "\n" +
+			`{"ts":104,"seq":4,"kind":"log","text":"started blink"}` + "\n")
+	if err := h.AcceptWrite("data?id=aabbccddeeff", "p:1"); err != nil {
+		t.Fatalf("AcceptWrite: %v", err)
+	}
+	if err := h.Write("data?id=aabbccddeeff", "p:1", body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	rows, _ := st.QueryData("aabbccddeeff", 0, 200, "")
+	if len(rows) != 5 {
+		t.Fatalf("got %d rows, want 5", len(rows))
+	}
+	if rows[0].ValueType != "int" {
+		t.Errorf("rows[0].ValueType=%q, want int", rows[0].ValueType)
+	}
+	if rows[1].ValueType != "float" {
+		t.Errorf("rows[1].ValueType=%q, want float", rows[1].ValueType)
+	}
+	if rows[2].ValueType != "bool" {
+		t.Errorf("rows[2].ValueType=%q, want bool", rows[2].ValueType)
+	}
+	if rows[3].ValueType != "string" {
+		t.Errorf("rows[3].ValueType=%q, want string", rows[3].ValueType)
+	}
+	if rows[3].Text != "auto" {
+		t.Errorf("rows[3].Text=%q, want auto", rows[3].Text)
+	}
+	if rows[4].Kind != "log" || rows[4].Text != "started blink" {
+		t.Errorf("rows[4]=%+v", rows[4])
+	}
+}
+
+func TestWriteDataTruncatedTailToleratesSkip(t *testing.T) {
+	h, st := newH(t)
+	st.EnsureNode("ffeeddccbbaa", 1000)
+	body := []byte(
+		`{"ts":100,"kind":"log","text":"a"}` + "\n" +
+			`{"ts":101,"kind":"log","text":"b"}` + "\n" +
+			`{"ts":102,"kind":"met` /* truncated */)
+	if err := h.Write("data?id=ffeeddccbbaa", "p:1", body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	rows, _ := st.QueryData("ffeeddccbbaa", 0, 200, "")
+	if len(rows) != 2 {
+		t.Errorf("got %d rows, want 2 (truncated tail must be skipped)", len(rows))
+	}
+}
+
+func TestWriteDataNonObjectLineSkipped(t *testing.T) {
+	h, st := newH(t)
+	st.EnsureNode("112233445566", 1000)
+	body := []byte(
+		`{"ts":100,"kind":"log","text":"a"}` + "\n" +
+			`42` + "\n" +
+			`{"ts":101,"kind":"log","text":"b"}` + "\n")
+	if err := h.Write("data?id=112233445566", "p:1", body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	rows, _ := st.QueryData("112233445566", 0, 200, "")
+	if len(rows) != 2 {
+		t.Errorf("got %d rows, want 2 (non-object line skipped)", len(rows))
+	}
+}
+
+func TestWriteDataNonScalarValueDegrades(t *testing.T) {
+	h, st := newH(t)
+	st.EnsureNode("aaaa11112222", 1000)
+	body := []byte(`{"ts":300,"kind":"metric","name":"x","value":[1,2]}` + "\n")
+	if err := h.Write("data?id=aaaa11112222", "p:1", body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	rows, _ := st.QueryData("aaaa11112222", 0, 400, "")
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].Value != nil {
+		t.Errorf("Value=%v, want nil (degraded)", rows[0].Value)
+	}
+	if rows[0].ValueType != "" {
+		t.Errorf("ValueType=%q, want \"\" (degraded)", rows[0].ValueType)
+	}
+}
+
+func TestAcceptWriteRejectsDataWithoutID(t *testing.T) {
+	h, _ := newH(t)
+	if err := h.AcceptWrite("data", "p:1"); err == nil {
+		t.Error("AcceptWrite(data) without id must error")
+	}
+	if err := h.AcceptWrite("data?id=", "p:1"); err == nil {
+		t.Error("AcceptWrite(data?id=) (empty id) must error")
 	}
 }
