@@ -7,12 +7,13 @@ import (
 	"time"
 )
 
-func TestDefaultAllowCIDRHasRFC1918AndLoopback(t *testing.T) {
+func TestDefaultAllowCIDRHasRFC1918LoopbackAndTailscale(t *testing.T) {
 	got := defaultAllowCIDR()
 	want := []string{
 		"10.0.0.0/8",
 		"172.16.0.0/12",
 		"192.168.0.0/16",
+		"100.64.0.0/10",
 		"127.0.0.0/8",
 		"::1/128",
 	}
