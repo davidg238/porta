@@ -111,6 +111,83 @@ func TestSetFormEnqueuesWebCommand(t *testing.T) {
 	}
 }
 
+func TestConsoleFormEnqueuesWebCommand(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	resp, err := http.PostForm(srv.URL+"/n/aabbccddeeff/console", url.Values{"state": {"on"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	cmds, _ := st.CommandLog("aabbccddeeff")
+	if len(cmds) != 1 || cmds[0].Verb != "set-console" || cmds[0].IssuedBy != "web" {
+		t.Fatalf("want one web 'set-console' command, got %+v", cmds)
+	}
+}
+
+func TestPollIntervalFormEnqueuesAndPersists(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	resp, err := http.PostForm(srv.URL+"/n/aabbccddeeff/poll-interval", url.Values{"dur": {"60s"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	cmds, _ := st.CommandLog("aabbccddeeff")
+	if len(cmds) != 1 || cmds[0].Verb != "set-poll-interval" || cmds[0].IssuedBy != "web" {
+		t.Fatalf("want one web 'set-poll-interval' command, got %+v", cmds)
+	}
+	n, _ := st.GetNode("aabbccddeeff")
+	if n == nil || n.PollIntervalS != 60 {
+		t.Fatalf("poll interval not persisted, got %+v", n)
+	}
+}
+
+func TestRenameFormRenamesNode(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	resp, err := http.PostForm(srv.URL+"/n/aabbccddeeff/rename", url.Values{"name": {"foo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := readBody(t, resp)
+	if resp.StatusCode != 200 || !strings.Contains(body, "foo") {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+	n, _ := st.GetNode("aabbccddeeff")
+	if n == nil || n.Name != "foo" {
+		t.Fatalf("node not renamed, got %+v", n)
+	}
+}
+
+func TestGetToWriteSubPathIsRejected(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	resp := mustGet(t, srv.URL+"/n/aabbccddeeff/set?app=demo&key=gain&value=3")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("GET to /set got %d, want 405", resp.StatusCode)
+	}
+	cmds, _ := st.CommandLog("aabbccddeeff")
+	if len(cmds) != 0 {
+		t.Fatalf("GET must not enqueue, got %+v", cmds)
+	}
+}
+
 func TestIndexRendersNavAndAssets(t *testing.T) {
 	st := testStore(t)
 	srv := serve(t, st)

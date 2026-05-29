@@ -1,7 +1,9 @@
 package web
 
 import (
+	"bytes"
 	"fmt"
+	"html/template"
 	"net/http"
 
 	"github.com/davidg238/porta/internal/command"
@@ -16,9 +18,15 @@ import (
 // targeting #pending replaces the right element.
 func (h *Handler) confirm(w http.ResponseWriter, n *store.Node, msg string) {
 	vm := h.detailVM(n)
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, `<p class="confirm">%s — delivers on next check-in (%s)</p>`,
+		template.HTMLEscapeString(msg), template.HTMLEscapeString(vm.Gauge.Label))
+	if err := h.tmpl.ExecuteTemplate(&buf, "node-pending", vm); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, `<p class="confirm">%s — delivers on next check-in (%s)</p>`, msg, vm.Gauge.Label)
-	_ = h.tmpl.ExecuteTemplate(w, "node-pending", vm)
+	_, _ = buf.WriteTo(w)
 }
 
 func (h *Handler) postSet(w http.ResponseWriter, r *http.Request, n *store.Node) {
@@ -47,7 +55,11 @@ func (h *Handler) postPollInterval(w http.ResponseWriter, r *http.Request, n *st
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	id, _ := control.SetPollInterval(h.st, n.ID, secs, "web", h.now())
+	id, err := control.SetPollInterval(h.st, n.ID, secs, "web", h.now())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	h.confirm(w, n, fmt.Sprintf("queued #%d set-poll-interval %ds", id, secs))
 }
 
@@ -57,8 +69,15 @@ func (h *Handler) postMaxOffline(w http.ResponseWriter, r *http.Request, n *stor
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	_ = control.SetMaxOffline(h.st, n.ID, secs)
-	n2, _ := h.st.GetNode(n.ID)
+	if err := control.SetMaxOffline(h.st, n.ID, secs); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	n2, err := h.st.GetNode(n.ID)
+	if err != nil || n2 == nil {
+		http.Error(w, "node lookup failed", http.StatusInternalServerError)
+		return
+	}
 	h.render(w, "node-header", h.detailVM(n2))
 }
 
@@ -68,7 +87,14 @@ func (h *Handler) postRename(w http.ResponseWriter, r *http.Request, n *store.No
 		http.Error(w, "empty name", http.StatusBadRequest)
 		return
 	}
-	_ = control.Rename(h.st, n.ID, name)
-	n2, _ := h.st.GetNode(n.ID)
+	if err := control.Rename(h.st, n.ID, name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	n2, err := h.st.GetNode(n.ID)
+	if err != nil || n2 == nil {
+		http.Error(w, "node lookup failed", http.StatusInternalServerError)
+		return
+	}
 	h.render(w, "node-header", h.detailVM(n2))
 }

@@ -44,7 +44,6 @@
 
 {{define "node-actions"}}<section id="actions">
   <h2>Actions</h2>
-  <div id="action-result"></div>
   <form class="action" hx-post="/n/{{.ID}}/set" hx-target="#pending" hx-swap="outerHTML">
     <b>set</b> <input name="app" placeholder="app" required> <input name="key" placeholder="key" required>
     <input name="value" placeholder="value" required> <button>queue</button>
