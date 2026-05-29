@@ -4,11 +4,15 @@
 package web
 
 import (
+	"bytes"
 	"embed"
+	"fmt"
 	"html/template"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/davidg238/porta/internal/control"
 	"github.com/davidg238/porta/internal/store"
 )
 
@@ -42,24 +46,86 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/partials/log", h.handleLogPartial)
 }
 
+type nodeRowVM struct {
+	ID, Name, Kind, IP, SeenAgo, Summary string
+	Gauge                                CheckinState
+}
+
+func (h *Handler) nodeRows(now int64) ([]nodeRowVM, error) {
+	nodes, err := h.st.ListNodes()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]nodeRowVM, 0, len(nodes))
+	for _, n := range nodes {
+		seen := "never"
+		var lastSeen int64
+		if n.LastSeen.Valid {
+			lastSeen = n.LastSeen.Int64
+			seen = control.RelativeAge(lastSeen, now)
+		}
+		out = append(out, nodeRowVM{
+			ID: n.ID, Name: n.Name, Kind: n.Kind, IP: n.SourceAddr, SeenAgo: seen,
+			Summary: summarize(n.ObservedState),
+			Gauge:   Checkin(n.LastSeen.Valid, lastSeen, n.PollIntervalS, n.MaxOfflineS, now),
+		})
+	}
+	return out, nil
+}
+
+// summarize renders the node-list "state summary" cell.
+func summarize(observed string) string {
+	apps, _ := control.AppsFromObserved(observed)
+	cfg := control.ConfigFromObserved(observed)
+	keys := 0
+	for _, m := range cfg {
+		keys += len(m)
+	}
+	if len(apps) == 0 {
+		return fmt.Sprintf("idle · %d cfg", keys)
+	}
+	names := make([]string, 0, len(apps))
+	for _, a := range apps {
+		names = append(names, a.Name)
+	}
+	return fmt.Sprintf("%s · %d cfg", strings.Join(names, ","), keys)
+}
+
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
-	h.render(w, "index", map[string]any{"Title": "Nodes"})
+	rows, err := h.nodeRows(h.now())
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	h.render(w, "index", map[string]any{"Title": "Nodes", "Rows": rows})
 }
 
-// render executes a template and writes 500 on error.
+// render executes a named template into a buffer; only writes to w on success
+// so a template error yields a clean 500 instead of a partial body.
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmpl.ExecuteTemplate(w, name, data); err != nil {
+	var buf bytes.Buffer
+	if err := h.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
+}
+
+func (h *Handler) handleNodesPartial(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.nodeRows(h.now())
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	h.render(w, "nodes-rows", rows)
 }
 
 // Temporary stubs (filled in later tasks).
-func (h *Handler) handleNode(w http.ResponseWriter, r *http.Request)         { http.NotFound(w, r) }
-func (h *Handler) handleLog(w http.ResponseWriter, r *http.Request)          { h.render(w, "index", map[string]any{"Title": "Command Log"}) }
-func (h *Handler) handleNodesPartial(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<tbody></tbody>")) }
-func (h *Handler) handleLogPartial(w http.ResponseWriter, r *http.Request)   { w.Write([]byte("<tbody></tbody>")) }
+func (h *Handler) handleNode(w http.ResponseWriter, r *http.Request)       { http.NotFound(w, r) }
+func (h *Handler) handleLog(w http.ResponseWriter, r *http.Request)        { h.render(w, "index", map[string]any{"Title": "Command Log"}) }
+func (h *Handler) handleLogPartial(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<tbody></tbody>")) }

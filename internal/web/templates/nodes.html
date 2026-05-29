@@ -1,0 +1,14 @@
+{{define "nodes-table"}}
+<table>
+  <thead><tr><th></th><th>Name</th><th>Kind</th><th>Last seen</th><th>IP</th><th>State</th><th>Next check-in</th></tr></thead>
+  {{template "nodes-rows" .Rows}}
+</table>
+{{end}}
+
+{{define "nodes-rows"}}<tbody id="nodes" hx-get="/partials/nodes" hx-trigger="every 2s" hx-swap="outerHTML">
+{{range .}}<tr class="node-row" onclick="location.href='/n/{{.ID}}'">
+  <td class="dot-{{.Gauge.Color}}">{{if .Gauge.Online}}●{{else}}○{{end}}</td>
+  <td><b>{{.Name}}</b></td><td>{{.Kind}}</td><td>{{.SeenAgo}}</td><td>{{.IP}}</td><td>{{.Summary}}</td>
+  <td><div class="gauge {{.Gauge.Color}}"><div class="fill" style="width:{{.Gauge.FillPct}}%"></div><span class="lbl">{{.Gauge.Label}}</span></div></td>
+</tr>{{end}}
+</tbody>{{end}}
