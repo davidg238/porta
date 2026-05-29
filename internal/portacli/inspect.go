@@ -1,63 +1,24 @@
 package portacli
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
 	"text/tabwriter"
 
-	"github.com/davidg238/porta/internal/config"
+	"github.com/davidg238/porta/internal/control"
 	"github.com/davidg238/porta/internal/store"
 	"github.com/spf13/cobra"
 )
 
-// relativeAge renders an epoch-seconds timestamp relative to now.
-func relativeAge(ts, now int64) string {
-	if ts == 0 {
-		return "never"
-	}
-	d := now - ts
-	switch {
-	case d <= 60:
-		return fmt.Sprintf("%ds ago", d)
-	case d <= 3600:
-		return fmt.Sprintf("%dm ago", d/60)
-	case d < 86400:
-		return fmt.Sprintf("%dh ago", d/3600)
-	default:
-		return fmt.Sprintf("%dd ago", d/86400)
-	}
-}
+// relativeAge is a thin wrapper around control.RelativeAge for internal use.
+func relativeAge(ts, now int64) string { return control.RelativeAge(ts, now) }
 
 // App is one entry from a node's observed apps map.
-type App struct {
-	Name     string
-	CRC      int64
-	Runlevel int64
-}
+// Re-exported from control for portacli internal tests.
+type App = control.App
 
-// appsFromObserved decodes the apps map from a cached observed_state JSON blob.
-func appsFromObserved(observed string) ([]App, error) {
-	if observed == "" {
-		return nil, nil
-	}
-	var obj struct {
-		Apps map[string]struct {
-			CRC      int64 `json:"crc"`
-			Runlevel int64 `json:"runlevel"`
-		} `json:"apps"`
-	}
-	if err := json.Unmarshal([]byte(observed), &obj); err != nil {
-		return nil, err
-	}
-	var out []App
-	for name, a := range obj.Apps {
-		out = append(out, App{Name: name, CRC: a.CRC, Runlevel: a.Runlevel})
-	}
-	return out, nil
-}
+// appsFromObserved is a thin wrapper around control.AppsFromObserved for internal use.
+func appsFromObserved(observed string) ([]App, error) { return control.AppsFromObserved(observed) }
 
 // deviceFlag adds and reads the shared -d/--device flag.
 func deviceFlag(cmd *cobra.Command, dst *string) {
@@ -266,24 +227,6 @@ func newContainerListCmd() *cobra.Command {
 	return cmd
 }
 
-// configFromObserved decodes a node's cached observed_state JSON into the
-// app→{key:value} map for config display + comparison. Uses UseNumber() so
-// values match the desired side under EqualScalars.
-func configFromObserved(observed string) map[string]map[string]any {
-	if observed == "" {
-		return map[string]map[string]any{}
-	}
-	var obj struct {
-		Config map[string]map[string]any `json:"config"`
-	}
-	dec := json.NewDecoder(bytes.NewReader([]byte(observed)))
-	dec.UseNumber()
-	if err := dec.Decode(&obj); err != nil || obj.Config == nil {
-		return map[string]map[string]any{}
-	}
-	return obj.Config
-}
-
 // renderScalar formats a scalar for the desired/observed cells. json.Number
 // prints as its canonical text; bool/string print as-is; nil renders as "--".
 func renderScalar(v any) string {
@@ -293,82 +236,59 @@ func renderScalar(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// unionKeys returns a sorted slice of all keys present in either map.
-func unionKeys(a, b map[string]any) []string {
-	seen := map[string]struct{}{}
-	for k := range a {
-		seen[k] = struct{}{}
-	}
-	for k := range b {
-		seen[k] = struct{}{}
-	}
-	out := make([]string, 0, len(seen))
-	for k := range seen {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// printWarnings emits the ≥2× self-heal footer for each still-divergent key.
-func printWarnings(out io.Writer, id, app string, keys []string, desired, observed map[string]any, cmds []store.Command) {
-	for _, k := range keys {
-		d, dOK := desired[k]
-		o, oOK := observed[k]
-		if config.Marker(d, o, dOK, oOK) == "" {
-			continue
-		}
-		if n := config.ReconcileCount(cmds, app, k); n >= 2 {
-			fmt.Fprintf(out, "%s: ⚠ %s.%s: self-healed %d× — node may be failing to apply\n", id, app, k, n)
-		}
-	}
-}
-
 // runDeviceGet is the testable core of `porta device get`. If key is empty,
 // it renders a table over the union of desired ∪ observed keys for app;
 // otherwise it renders the single-key one-liner. Either form prints a ≥2×
 // self-heal warning footer for each still-divergent key.
 func runDeviceGet(out io.Writer, st *store.Store, id, app, key string) error {
-	n, err := st.GetNode(id)
-	if err != nil || n == nil {
-		return fmt.Errorf("node %s not found", id)
-	}
-	cmds, err := st.CommandLog(id)
+	rows, err := control.DesiredVsObserved(st, id, app)
 	if err != nil {
 		return err
 	}
-	desired := config.ProjectDesiredForApp(cmds, app)
-	observed := configFromObserved(n.ObservedState)[app]
-	if observed == nil {
-		observed = map[string]any{}
+	render := func(r control.ConfigRow) (string, string) {
+		ds, os := "--", "--"
+		if r.DesiredPresent {
+			ds = renderScalar(r.Desired)
+		}
+		if r.ObservedPresent {
+			os = renderScalar(r.Observed)
+		}
+		return ds, os
 	}
 
 	if key != "" {
-		d, dOK := desired[key]
-		o, oOK := observed[key]
-		marker := config.Marker(d, o, dOK, oOK)
-		line := fmt.Sprintf("%s: %s.%s desired=%s observed=%s", id, app, key, renderScalar(d), renderScalar(o))
-		if marker != "" {
-			line += " " + marker
+		for _, r := range rows {
+			if r.Key != key {
+				continue
+			}
+			ds, os := render(r)
+			line := fmt.Sprintf("%s: %s.%s desired=%s observed=%s", id, app, key, ds, os)
+			if r.Marker != "" {
+				line += " " + r.Marker
+			}
+			fmt.Fprintln(out, line)
+			if r.ReissueCount >= 2 {
+				fmt.Fprintf(out, "%s: ⚠ %s.%s: self-healed %d× — node may be failing to apply\n", id, app, key, r.ReissueCount)
+			}
+			return nil
 		}
-		fmt.Fprintln(out, line)
-		printWarnings(out, id, app, []string{key}, desired, observed, cmds)
+		fmt.Fprintf(out, "%s: %s.%s desired=-- observed=--\n", id, app, key)
 		return nil
 	}
 
-	// Multi-key: union of desired ∪ observed, sorted.
-	keys := unionKeys(desired, observed)
 	fmt.Fprintf(out, "%s: config for %s\n", id, app)
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "  KEY\tDESIRED\tOBSERVED\t")
-	for _, k := range keys {
-		d, dOK := desired[k]
-		o, oOK := observed[k]
-		marker := config.Marker(d, o, dOK, oOK)
-		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", k, renderScalar(d), renderScalar(o), marker)
+	for _, r := range rows {
+		ds, os := render(r)
+		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", r.Key, ds, os, r.Marker)
 	}
 	w.Flush()
-	printWarnings(out, id, app, keys, desired, observed, cmds)
+	for _, r := range rows {
+		if r.Marker != "" && r.ReissueCount >= 2 {
+			fmt.Fprintf(out, "%s: ⚠ %s.%s: self-healed %d× — node may be failing to apply\n", id, app, r.Key, r.ReissueCount)
+		}
+	}
 	return nil
 }
 
