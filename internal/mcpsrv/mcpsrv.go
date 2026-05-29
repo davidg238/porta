@@ -48,6 +48,14 @@ func (s *Server) registerTools() {
 		Name:        "device_status",
 		Description: "Show one node's status: kind, source addr, last seen, observed state, undelivered command count.",
 	}, s.deviceStatus)
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "device_get_config",
+		Description: "Show desired-vs-observed config rows for one app, or all observed apps when app is omitted.",
+	}, s.deviceGetConfig)
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "container_list",
+		Description: "List a node's installed containers (name, crc, runlevel) from observed state.",
+	}, s.containerList)
 }
 
 // textResult returns a non-error result carrying only a human-readable summary.

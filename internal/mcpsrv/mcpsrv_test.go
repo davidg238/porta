@@ -43,8 +43,8 @@ func TestNewServerRegistersTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if len(res.Tools) != 2 {
-		t.Fatalf("expected 2 tools, got %d", len(res.Tools))
+	if len(res.Tools) != 4 {
+		t.Fatalf("expected 4 tools, got %d", len(res.Tools))
 	}
 	names := make(map[string]bool)
 	for _, tool := range res.Tools {
@@ -55,6 +55,12 @@ func TestNewServerRegistersTools(t *testing.T) {
 	}
 	if !names["device_status"] {
 		t.Fatalf("expected device_status tool, got %v", res.Tools)
+	}
+	if !names["device_get_config"] {
+		t.Fatalf("expected device_get_config tool, got %v", res.Tools)
+	}
+	if !names["container_list"] {
+		t.Fatalf("expected container_list tool, got %v", res.Tools)
 	}
 }
 
@@ -133,5 +139,59 @@ func TestDeviceStatusUnknownIsError(t *testing.T) {
 	}
 	if !res.IsError {
 		t.Fatalf("expected IsError result for unknown device")
+	}
+}
+
+// seedObserved inserts a report carrying an observed_state JSON blob. Verified:
+// store.InsertReport UPDATEs nodes.observed_state in the same transaction, so
+// GetNode(id).ObservedState returns this blob — no extra call needed.
+func seedObserved(t *testing.T, st *store.Store, id, observed string, now int64) {
+	t.Helper()
+	if err := st.EnsureNode(id, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.TouchNode(id, "10.0.0.1:6970", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.InsertReport(id, observed, "ok", now); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestContainerList(t *testing.T) {
+	st := newTestStore(t)
+	observed := `{"apps":{"control-demo":{"crc":42,"runlevel":3},"watchdog":{"crc":7,"runlevel":1}}}`
+	seedObserved(t, st, "aabbccddeeff", observed, 2000)
+
+	s := New(st)
+	res, out, err := s.containerList(context.Background(), nil, DeviceInput{Device: "aabbccddeeff"})
+	if err != nil || res.IsError {
+		t.Fatalf("containerList err=%v isErr=%v", err, res.IsError)
+	}
+	if len(out.Containers) != 2 {
+		t.Fatalf("expected 2 containers, got %d", len(out.Containers))
+	}
+	// AppsFromObserved sorts by name: control-demo before watchdog.
+	if out.Containers[0].Name != "control-demo" || out.Containers[0].Runlevel != 3 {
+		t.Fatalf("unexpected first container: %+v", out.Containers[0])
+	}
+}
+
+func TestDeviceGetConfigAllApps(t *testing.T) {
+	st := newTestStore(t)
+	observed := `{"apps":{"control-demo":{"crc":42,"runlevel":3}},"config":{"control-demo":{"interval":30}}}`
+	seedObserved(t, st, "aabbccddeeff", observed, 2000)
+
+	s := New(st)
+	// no App → enumerate observed installed apps
+	res, out, err := s.deviceGetConfig(context.Background(), nil, DeviceConfigInput{Device: "aabbccddeeff"})
+	if err != nil || res.IsError {
+		t.Fatalf("deviceGetConfig err=%v isErr=%v", err, res.IsError)
+	}
+	if len(out.Rows) != 1 {
+		t.Fatalf("expected 1 config row, got %d: %+v", len(out.Rows), out.Rows)
+	}
+	if out.Rows[0].App != "control-demo" || out.Rows[0].Key != "interval" {
+		t.Fatalf("unexpected row: %+v", out.Rows[0])
 	}
 }
