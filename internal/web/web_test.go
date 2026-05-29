@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -87,6 +88,26 @@ func TestNodeDetailRendersSections(t *testing.T) {
 	nf := mustGet(t, srv.URL+"/n/deadbeef0000")
 	if nf.StatusCode != 404 {
 		t.Errorf("unknown node got %d, want 404", nf.StatusCode)
+	}
+}
+
+func TestSetFormEnqueuesWebCommand(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	form := url.Values{"app": {"demo"}, "key": {"gain"}, "value": {"3"}}
+	resp, err := http.PostForm(srv.URL+"/n/aabbccddeeff/set", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := readBody(t, resp)
+	if resp.StatusCode != 200 || !strings.Contains(body, "queued") {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+	cmds, _ := st.CommandLog("aabbccddeeff")
+	if len(cmds) != 1 || cmds[0].Verb != "set" || cmds[0].IssuedBy != "web" {
+		t.Fatalf("want one web 'set' command, got %+v", cmds)
 	}
 }
 

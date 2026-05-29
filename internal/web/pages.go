@@ -67,6 +67,16 @@ func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store
 		h.render(w, "node-pending", vm)
 	case "containers":
 		h.render(w, "node-containers", vm)
+	case "set":
+		h.postSet(w, r, n)
+	case "console":
+		h.postConsole(w, r, n)
+	case "poll-interval":
+		h.postPollInterval(w, r, n)
+	case "max-offline":
+		h.postMaxOffline(w, r, n)
+	case "rename":
+		h.postRename(w, r, n)
 	default:
 		http.NotFound(w, r)
 	}

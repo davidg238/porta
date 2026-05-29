@@ -42,4 +42,23 @@
   <!-- install/uninstall forms added in Task 7 -->
 </section>{{end}}
 
-{{define "node-actions"}}<section id="actions"><h2>Actions</h2><p class="subtitle">forms added in Task 6</p></section>{{end}}
+{{define "node-actions"}}<section id="actions">
+  <h2>Actions</h2>
+  <div id="action-result"></div>
+  <form class="action" hx-post="/n/{{.ID}}/set" hx-target="#pending" hx-swap="outerHTML">
+    <b>set</b> <input name="app" placeholder="app" required> <input name="key" placeholder="key" required>
+    <input name="value" placeholder="value" required> <button>queue</button>
+  </form>
+  <form class="action" hx-post="/n/{{.ID}}/console" hx-target="#pending" hx-swap="outerHTML">
+    <b>console</b> <select name="state"><option>on</option><option>off</option></select> <button>queue</button>
+  </form>
+  <form class="action" hx-post="/n/{{.ID}}/poll-interval" hx-target="#pending" hx-swap="outerHTML">
+    <b>poll-interval</b> <input name="dur" placeholder="30s" required> <button>queue</button>
+  </form>
+  <form class="action" hx-post="/n/{{.ID}}/max-offline" hx-target="#hdr" hx-swap="outerHTML">
+    <b>max-offline</b> <input name="dur" placeholder="5m" required> <button>set</button>
+  </form>
+  <form class="action" hx-post="/n/{{.ID}}/rename" hx-target="#hdr" hx-swap="outerHTML">
+    <b>rename</b> <input name="name" placeholder="new-name" required> <button>set</button>
+  </form>
+</section>{{end}}
