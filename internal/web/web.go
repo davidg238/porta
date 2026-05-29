@@ -73,7 +73,8 @@ func (h *Handler) nodeRows(now int64) ([]nodeRowVM, error) {
 	return out, nil
 }
 
-// summarize renders the node-list "state summary" cell.
+// summarize renders the node-list "state summary" cell. Decode errors are
+// best-effort: a malformed observed blob degrades to "idle · 0 cfg".
 func summarize(observed string) string {
 	apps, _ := control.AppsFromObserved(observed)
 	cfg := control.ConfigFromObserved(observed)
@@ -98,7 +99,7 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.nodeRows(h.now())
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	h.render(w, "index", map[string]any{"Title": "Nodes", "Rows": rows})
@@ -119,7 +120,7 @@ func (h *Handler) render(w http.ResponseWriter, name string, data any) {
 func (h *Handler) handleNodesPartial(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.nodeRows(h.now())
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	h.render(w, "nodes-rows", rows)
