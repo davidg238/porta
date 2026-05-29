@@ -1,13 +1,16 @@
 package web
 
 import (
+	"bytes"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/davidg238/porta/internal/command"
 	"github.com/davidg238/porta/internal/control"
 	"github.com/davidg238/porta/internal/store"
 )
@@ -210,5 +213,78 @@ func TestIndexRendersNavAndAssets(t *testing.T) {
 	nf, _ := http.Get(srv.URL + "/nope")
 	if nf.StatusCode != 404 {
 		t.Errorf("unknown path got %d, want 404", nf.StatusCode)
+	}
+}
+
+func TestInstallUploadRegistersPayloadAndQueuesRun(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	mw.WriteField("name", "demo")
+	mw.WriteField("interval", "30s")
+	mw.WriteField("lifecycle", "run-once")
+	fw, _ := mw.CreateFormFile("image", "demo.bin")
+	fw.Write([]byte("IMAGE-BYTES"))
+	mw.Close()
+
+	resp, err := http.Post(srv.URL+"/n/aabbccddeeff/containers/install", mw.FormDataContentType(), &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	cmds, _ := st.CommandLog("aabbccddeeff")
+	if len(cmds) != 1 || cmds[0].Verb != "run" || cmds[0].IssuedBy != "web" {
+		t.Fatalf("want web run command, got %+v", cmds)
+	}
+	ok, err := st.PayloadExists(int64(command.CRC32([]byte("IMAGE-BYTES"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatalf("payload not registered")
+	}
+}
+
+func TestUninstallFormQueuesStop(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	resp, err := http.PostForm(srv.URL+"/n/aabbccddeeff/containers/uninstall", url.Values{"name": {"demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	cmds, _ := st.CommandLog("aabbccddeeff")
+	if len(cmds) != 1 || cmds[0].Verb != "stop" || cmds[0].IssuedBy != "web" {
+		t.Fatalf("want web stop command, got %+v", cmds)
+	}
+}
+
+func TestGetToInstallIsRejected(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	for _, sub := range []string{"install", "uninstall"} {
+		resp, err := http.Get(srv.URL + "/n/aabbccddeeff/containers/" + sub)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Fatalf("GET %s got %d, want 405", sub, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+	cmds, _ := st.CommandLog("aabbccddeeff")
+	if len(cmds) != 0 {
+		t.Fatalf("GET should enqueue nothing, got %+v", cmds)
 	}
 }

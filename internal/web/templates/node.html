@@ -39,7 +39,15 @@
 {{define "node-containers"}}<section id="containers" hx-get="/n/{{.ID}}/containers" hx-trigger="every 5s" hx-swap="outerHTML">
   <h2>Containers</h2>
   {{if .Apps}}<table><tbody>{{range .Apps}}<tr><td>{{.Name}}</td><td>crc {{.CRC}}</td><td>runlevel {{.Runlevel}}</td></tr>{{end}}</tbody></table>{{else}}<p class="subtitle">none observed</p>{{end}}
-  <!-- install/uninstall forms added in Task 7 -->
+  <form class="action" hx-post="/n/{{.ID}}/containers/install" hx-target="#pending" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+    <b>install</b> <input type="file" name="image" accept=".bin" required>
+    <input name="name" placeholder="name"> <input name="interval" placeholder="30s">
+    <select name="lifecycle"><option>run-once</option><option>run-loop</option></select>
+    <button>upload &amp; queue run</button>
+  </form>
+  <form class="action" hx-post="/n/{{.ID}}/containers/uninstall" hx-target="#pending" hx-swap="outerHTML">
+    <b>uninstall</b> <input name="name" placeholder="app" required> <button>queue stop</button>
+  </form>
 </section>{{end}}
 
 {{define "node-actions"}}<section id="actions">

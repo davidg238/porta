@@ -67,7 +67,7 @@ func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store
 		h.render(w, "node-pending", vm)
 	case "containers":
 		h.render(w, "node-containers", vm)
-	case "set", "console", "poll-interval", "max-offline", "rename":
+	case "set", "console", "poll-interval", "max-offline", "rename", "containers/install", "containers/uninstall":
 		// Write actions mutate state (enqueue commands / update the node row),
 		// so they must never be reachable by a GET — r.FormValue also reads the
 		// query string, so a GET with ?value=… would otherwise enqueue.
@@ -86,6 +86,10 @@ func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store
 			h.postMaxOffline(w, r, n)
 		case "rename":
 			h.postRename(w, r, n)
+		case "containers/install":
+			h.postInstall(w, r, n)
+		case "containers/uninstall":
+			h.postUninstall(w, r, n)
 		}
 	default:
 		http.NotFound(w, r)

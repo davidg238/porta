@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strings"
 
 	"github.com/davidg238/porta/internal/command"
 	"github.com/davidg238/porta/internal/config"
 	"github.com/davidg238/porta/internal/control"
 	"github.com/davidg238/porta/internal/store"
 )
+
+const maxUpload = 8 << 20 // 8 MiB cap on uploaded images
 
 // confirm renders the post-write confirmation + the refreshed pending panel,
 // so a single swap shows both "queued #N" and the new queue state. The
@@ -79,6 +82,52 @@ func (h *Handler) postMaxOffline(w http.ResponseWriter, r *http.Request, n *stor
 		return
 	}
 	h.render(w, "node-header", h.detailVM(n2))
+}
+
+func (h *Handler) postInstall(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	if err := r.ParseMultipartForm(maxUpload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	file, hdr, err := r.FormFile("image")
+	if err != nil {
+		http.Error(w, "image file required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	name := r.FormValue("name")
+	if name == "" {
+		name = strings.TrimSuffix(hdr.Filename, ".bin")
+	}
+	opts := control.InstallOpts{Lifecycle: r.FormValue("lifecycle"), Runlevel: 3}
+	if iv := r.FormValue("interval"); iv != "" {
+		secs, err := command.ParseDurationSeconds(iv)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		opts.IntervalS = secs
+	}
+	id, err := control.Install(h.st, n.ID, name, file, opts, "web", h.now())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	h.confirm(w, n, fmt.Sprintf("queued #%d run %s (uploaded %d B)", id, name, hdr.Size))
+}
+
+func (h *Handler) postUninstall(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	name := r.FormValue("name")
+	if name == "" {
+		http.Error(w, "name required", http.StatusBadRequest)
+		return
+	}
+	id, err := control.Uninstall(h.st, n.ID, name, "web", h.now())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	h.confirm(w, n, fmt.Sprintf("queued #%d stop %s", id, name))
 }
 
 func (h *Handler) postRename(w http.ResponseWriter, r *http.Request, n *store.Node) {
