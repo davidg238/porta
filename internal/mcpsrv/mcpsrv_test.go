@@ -43,8 +43,8 @@ func TestNewServerRegistersTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if len(res.Tools) != 4 {
-		t.Fatalf("expected 4 tools, got %d", len(res.Tools))
+	if len(res.Tools) != 5 {
+		t.Fatalf("expected 5 tools, got %d", len(res.Tools))
 	}
 	names := make(map[string]bool)
 	for _, tool := range res.Tools {
@@ -61,6 +61,9 @@ func TestNewServerRegistersTools(t *testing.T) {
 	}
 	if !names["container_list"] {
 		t.Fatalf("expected container_list tool, got %v", res.Tools)
+	}
+	if !names["query_telemetry"] {
+		t.Fatalf("expected query_telemetry tool, got %v", res.Tools)
 	}
 }
 
@@ -214,5 +217,59 @@ func TestDeviceGetConfigAllApps(t *testing.T) {
 	}
 	if out.Rows[0].App != "control-demo" || out.Rows[0].Key != "interval" {
 		t.Fatalf("unexpected row: %+v", out.Rows[0])
+	}
+}
+
+func TestQueryTelemetryRecentAndLimit(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.EnsureNode("aabbccddeeff", 3000); err != nil {
+		t.Fatal(err)
+	}
+	for i := int64(0); i < 5; i++ {
+		if err := st.InsertData("aabbccddeeff", 3000+i, i, "metric", "pm25", float64(i), "", "float"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := New(st)
+
+	// No since/until → RecentData path, newest-first, limit clamp default 100.
+	res, out, err := s.queryTelemetry(context.Background(), nil, QueryTelemetryInput{Device: "aabbccddeeff"})
+	if err != nil || res.IsError {
+		t.Fatalf("queryTelemetry err=%v isErr=%v", err, res.IsError)
+	}
+	if len(out.Rows) != 5 {
+		t.Fatalf("expected 5 rows, got %d", len(out.Rows))
+	}
+	if out.Rows[0].TS != 3004 {
+		t.Fatalf("expected newest-first (ts 3004), got %d", out.Rows[0].TS)
+	}
+
+	// limit honored
+	_, out2, _ := s.queryTelemetry(context.Background(), nil, QueryTelemetryInput{Device: "aabbccddeeff", Limit: 2})
+	if len(out2.Rows) != 2 {
+		t.Fatalf("expected 2 rows with limit=2, got %d", len(out2.Rows))
+	}
+}
+
+func TestQueryTelemetryWindow(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.EnsureNode("aabbccddeeff", 3000); err != nil {
+		t.Fatal(err)
+	}
+	for i := int64(0); i < 5; i++ {
+		if err := st.InsertData("aabbccddeeff", 3000+i, i, "metric", "pm25", float64(i), "", "float"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := New(st)
+	since, until := int64(3001), int64(3003)
+	_, out, err := s.queryTelemetry(context.Background(), nil, QueryTelemetryInput{Device: "aabbccddeeff", Since: since, Until: until})
+	if err != nil {
+		t.Fatalf("queryTelemetry: %v", err)
+	}
+	for _, r := range out.Rows {
+		if r.TS < since || r.TS > until {
+			t.Fatalf("row ts %d outside [%d,%d]", r.TS, since, until)
+		}
 	}
 }

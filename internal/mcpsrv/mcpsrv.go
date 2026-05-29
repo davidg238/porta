@@ -56,6 +56,10 @@ func (s *Server) registerTools() {
 		Name:        "container_list",
 		Description: "List a node's installed containers (name, crc, runlevel) from observed state.",
 	}, s.containerList)
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "query_telemetry",
+		Description: "Query a node's telemetry: recent rows, or a [since,until] epoch-seconds window, optional kind filter, limit default 100 max 1000.",
+	}, s.queryTelemetry)
 }
 
 // textResult returns a non-error result carrying only a human-readable summary.
