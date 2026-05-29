@@ -1,0 +1,25 @@
+:root { --green:#2a8a2a; --amber:#d08000; --red:#c33; --bg:#fafafa; --line:#ddd; }
+* { box-sizing: border-box; }
+body { font: 14px/1.5 system-ui, sans-serif; margin: 0; background: var(--bg); color: #222; }
+header { display:flex; gap:1rem; align-items:baseline; padding:.6rem 1rem; border-bottom:2px solid #333; background:#fff; }
+header nav a { text-decoration:none; color:#06c; }
+main { padding: 1rem; }
+h1 { font-size: 1.3rem; margin:.2rem 0 .6rem; }
+.subtitle { color:#777; margin:.2rem 0 1rem; }
+table { width:100%; border-collapse:collapse; }
+th { text-align:left; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:#888; border-bottom:1px solid #999; padding:.3rem .4rem; }
+td { padding:.35rem .4rem; border-bottom:1px solid var(--line); }
+tr.node-row:hover { background:#f0f0f0; cursor:pointer; }
+.dot-green { color:var(--green); } .dot-red { color:var(--red); } .dot-amber { color:var(--amber); }
+.gauge { position:relative; background:#eee; border-radius:3px; height:16px; min-width:120px; overflow:hidden; }
+.gauge > .fill { height:100%; border-radius:3px; }
+.gauge.green .fill { background:var(--green); } .gauge.amber .fill { background:var(--amber); } .gauge.red .fill { background:var(--red); opacity:.6; }
+.gauge > .lbl { position:absolute; left:6px; top:0; line-height:16px; font-size:.7rem; color:#000; }
+section { background:#fff; border:1px solid var(--line); border-radius:6px; padding:.7rem .9rem; margin:.7rem 0; }
+section h2 { font-size:.9rem; margin:0 0 .5rem; }
+form.action { display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; margin:.3rem 0; }
+input, select { padding:.25rem .4rem; border:1px solid #bbb; border-radius:4px; font:inherit; }
+button { padding:.3rem .7rem; border:1px solid #06c; background:#06c; color:#fff; border-radius:4px; cursor:pointer; }
+.confirm { color:var(--green); font-size:.8rem; }
+.warn { color:var(--red); font-size:.8rem; }
+code { background:#f0f0f0; padding:0 .2rem; border-radius:3px; }
