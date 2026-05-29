@@ -10,15 +10,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// relativeAge is a thin wrapper around control.RelativeAge for internal use.
-func relativeAge(ts, now int64) string { return control.RelativeAge(ts, now) }
-
 // App is one entry from a node's observed apps map.
 // Re-exported from control for portacli internal tests.
 type App = control.App
-
-// appsFromObserved is a thin wrapper around control.AppsFromObserved for internal use.
-func appsFromObserved(observed string) ([]App, error) { return control.AppsFromObserved(observed) }
 
 // deviceFlag adds and reads the shared -d/--device flag.
 func deviceFlag(cmd *cobra.Command, dst *string) {
@@ -50,9 +44,9 @@ func newScanCmd() *cobra.Command {
 				if n.Online(now) {
 					status = "online"
 				}
-				seen := relativeAge(0, now)
+				seen := control.RelativeAge(0, now)
 				if n.LastSeen.Valid {
-					seen = relativeAge(n.LastSeen.Int64, now)
+					seen = control.RelativeAge(n.LastSeen.Int64, now)
 				}
 				fmt.Printf("%-12s  %-16s  %-12s  %s\n", n.ID, n.Name, seen, status)
 			}
@@ -168,7 +162,7 @@ func newDeviceShowCmd() *cobra.Command {
 			fmt.Printf("source_addr:   %s\n", n.SourceAddr)
 			lastSeen := "never"
 			if n.LastSeen.Valid {
-				lastSeen = relativeAge(n.LastSeen.Int64, now)
+				lastSeen = control.RelativeAge(n.LastSeen.Int64, now)
 			}
 			fmt.Printf("last_seen:     %s\n", lastSeen)
 			fmt.Printf("poll_interval: %ds\n", n.PollIntervalS)
@@ -213,7 +207,7 @@ func newContainerListCmd() *cobra.Command {
 			if err != nil || n == nil {
 				return fmt.Errorf("node %s not found", id)
 			}
-			apps, err := appsFromObserved(n.ObservedState)
+			apps, err := control.AppsFromObserved(n.ObservedState)
 			if err != nil {
 				return err
 			}
@@ -241,6 +235,10 @@ func renderScalar(v any) string {
 // otherwise it renders the single-key one-liner. Either form prints a ≥2×
 // self-heal warning footer for each still-divergent key.
 func runDeviceGet(out io.Writer, st *store.Store, id, app, key string) error {
+	n, err := st.GetNode(id)
+	if err != nil || n == nil {
+		return fmt.Errorf("node %s not found", id)
+	}
 	rows, err := control.DesiredVsObserved(st, id, app)
 	if err != nil {
 		return err

@@ -33,3 +33,32 @@ func TestRelativeAge(t *testing.T) {
 		t.Errorf("got %q", RelativeAge(95, 100))
 	}
 }
+
+func TestConfigFromObserved(t *testing.T) {
+	if len(ConfigFromObserved("")) != 0 {
+		t.Error("empty string should yield empty map")
+	}
+	if len(ConfigFromObserved("{not json")) != 0 {
+		t.Error("malformed JSON should yield empty map")
+	}
+	if len(ConfigFromObserved(`{"config":null}`)) != 0 {
+		t.Error(`"config":null should yield empty map`)
+	}
+	cfg := ConfigFromObserved(`{"config":{"demo":{"gain":2}}}`)
+	if cfg["demo"] == nil {
+		t.Fatal("demo app missing")
+	}
+	if _, ok := cfg["demo"]["gain"]; !ok {
+		t.Error("demo.gain missing")
+	}
+}
+
+func TestAppsFromObservedSorted(t *testing.T) {
+	apps, err := AppsFromObserved(`{"apps":{"zeta":{"crc":1,"runlevel":3},"alpha":{"crc":2,"runlevel":3}}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(apps) != 2 || apps[0].Name != "alpha" || apps[1].Name != "zeta" {
+		t.Fatalf("want sorted [alpha zeta], got %+v", apps)
+	}
+}

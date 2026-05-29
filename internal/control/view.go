@@ -1,10 +1,10 @@
 package control
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/davidg238/porta/internal/config"
 	"github.com/davidg238/porta/internal/store"
@@ -67,7 +67,7 @@ func ConfigFromObserved(observed string) map[string]map[string]any {
 	var obj struct {
 		Config map[string]map[string]any `json:"config"`
 	}
-	dec := json.NewDecoder(bytes.NewReader([]byte(observed)))
+	dec := json.NewDecoder(strings.NewReader(observed))
 	dec.UseNumber()
 	if err := dec.Decode(&obj); err != nil || obj.Config == nil {
 		return map[string]map[string]any{}
