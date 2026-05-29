@@ -3,6 +3,7 @@ package portacli
 import (
 	"testing"
 
+	"github.com/davidg238/porta/internal/control"
 	"github.com/davidg238/porta/internal/store"
 )
 
@@ -24,10 +25,10 @@ func TestResolveNodeID(t *testing.T) {
 }
 
 func TestIsMAC(t *testing.T) {
-	if !isMAC("30aea41a6208") {
+	if !control.IsMAC("30aea41a6208") {
 		t.Error("12 lowercase hex should be a MAC")
 	}
-	if isMAC("jolly-pine") || isMAC("AABBCCDDEEFF") || isMAC("30aea41a620") {
+	if control.IsMAC("jolly-pine") || control.IsMAC("AABBCCDDEEFF") || control.IsMAC("30aea41a620") {
 		t.Error("non-12-lowercase-hex should not be a MAC")
 	}
 }

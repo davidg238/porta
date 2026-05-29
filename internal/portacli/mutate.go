@@ -1,6 +1,7 @@
 package portacli
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/davidg238/porta/internal/command"
 	"github.com/davidg238/porta/internal/config"
+	"github.com/davidg238/porta/internal/control"
 	"github.com/davidg238/porta/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -25,32 +27,24 @@ func runInstall(st *store.Store, id, name, path string, opts installOpts, now in
 	if !strings.HasSuffix(path, ".bin") {
 		return fmt.Errorf("unsupported file %q (B1 accepts only prebuilt .bin)", path)
 	}
+	// Read the file first so we can compute the CRC for the confirmation printf.
 	img, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
+	// Resolve CRC before delegating so we can print the exact value.
 	crc := opts.CRC
 	if crc == 0 {
 		crc = int64(command.CRC32(img))
 	}
-	triggers, err := command.TriggersFromFlags(opts.Triggers, opts.IntervalS)
-	if err != nil {
-		return err
-	}
-	if len(triggers) == 0 {
+	// Warn early if no triggers were given.
+	if len(opts.Triggers) == 0 && opts.IntervalS == 0 {
 		fmt.Printf("note: no triggers given — %q installed but not started\n", name)
 	}
-	runCmd, err := command.Run(command.RunSpec{
-		Name: name, CRC: crc, Size: int64(len(img)),
-		Triggers: triggers, Runlevel: opts.Runlevel, Lifecycle: opts.Lifecycle,
-	})
-	if err != nil {
-		return err
-	}
-	if err := st.RegisterPayload(crc, name, img); err != nil {
-		return err
-	}
-	cmdID, err := st.EnqueueCommand(id, runCmd.Verb, runCmd.ArgsJSON, "cli", now)
+	cmdID, err := control.Install(st, id, name, bytes.NewReader(img), control.InstallOpts{
+		CRC: crc, IntervalS: opts.IntervalS, Triggers: opts.Triggers,
+		Runlevel: opts.Runlevel, Lifecycle: opts.Lifecycle,
+	}, "cli", now)
 	if err != nil {
 		return err
 	}
@@ -59,8 +53,7 @@ func runInstall(st *store.Store, id, name, path string, opts installOpts, now in
 }
 
 func runUninstall(st *store.Store, id, name string, now int64) error {
-	stop := command.Stop(name)
-	cmdID, err := st.EnqueueCommand(id, stop.Verb, stop.ArgsJSON, "cli", now)
+	cmdID, err := control.Uninstall(st, id, name, "cli", now)
 	if err != nil {
 		return err
 	}
@@ -69,11 +62,7 @@ func runUninstall(st *store.Store, id, name string, now int64) error {
 }
 
 func runSetPollInterval(st *store.Store, id string, secs, now int64) error {
-	if err := st.SetPollInterval(id, secs); err != nil {
-		return err
-	}
-	c := command.SetPollInterval(secs)
-	_, err := st.EnqueueCommand(id, c.Verb, c.ArgsJSON, "cli", now)
+	_, err := control.SetPollInterval(st, id, secs, "cli", now)
 	return err
 }
 
@@ -199,7 +188,7 @@ func newDeviceSetMaxOfflineCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return st.SetMaxOffline(id, secs)
+			return control.SetMaxOffline(st, id, secs)
 		},
 	}
 	deviceFlag(cmd, &device)
@@ -225,7 +214,7 @@ func newDeviceNameCmd() *cobra.Command {
 			if err := st.EnsureNode(id, nowSec()); err != nil {
 				return err
 			}
-			return st.SetNodeName(id, args[0])
+			return control.Rename(st, id, args[0])
 		},
 	}
 	deviceFlag(cmd, &device)
@@ -237,11 +226,7 @@ func newDeviceNameCmd() *cobra.Command {
 // issued_by="cli", and prints a confirmation line to out.
 func runDeviceSet(out io.Writer, st *store.Store, id, app, key, valueStr string, now int64) error {
 	value := config.InferScalar(valueStr)
-	c, err := command.Set(app, key, value)
-	if err != nil {
-		return err
-	}
-	cmdID, err := st.EnqueueCommand(id, c.Verb, c.ArgsJSON, "cli", now)
+	cmdID, err := control.Set(st, id, app, key, value, "cli", now)
 	if err != nil {
 		return err
 	}
@@ -288,8 +273,7 @@ func runDeviceSetConsole(out io.Writer, st *store.Store, id, state string, now i
 	default:
 		return fmt.Errorf("set-console: state must be 'on' or 'off', got %q", state)
 	}
-	c := command.SetConsole(on)
-	cmdID, err := st.EnqueueCommand(id, c.Verb, c.ArgsJSON, "cli", now)
+	cmdID, err := control.SetConsole(st, id, on, "cli", now)
 	if err != nil {
 		return err
 	}

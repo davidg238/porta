@@ -1,0 +1,11 @@
+{{define "log"}}{{template "head" .}}
+<h1>Command Log</h1>
+<table>
+  <thead><tr><th>#</th><th>Node</th><th>Verb</th><th>Args</th><th>By</th><th>Queued</th><th>Delivered</th></tr></thead>
+  {{template "log-rows" .Rows}}
+</table>
+{{template "foot" .}}{{end}}
+
+{{define "log-rows"}}<tbody id="log" hx-get="/partials/log" hx-trigger="every 2s" hx-swap="outerHTML">
+{{range .}}<tr><td>#{{.ID}}</td><td>{{.DeviceID}}</td><td>{{.Verb}}</td><td><code>{{.Args}}</code></td><td>{{.IssuedBy}}</td><td>{{.QueuedAgo}}</td><td>{{.Delivered}}</td></tr>{{end}}
+</tbody>{{end}}

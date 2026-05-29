@@ -5,13 +5,14 @@ import "strconv"
 
 // DataRow is one row from data_log. Value's runtime type matches the
 // declared ValueType:
-//   "int"    → int64
-//   "float"  → float64 (with the NUMERIC-affinity caveat: a whole-number
-//              float stores as INTEGER, so reads back as int64 — the
-//              formatter renders by ValueType, putting the decimal back)
-//   "bool"   → int64 (0 or 1)
-//   "string" → Value == nil; Text holds the payload
-//   ""       → log row (Value == nil; Text holds the line)
+//
+//	"int"    → int64
+//	"float"  → float64 (with the NUMERIC-affinity caveat: a whole-number
+//	           float stores as INTEGER, so reads back as int64 — the
+//	           formatter renders by ValueType, putting the decimal back)
+//	"bool"   → int64 (0 or 1)
+//	"string" → Value == nil; Text holds the payload
+//	""       → log row (Value == nil; Text holds the line)
 type DataRow struct {
 	TS        int64
 	Seq       int64
@@ -99,6 +100,28 @@ func normalizeNumeric(v any) any {
 	default:
 		return v
 	}
+}
+
+// RecentData returns the device's newest <= limit rows, newest first.
+func (s *Store) RecentData(deviceID string, limit int) ([]DataRow, error) {
+	rows, err := s.db.Query(
+		`SELECT ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,'')
+		 FROM data_log WHERE device_id = ? ORDER BY ts DESC, seq DESC LIMIT ?`, deviceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DataRow
+	for rows.Next() {
+		var r DataRow
+		var v any
+		if err := rows.Scan(&r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType); err != nil {
+			return nil, err
+		}
+		r.Value = normalizeNumeric(v)
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // PruneData deletes data_log rows with ts < cutoff (epoch seconds).

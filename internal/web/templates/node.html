@@ -1,0 +1,71 @@
+{{define "node"}}{{template "head" .}}
+<a href="/">← all nodes</a>
+{{/* Each partial emits its own polling wrapper (id + hx-*); embed them
+     directly so the initial render matches what the outerHTML swap replaces. */}}
+{{template "node-header" .}}
+{{template "node-config" .}}
+{{template "node-telemetry" .}}
+{{template "node-pending" .}}
+{{template "node-actions" .}}
+{{template "node-containers" .}}
+{{template "foot" .}}{{end}}
+
+{{define "node-header"}}<div id="hdr" hx-get="/n/{{.ID}}/header" hx-trigger="every 2s" hx-swap="outerHTML">
+  <h1>{{.Name}} <span class="dot-{{.Gauge.Color}}">{{if .Gauge.Online}}● online{{else}}○ offline{{end}}</span></h1>
+  <p class="subtitle">{{.Kind}} · {{.IP}} · eui {{.EUI}} · poll {{.PollIntv}}</p>
+  <div class="gauge {{.Gauge.Color}}" style="width:280px;height:20px"><div class="fill" style="width:{{.Gauge.FillPct}}%"></div><span class="lbl">{{.Gauge.Label}}</span></div>
+</div>{{end}}
+
+{{define "node-config"}}<section id="config" hx-get="/n/{{.ID}}/config" hx-trigger="every 2s" hx-swap="outerHTML">
+  <h2>Config — desired vs observed{{if .ConfApp}} · {{.ConfApp}}{{end}}</h2>
+  {{if .Config}}<table><thead><tr><th>Key</th><th>Desired</th><th>Observed</th><th></th></tr></thead><tbody>
+  {{range .Config}}<tr><td>{{.Key}}</td>
+    <td>{{if .DesiredPresent}}{{.Desired}}{{else}}—{{end}}</td>
+    <td>{{if .ObservedPresent}}{{.Observed}}{{else}}—{{end}}</td>
+    <td>{{.Marker}}{{if ge .ReissueCount 2}} <span class="warn">⚠ self-healed {{.ReissueCount}}×</span>{{end}}</td></tr>{{end}}
+  </tbody></table>{{else}}<p class="subtitle">no config</p>{{end}}
+</section>{{end}}
+
+{{define "node-telemetry"}}<section id="telemetry" hx-get="/n/{{.ID}}/telemetry" hx-trigger="every 2s" hx-swap="outerHTML">
+  <h2>Telemetry · last 10</h2>
+  {{if .Telem}}<table><tbody>{{range .Telem}}<tr><td>{{.TS}}</td><td>{{.Name}}</td><td>{{.Value}}</td><td>{{.ValueType}}</td></tr>{{end}}</tbody></table>{{else}}<p class="subtitle">no telemetry</p>{{end}}
+</section>{{end}}
+
+{{define "node-pending"}}<section id="pending" hx-get="/n/{{.ID}}/pending" hx-trigger="every 2s" hx-swap="outerHTML">
+  <h2>Pending commands</h2>
+  {{if .Pending}}<table><tbody>{{range .Pending}}<tr><td>#{{.ID}}</td><td>{{.Verb}}</td><td><code>{{.Args}}</code></td></tr>{{end}}</tbody></table>{{else}}<p class="subtitle">none undelivered</p>{{end}}
+</section>{{end}}
+
+{{define "node-containers"}}<section id="containers" hx-get="/n/{{.ID}}/containers" hx-trigger="every 5s" hx-swap="outerHTML">
+  <h2>Containers</h2>
+  {{if .Apps}}<table><tbody>{{range .Apps}}<tr><td>{{.Name}}</td><td>crc {{.CRC}}</td><td>runlevel {{.Runlevel}}</td></tr>{{end}}</tbody></table>{{else}}<p class="subtitle">none observed</p>{{end}}
+  <form class="action" hx-post="/n/{{.ID}}/containers/install" hx-target="#pending" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+    <b>install</b> <input type="file" name="image" accept=".bin" required>
+    <input name="name" placeholder="name"> <input name="interval" placeholder="30s">
+    <select name="lifecycle"><option>run-once</option><option>run-loop</option></select>
+    <button>upload &amp; queue run</button>
+  </form>
+  <form class="action" hx-post="/n/{{.ID}}/containers/uninstall" hx-target="#pending" hx-swap="outerHTML">
+    <b>uninstall</b> <input name="name" placeholder="app" required> <button>queue stop</button>
+  </form>
+</section>{{end}}
+
+{{define "node-actions"}}<section id="actions">
+  <h2>Actions</h2>
+  <form class="action" hx-post="/n/{{.ID}}/set" hx-target="#pending" hx-swap="outerHTML">
+    <b>set</b> <input name="app" placeholder="app" required> <input name="key" placeholder="key" required>
+    <input name="value" placeholder="value" required> <button>queue</button>
+  </form>
+  <form class="action" hx-post="/n/{{.ID}}/console" hx-target="#pending" hx-swap="outerHTML">
+    <b>console</b> <select name="state"><option>on</option><option>off</option></select> <button>queue</button>
+  </form>
+  <form class="action" hx-post="/n/{{.ID}}/poll-interval" hx-target="#pending" hx-swap="outerHTML">
+    <b>poll-interval</b> <input name="dur" placeholder="30s" required> <button>queue</button>
+  </form>
+  <form class="action" hx-post="/n/{{.ID}}/max-offline" hx-target="#hdr" hx-swap="outerHTML">
+    <b>max-offline</b> <input name="dur" placeholder="5m" required> <button>set</button>
+  </form>
+  <form class="action" hx-post="/n/{{.ID}}/rename" hx-target="#hdr" hx-swap="outerHTML">
+    <b>rename</b> <input name="name" placeholder="new-name" required> <button>set</button>
+  </form>
+</section>{{end}}

@@ -26,3 +26,6 @@ __pycache__/
 nodus/host/image
 nodus/host/image.crc32
 nodus/host/firmware
+
+# brainstorming visual-companion artifacts
+.superpowers/

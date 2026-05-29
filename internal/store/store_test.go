@@ -155,3 +155,16 @@ func TestNodeOnline(t *testing.T) {
 		t.Error("never-seen must be offline")
 	}
 }
+
+func TestRecentCommandsCrossDeviceNewestFirst(t *testing.T) {
+	st := openTmp(t)
+	st.EnqueueCommand("n1", "set", `{"a":1}`, "cli", 100)
+	st.EnqueueCommand("n2", "stop", `{}`, "web", 101)
+	rows, err := st.RecentCommands(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].DeviceID != "n2" || rows[0].Verb != "stop" {
+		t.Fatalf("want newest-first cross-device, got %+v", rows)
+	}
+}

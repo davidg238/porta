@@ -295,6 +295,33 @@ func (s *Store) CommandLog(deviceID string) ([]Command, error) {
 	return s.queryCommands("", deviceID)
 }
 
+// LoggedCommand is a command queue row with its device id, for the global
+// audit view (the per-device Command lacks device_id).
+type LoggedCommand struct {
+	Command
+	DeviceID string
+}
+
+// RecentCommands returns the newest <= limit commands across all devices,
+// newest first.
+func (s *Store) RecentCommands(limit int) ([]LoggedCommand, error) {
+	rows, err := s.db.Query(`SELECT `+cmdCols+`, COALESCE(device_id,'') FROM command_queue ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LoggedCommand
+	for rows.Next() {
+		var c Command
+		var dev string
+		if err := rows.Scan(&c.ID, &c.Verb, &c.Args, &c.IssuedAt, &c.IssuedBy, &c.DeliveredAt, &dev); err != nil {
+			return nil, err
+		}
+		out = append(out, LoggedCommand{Command: c, DeviceID: dev})
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) MarkDelivered(id, now int64) error {
 	_, err := s.db.Exec(`UPDATE command_queue SET delivered_at = ? WHERE id = ?`, now, id)
 	return err
