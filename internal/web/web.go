@@ -126,6 +126,49 @@ func (h *Handler) handleNodesPartial(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "nodes-rows", rows)
 }
 
-// Temporary stubs (filled in later tasks).
-func (h *Handler) handleLog(w http.ResponseWriter, r *http.Request)        { h.render(w, "index", map[string]any{"Title": "Command Log"}) }
-func (h *Handler) handleLogPartial(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<tbody></tbody>")) }
+type logRowVM struct {
+	ID        int64
+	DeviceID  string
+	Verb      string
+	Args      string
+	IssuedBy  string
+	QueuedAgo string
+	Delivered string
+}
+
+func (h *Handler) logRows(now int64) ([]logRowVM, error) {
+	cmds, err := h.st.RecentCommands(200)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]logRowVM, 0, len(cmds))
+	for _, c := range cmds {
+		delivered := "pending"
+		if c.DeliveredAt.Valid {
+			delivered = control.RelativeAge(c.DeliveredAt.Int64, now)
+		}
+		out = append(out, logRowVM{
+			ID: c.ID, DeviceID: c.DeviceID, Verb: c.Verb, Args: c.Args, IssuedBy: c.IssuedBy,
+			QueuedAgo: control.RelativeAge(c.IssuedAt, now), Delivered: delivered,
+		})
+	}
+	return out, nil
+}
+
+func (h *Handler) handleLog(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.logRows(h.now())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "log", map[string]any{"Title": "Command Log", "Rows": rows})
+}
+
+func (h *Handler) handleLogPartial(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.logRows(h.now())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "log-rows", rows)
+}

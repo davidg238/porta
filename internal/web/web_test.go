@@ -338,3 +338,21 @@ func TestGetToInstallIsRejected(t *testing.T) {
 		t.Fatalf("GET should enqueue nothing, got %+v", cmds)
 	}
 }
+
+func TestLogPageRendersCommands(t *testing.T) {
+	st := testStore(t)
+	st.EnqueueCommand("aabbccddeeff", "set", `{"app":"demo","key":"gain","value":3}`, "web", 1000)
+	srv := serve(t, st)
+
+	body := readBody(t, mustGet(t, srv.URL+"/log"))
+	for _, want := range []string{"aabbccddeeff", "set", "web", "Command Log"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/log missing %q", want)
+		}
+	}
+
+	p := readBody(t, mustGet(t, srv.URL+"/partials/log"))
+	if !strings.Contains(p, "<tbody") || !strings.Contains(p, "aabbccddeeff") {
+		t.Errorf("partial missing tbody/node: %s", p)
+	}
+}
