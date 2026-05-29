@@ -45,7 +45,9 @@ func TestSetEnqueuesTypedCommand(t *testing.T) {
 
 func TestInstallFromReaderComputesCRCAndSize(t *testing.T) {
 	st := newStore(t)
-	st.EnsureNode("n1", 100)
+	if err := st.EnsureNode("n1", 100); err != nil {
+		t.Fatal(err)
+	}
 	img := []byte("hello-image-bytes")
 	wantCRC := int64(command.CRC32(img))
 	id, err := Install(st, "n1", "hello", bytes.NewReader(img),
@@ -56,11 +58,17 @@ func TestInstallFromReaderComputesCRCAndSize(t *testing.T) {
 	if id == 0 {
 		t.Fatal("want run command enqueued")
 	}
-	got, _ := st.Payload(wantCRC)
+	got, err := st.Payload(wantCRC)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(got) != string(img) {
 		t.Fatalf("payload not registered under crc %d", wantCRC)
 	}
-	cmds, _ := st.CommandLog("n1")
+	cmds, err := st.CommandLog("n1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(cmds) != 1 || cmds[0].Verb != "run" {
 		t.Fatalf("got %+v", cmds)
 	}

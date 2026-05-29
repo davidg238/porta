@@ -38,11 +38,7 @@ func runInstall(st *store.Store, id, name, path string, opts installOpts, now in
 		crc = int64(command.CRC32(img))
 	}
 	// Warn early if no triggers were given.
-	triggers, err := command.TriggersFromFlags(opts.Triggers, opts.IntervalS)
-	if err != nil {
-		return err
-	}
-	if len(triggers) == 0 {
+	if len(opts.Triggers) == 0 && opts.IntervalS == 0 {
 		fmt.Printf("note: no triggers given — %q installed but not started\n", name)
 	}
 	cmdID, err := control.Install(st, id, name, bytes.NewReader(img), control.InstallOpts{
