@@ -1,12 +1,13 @@
 {{define "node"}}{{template "head" .}}
 <a href="/">← all nodes</a>
-<div id="hdr" hx-get="/n/{{.ID}}/header" hx-trigger="every 2s" hx-swap="outerHTML">{{template "node-header" .}}</div>
-
-<section id="config" hx-get="/n/{{.ID}}/config" hx-trigger="every 2s" hx-swap="outerHTML">{{template "node-config" .}}</section>
-<section id="telemetry" hx-get="/n/{{.ID}}/telemetry" hx-trigger="every 2s" hx-swap="outerHTML">{{template "node-telemetry" .}}</section>
-<section id="pending" hx-get="/n/{{.ID}}/pending" hx-trigger="every 2s" hx-swap="outerHTML">{{template "node-pending" .}}</section>
-<section id="actions">{{template "node-actions" .}}</section>
-<section id="containers" hx-get="/n/{{.ID}}/containers" hx-trigger="every 5s" hx-swap="outerHTML">{{template "node-containers" .}}</section>
+{{/* Each partial emits its own polling wrapper (id + hx-*); embed them
+     directly so the initial render matches what the outerHTML swap replaces. */}}
+{{template "node-header" .}}
+{{template "node-config" .}}
+{{template "node-telemetry" .}}
+{{template "node-pending" .}}
+{{template "node-actions" .}}
+{{template "node-containers" .}}
 {{template "foot" .}}{{end}}
 
 {{define "node-header"}}<div id="hdr" hx-get="/n/{{.ID}}/header" hx-trigger="every 2s" hx-swap="outerHTML">
