@@ -85,6 +85,20 @@ func SetConsole(on bool) Command {
 	return Command{Verb: "set-console", ArgsJSON: `{"on":false}`}
 }
 
+// validPowerMode reports whether mode is one the node honours
+// (supervisor.toit POWER-MODE-DEEP-SLEEP / POWER-MODE-ALWAYS-ON).
+func validPowerMode(mode string) bool { return mode == "deep-sleep" || mode == "always-on" }
+
+// SetPowerMode builds a set-power-mode command. The node reads args["mode"]
+// and caches it in NVS, choosing the deep-sleep or always-on supervisor loop.
+func SetPowerMode(mode string) (Command, error) {
+	if !validPowerMode(mode) {
+		return Command{}, fmt.Errorf("invalid power mode %q (expected deep-sleep or always-on)", mode)
+	}
+	mb, _ := json.Marshal(mode)
+	return Command{Verb: "set-power-mode", ArgsJSON: fmt.Sprintf(`{"mode":%s}`, mb)}, nil
+}
+
 // Set builds a set command for one (app, key, scalar value). value must be
 // one of int64, float64, bool, or string — the four scalar kinds InferScalar
 // produces. Marshalled args are stable-ordered (app, key, value) so tests

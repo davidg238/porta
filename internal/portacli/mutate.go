@@ -281,6 +281,44 @@ func runDeviceSetConsole(out io.Writer, st *store.Store, id, state string, now i
 	return nil
 }
 
+// runDeviceSetPowerMode is the testable core of `porta device set-power-mode`:
+// it enqueues a set-power-mode command tagged issued_by="cli" and prints a
+// confirmation line. Mode validation lives in command.SetPowerMode.
+func runDeviceSetPowerMode(out io.Writer, st *store.Store, id, mode string, now int64) error {
+	cmdID, err := control.SetPowerMode(st, id, mode, "cli", now)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s: enqueued set-power-mode %s (command #%d)\n", id, mode, cmdID)
+	return nil
+}
+
+func newDeviceSetPowerModeCmd() *cobra.Command {
+	var device string
+	cmd := &cobra.Command{
+		Use:   "set-power-mode <deep-sleep|always-on>",
+		Short: "Set a node's power mode (always-on keeps run-loop daemons alive)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer st.Close()
+			id, err := resolveNodeID(st, device)
+			if err != nil {
+				return err
+			}
+			if err := st.EnsureNode(id, nowSec()); err != nil {
+				return err
+			}
+			return runDeviceSetPowerMode(cmd.OutOrStdout(), st, id, args[0], nowSec())
+		},
+	}
+	deviceFlag(cmd, &device)
+	return cmd
+}
+
 func newDeviceSetConsoleCmd() *cobra.Command {
 	var device string
 	cmd := &cobra.Command{
