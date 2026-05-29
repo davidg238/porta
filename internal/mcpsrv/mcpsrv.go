@@ -1,0 +1,83 @@
+// Package mcpsrv exposes porta's read surface as read-only MCP tools over
+// Streamable HTTP. It is a thin adapter over internal/control + internal/store;
+// it owns no query logic and performs no writes.
+package mcpsrv
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/davidg238/porta/internal/control"
+	"github.com/davidg238/porta/internal/store"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// Server adapts porta's read surface to MCP tools.
+type Server struct {
+	st  *store.Store
+	now func() int64
+	mcp *mcp.Server
+}
+
+// New builds an MCP server with porta's read tools registered.
+func New(st *store.Store) *Server {
+	s := &Server{
+		st:  st,
+		now: func() int64 { return time.Now().Unix() },
+	}
+	s.mcp = mcp.NewServer(&mcp.Implementation{Name: "porta", Version: "0.1.0"}, nil)
+	s.registerTools()
+	return s
+}
+
+// Register mounts the Streamable HTTP MCP endpoint at /mcp on mux. It uses
+// Handle (not a catch-all) so it never shadows sibling routes.
+func (s *Server) Register(mux *http.ServeMux) {
+	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s.mcp }, nil)
+	mux.Handle("/mcp", h)
+}
+
+// registerTools wires the read tools. It grows one group per implementation task.
+func (s *Server) registerTools() {}
+
+// textResult returns a non-error result carrying only a human-readable summary.
+// When a handler also returns a typed Out, the SDK fills StructuredContent and
+// preserves this Content.
+func textResult(summary string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: summary}}}
+}
+
+// errorResultf returns an IsError result; the LLM sees the message as the tool
+// output rather than a transport error.
+func errorResultf(format string, a ...any) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf(format, a...)}},
+		IsError: true,
+	}
+}
+
+// clampLimit defaults absent/non-positive limits to 100 and caps at 1000.
+func clampLimit(n int) int {
+	switch {
+	case n <= 0:
+		return 100
+	case n > 1000:
+		return 1000
+	default:
+		return n
+	}
+}
+
+// resolve turns a device arg (MAC or friendly name) into a node id, or returns
+// an IsError result to hand straight back to the caller.
+func (s *Server) resolve(device string) (string, *mcp.CallToolResult) {
+	id, err := control.ResolveNodeID(s.st, device)
+	if err != nil {
+		return "", errorResultf("resolve device %q: %v", device, err)
+	}
+	return id, nil
+}
+
+var _ = context.Background // keep context imported until tools land
