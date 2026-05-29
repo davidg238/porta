@@ -1,12 +1,12 @@
 package portacli
 
 import (
-	"fmt"
-
+	"github.com/davidg238/porta/internal/control"
 	"github.com/davidg238/porta/internal/store"
 )
 
 // isMAC reports whether s is exactly 12 lowercase hex digits.
+// Kept here so existing portacli tests that call isMAC directly continue to compile.
 func isMAC(s string) bool {
 	if len(s) != 12 {
 		return false
@@ -21,15 +21,5 @@ func isMAC(s string) bool {
 
 // resolveNodeID turns a CLI <node> (MAC or friendly name) into a node id.
 func resolveNodeID(st *store.Store, nodeArg string) (string, error) {
-	if isMAC(nodeArg) {
-		return nodeArg, nil
-	}
-	n, err := st.NodeByName(nodeArg)
-	if err != nil {
-		return "", err
-	}
-	if n == nil {
-		return "", fmt.Errorf("no node named %q", nodeArg)
-	}
-	return n.ID, nil
+	return control.ResolveNodeID(st, nodeArg)
 }
