@@ -13,7 +13,7 @@ import (
 	"github.com/davidg238/porta/internal/store"
 )
 
-const maxUpload = 8 << 20 // 8 MiB cap on uploaded images
+const maxUpload = 8 << 20 // hard cap on an uploaded image, enforced via http.MaxBytesReader
 
 // confirm renders the post-write confirmation + the refreshed pending panel,
 // so a single swap shows both "queued #N" and the new queue state. The
@@ -85,6 +85,11 @@ func (h *Handler) postMaxOffline(w http.ResponseWriter, r *http.Request, n *stor
 }
 
 func (h *Handler) postInstall(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	// MaxBytesReader is the real size cap: ParseMultipartForm's argument is only
+	// the in-memory threshold (larger parts spill to temp files), so on its own
+	// it would let an arbitrarily large image through to control.Install's
+	// io.ReadAll. MaxBytesReader makes ParseMultipartForm fail past the limit.
+	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
 	if err := r.ParseMultipartForm(maxUpload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -98,6 +103,10 @@ func (h *Handler) postInstall(w http.ResponseWriter, r *http.Request, n *store.N
 	name := r.FormValue("name")
 	if name == "" {
 		name = strings.TrimSuffix(hdr.Filename, ".bin")
+	}
+	if name == "" {
+		http.Error(w, "container name required", http.StatusBadRequest)
+		return
 	}
 	opts := control.InstallOpts{Lifecycle: r.FormValue("lifecycle"), Runlevel: 3}
 	if iv := r.FormValue("interval"); iv != "" {

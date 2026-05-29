@@ -268,6 +268,56 @@ func TestUninstallFormQueuesStop(t *testing.T) {
 	}
 }
 
+func TestInstallEmptyNameRejected(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	// No "name" field and a filename that reduces to "" after stripping .bin.
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("image", ".bin")
+	fw.Write([]byte("IMAGE-BYTES"))
+	mw.Close()
+
+	resp, err := http.Post(srv.URL+"/n/aabbccddeeff/containers/install", mw.FormDataContentType(), &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty name got %d, want 400", resp.StatusCode)
+	}
+	if cmds, _ := st.CommandLog("aabbccddeeff"); len(cmds) != 0 {
+		t.Fatalf("empty-name install should enqueue nothing, got %+v", cmds)
+	}
+}
+
+func TestInstallOversizedUploadRejected(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	mw.WriteField("name", "demo")
+	fw, _ := mw.CreateFormFile("image", "demo.bin")
+	fw.Write(bytes.Repeat([]byte("A"), maxUpload+1)) // one byte past the hard cap
+	mw.Close()
+
+	resp, err := http.Post(srv.URL+"/n/aabbccddeeff/containers/install", mw.FormDataContentType(), &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("oversized upload got %d, want 400", resp.StatusCode)
+	}
+	if cmds, _ := st.CommandLog("aabbccddeeff"); len(cmds) != 0 {
+		t.Fatalf("oversized install should enqueue nothing, got %+v", cmds)
+	}
+}
+
 func TestGetToInstallIsRejected(t *testing.T) {
 	st := testStore(t)
 	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
