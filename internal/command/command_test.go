@@ -133,6 +133,39 @@ func TestSetRejectsBadType(t *testing.T) {
 	}
 }
 
+func TestSetPowerMode(t *testing.T) {
+	for _, mode := range []string{"always-on", "deep-sleep"} {
+		c, err := SetPowerMode(mode)
+		if err != nil {
+			t.Fatalf("SetPowerMode(%q): %v", mode, err)
+		}
+		if c.Verb != "set-power-mode" {
+			t.Errorf("Verb=%q, want set-power-mode", c.Verb)
+		}
+		want := `{"mode":"` + mode + `"}`
+		if c.ArgsJSON != want {
+			t.Errorf("ArgsJSON=%s, want %s", c.ArgsJSON, want)
+		}
+		// Wire round-trip: node reads the mode from args["mode"].
+		verb, args, err := Decode(EncodeWire(c.Verb, c.ArgsJSON))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if verb != "set-power-mode" {
+			t.Errorf("decoded verb=%q, want set-power-mode", verb)
+		}
+		if v, ok := args["mode"].(string); !ok || v != mode {
+			t.Errorf("decoded mode=%v (%T), want %q", args["mode"], args["mode"], mode)
+		}
+	}
+}
+
+func TestSetPowerModeRejectsBadMode(t *testing.T) {
+	if _, err := SetPowerMode("turbo"); err == nil {
+		t.Error("SetPowerMode with unknown mode should error")
+	}
+}
+
 func TestSetConsole(t *testing.T) {
 	on := SetConsole(true)
 	if on.Verb != "set-console" {

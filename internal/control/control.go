@@ -36,6 +36,15 @@ func SetConsole(st *store.Store, id string, on bool, issuedBy string, now int64)
 	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
 }
 
+// SetPowerMode enqueues a set-power-mode command (deep-sleep or always-on).
+func SetPowerMode(st *store.Store, id, mode, issuedBy string, now int64) (int64, error) {
+	c, err := command.SetPowerMode(mode)
+	if err != nil {
+		return 0, err
+	}
+	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
+}
+
 // SetPollInterval caches the poll interval and enqueues the command.
 func SetPollInterval(st *store.Store, id string, secs int64, issuedBy string, now int64) (int64, error) {
 	if err := st.SetPollInterval(id, secs); err != nil {

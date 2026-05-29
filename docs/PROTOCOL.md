@@ -74,6 +74,7 @@ Verb constants (identical in `gateway/command.toit` and
 | `set-poll-interval` | `VERB-SET-POLL-INTERVAL` |
 | `set-console` | `VERB-SET-CONSOLE` |
 | `set` | `VERB-SET` |
+| `set-power-mode` | `VERB-SET-POWER-MODE` |
 
 ### 2.1 `run` — install/run an app
 
@@ -89,7 +90,7 @@ and container `arguments`.
 | `size` | int | yes | — | Image byte count. Lets the node size its image writer from the command alone. |
 | `triggers` | object | yes | — | `{type: value}` trigger map (see §4). |
 | `runlevel` | int | no | `3` | Start ordering / level. |
-| `lifecycle` | string | no | `"run-once"` | `"run-once"` or `"run-loop"` (see §2.6). |
+| `lifecycle` | string | no | `"run-once"` | `"run-once"` or `"run-loop"` (see §2.7). |
 | `arguments` | array | no | `[]` | Container arguments. |
 
 Example:
@@ -172,7 +173,25 @@ back in the report's `config` field (§3), enabling desired-vs-observed
 reconciliation. The runtime type of `value` is significant and is preserved
 end to end. `set` for the same `(app, key)` is last-write-wins.
 
-### 2.6 `lifecycle` semantics
+### 2.6 `set-power-mode` — supervisor power mode
+
+| Key | Type | Required | Meaning |
+|-----|------|----------|---------|
+| `verb` | string | yes | `"set-power-mode"` |
+| `mode` | string | yes | `"deep-sleep"` or `"always-on"`. |
+
+```json
+{"verb": "set-power-mode", "mode": "always-on"}
+```
+
+The node persists `mode` (defaults to `"deep-sleep"` if absent at read time) and
+chooses its supervisor loop accordingly: `deep-sleep` polls then deep-sleeps for
+the poll interval (waking via full reboot); `always-on` never sleeps, keeping
+`run-loop` daemons (§2.7) alive between reports. A `run-loop` app on a
+`deep-sleep` node is killed by each sleep, so always-on is required for a
+long-lived daemon.
+
+### 2.7 `lifecycle` semantics
 
 Declared per app on the `run` command. The halting behaviour of a container
 cannot be inferred, so it is declared:
@@ -339,9 +358,9 @@ A conforming node MUST:
 - Identify itself with `?id=<12-hex-mac>` on every TFTP request.
 - Drain `commands?id=` by repeated RRQ until a zero-byte body, treating commands
   as absolute/idempotent (last write wins per target).
-- Honour the five verbs (`run`, `stop`, `set-poll-interval`, `set-console`,
-  `set`) with the arg schemas and defaults in §2, including the `lifecycle`
-  declaration (default `run-once`) and `runlevel` (default `3`).
+- Honour the six verbs (`run`, `stop`, `set-poll-interval`, `set-console`,
+  `set`, `set-power-mode`) with the arg schemas and defaults in §2, including the
+  `lifecycle` declaration (default `run-once`) and `runlevel` (default `3`).
 - Download images via `payload?id=&name=&crc=` as **raw bytes** and verify
   length against the command's `size` and CRC32-IEEE (§5 parameters) against the
   command's `crc` before committing.
