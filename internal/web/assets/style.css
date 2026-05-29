@@ -23,3 +23,13 @@ button { padding:.3rem .7rem; border:1px solid #06c; background:#06c; color:#fff
 .confirm { color:var(--green); font-size:.8rem; }
 .warn { color:var(--red); font-size:.8rem; }
 code { background:#f0f0f0; padding:0 .2rem; border-radius:3px; }
+
+/* Narrow screens (phones over LAN/Tailscale): tighten padding and let wide
+   tables scroll horizontally instead of forcing the page wider than the
+   viewport. main wraps the page content, so the overflow lives there. */
+@media (max-width: 600px) {
+  main { padding:.6rem; overflow-x:auto; }
+  table { font-size:.8rem; }
+  th, td { padding:.25rem .3rem; }
+  header { flex-wrap:wrap; gap:.5rem; }
+}
