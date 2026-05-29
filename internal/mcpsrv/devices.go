@@ -67,21 +67,14 @@ type DeviceStatusOutput struct {
 }
 
 func (s *Server) deviceStatus(_ context.Context, _ *mcp.CallToolRequest, in DeviceInput) (*mcp.CallToolResult, DeviceStatusOutput, error) {
-	id, errRes := s.resolve(in.Device)
+	n, errRes := s.resolveNode(in.Device)
 	if errRes != nil {
 		return errRes, DeviceStatusOutput{}, nil
 	}
 	now := s.now()
-	n, err := s.st.GetNode(id)
+	undelivered, err := s.st.UndeliveredCommands(n.ID)
 	if err != nil {
-		return errorResultf("get node %q: %v", id, err), DeviceStatusOutput{}, nil
-	}
-	if n == nil {
-		return errorResultf("no node %q", id), DeviceStatusOutput{}, nil
-	}
-	undelivered, err := s.st.UndeliveredCommands(id)
-	if err != nil {
-		return errorResultf("undelivered for %q: %v", id, err), DeviceStatusOutput{}, nil
+		return errorResultf("undelivered for %q: %v", n.ID, err), DeviceStatusOutput{}, nil
 	}
 	out := DeviceStatusOutput{
 		ID:               n.ID,

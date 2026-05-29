@@ -86,13 +86,21 @@ func clampLimit(n int) int {
 	}
 }
 
-// resolve turns a device arg (MAC or friendly name) into a node id, or returns
-// an IsError result to hand straight back to the caller.
-func (s *Server) resolve(device string) (string, *mcp.CallToolResult) {
+// resolveNode resolves a device arg to its node, fetching the row. On any
+// failure (unresolvable arg, store error, absent node) it returns a nil node
+// and an IsError result for the caller to return directly.
+func (s *Server) resolveNode(device string) (*store.Node, *mcp.CallToolResult) {
 	id, err := control.ResolveNodeID(s.st, device)
 	if err != nil {
-		return "", errorResultf("resolve device %q: %v", device, err)
+		return nil, errorResultf("resolve device %q: %v", device, err)
 	}
-	return id, nil
+	n, err := s.st.GetNode(id)
+	if err != nil {
+		return nil, errorResultf("get node %q: %v", id, err)
+	}
+	if n == nil {
+		return nil, errorResultf("no node %q", id)
+	}
+	return n, nil
 }
 

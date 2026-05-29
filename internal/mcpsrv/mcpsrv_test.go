@@ -175,6 +175,27 @@ func TestContainerList(t *testing.T) {
 	if out.Containers[0].Name != "control-demo" || out.Containers[0].Runlevel != 3 {
 		t.Fatalf("unexpected first container: %+v", out.Containers[0])
 	}
+	if out.Containers[1].Name != "watchdog" || out.Containers[1].Runlevel != 1 {
+		t.Fatalf("unexpected second container: %+v", out.Containers[1])
+	}
+}
+
+func TestDeviceGetConfigSingleApp(t *testing.T) {
+	st := newTestStore(t)
+	observed := `{"apps":{"control-demo":{"crc":42,"runlevel":3},"watchdog":{"crc":7,"runlevel":1}},"config":{"control-demo":{"interval":30},"watchdog":{"threshold":5}}}`
+	seedObserved(t, st, "aabbccddeeff", observed, 2000)
+
+	s := New(st)
+	res, out, err := s.deviceGetConfig(context.Background(), nil, DeviceConfigInput{Device: "aabbccddeeff", App: "watchdog"})
+	if err != nil || res.IsError {
+		t.Fatalf("deviceGetConfig err=%v isErr=%v", err, res.IsError)
+	}
+	if len(out.Rows) != 1 {
+		t.Fatalf("expected 1 row for watchdog only, got %d: %+v", len(out.Rows), out.Rows)
+	}
+	if out.Rows[0].App != "watchdog" || out.Rows[0].Key != "threshold" {
+		t.Fatalf("unexpected row: %+v", out.Rows[0])
+	}
 }
 
 func TestDeviceGetConfigAllApps(t *testing.T) {

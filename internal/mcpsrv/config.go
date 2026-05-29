@@ -22,26 +22,19 @@ type ContainerListOutput struct {
 
 // containerList returns all containers installed on a node from observed state.
 func (s *Server) containerList(_ context.Context, _ *mcp.CallToolRequest, in DeviceInput) (*mcp.CallToolResult, ContainerListOutput, error) {
-	id, errRes := s.resolve(in.Device)
+	n, errRes := s.resolveNode(in.Device)
 	if errRes != nil {
 		return errRes, ContainerListOutput{}, nil
 	}
-	n, err := s.st.GetNode(id)
-	if err != nil {
-		return errorResultf("get node %q: %v", id, err), ContainerListOutput{}, nil
-	}
-	if n == nil {
-		return errorResultf("no node %q", id), ContainerListOutput{}, nil
-	}
 	apps, err := control.AppsFromObserved(n.ObservedState)
 	if err != nil {
-		return errorResultf("decode observed apps for %q: %v", id, err), ContainerListOutput{}, nil
+		return errorResultf("decode observed apps for %q: %v", n.ID, err), ContainerListOutput{}, nil
 	}
 	out := ContainerListOutput{Containers: make([]ContainerInfo, 0, len(apps))}
 	for _, a := range apps {
 		out.Containers = append(out.Containers, ContainerInfo{Name: a.Name, CRC: a.CRC, Runlevel: a.Runlevel})
 	}
-	return textResult(fmt.Sprintf("%s: %d container(s)", id, len(out.Containers))), out, nil
+	return textResult(fmt.Sprintf("%s: %d container(s)", n.ID, len(out.Containers))), out, nil
 }
 
 // DeviceConfigInput selects a node and optionally one app.
@@ -67,16 +60,9 @@ type DeviceConfigOutput struct {
 
 // deviceGetConfig returns desired-vs-observed config rows for one app or all observed apps.
 func (s *Server) deviceGetConfig(_ context.Context, _ *mcp.CallToolRequest, in DeviceConfigInput) (*mcp.CallToolResult, DeviceConfigOutput, error) {
-	id, errRes := s.resolve(in.Device)
+	n, errRes := s.resolveNode(in.Device)
 	if errRes != nil {
 		return errRes, DeviceConfigOutput{}, nil
-	}
-	n, err := s.st.GetNode(id)
-	if err != nil {
-		return errorResultf("get node %q: %v", id, err), DeviceConfigOutput{}, nil
-	}
-	if n == nil {
-		return errorResultf("no node %q", id), DeviceConfigOutput{}, nil
 	}
 
 	var apps []string
@@ -87,7 +73,7 @@ func (s *Server) deviceGetConfig(_ context.Context, _ *mcp.CallToolRequest, in D
 		// panel uses); see internal/web/pages.go.
 		installed, err := control.AppsFromObserved(n.ObservedState)
 		if err != nil {
-			return errorResultf("decode observed apps for %q: %v", id, err), DeviceConfigOutput{}, nil
+			return errorResultf("decode observed apps for %q: %v", n.ID, err), DeviceConfigOutput{}, nil
 		}
 		apps = make([]string, 0, len(installed))
 		for _, a := range installed {
@@ -97,9 +83,9 @@ func (s *Server) deviceGetConfig(_ context.Context, _ *mcp.CallToolRequest, in D
 
 	out := DeviceConfigOutput{Rows: []ConfigRowOut{}}
 	for _, app := range apps {
-		rows, err := control.DesiredVsObserved(s.st, id, app)
+		rows, err := control.DesiredVsObserved(s.st, n.ID, app)
 		if err != nil {
-			return errorResultf("config for %q app %q: %v", id, app, err), DeviceConfigOutput{}, nil
+			return errorResultf("config for %q app %q: %v", n.ID, app, err), DeviceConfigOutput{}, nil
 		}
 		for _, r := range rows {
 			out.Rows = append(out.Rows, ConfigRowOut{
@@ -112,5 +98,5 @@ func (s *Server) deviceGetConfig(_ context.Context, _ *mcp.CallToolRequest, in D
 			})
 		}
 	}
-	return textResult(fmt.Sprintf("%s: %d config row(s)", id, len(out.Rows))), out, nil
+	return textResult(fmt.Sprintf("%s: %d config row(s)", n.ID, len(out.Rows))), out, nil
 }
