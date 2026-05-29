@@ -43,8 +43,8 @@ func TestNewServerRegistersTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if len(res.Tools) != 5 {
-		t.Fatalf("expected 5 tools, got %d", len(res.Tools))
+	if len(res.Tools) != 6 {
+		t.Fatalf("expected 6 tools, got %d", len(res.Tools))
 	}
 	names := make(map[string]bool)
 	for _, tool := range res.Tools {
@@ -64,6 +64,9 @@ func TestNewServerRegistersTools(t *testing.T) {
 	}
 	if !names["query_telemetry"] {
 		t.Fatalf("expected query_telemetry tool, got %v", res.Tools)
+	}
+	if !names["command_log"] {
+		t.Fatalf("expected command_log tool, got %v", res.Tools)
 	}
 }
 
@@ -271,5 +274,45 @@ func TestQueryTelemetryWindow(t *testing.T) {
 		if r.TS < since || r.TS > until {
 			t.Fatalf("row ts %d outside [%d,%d]", r.TS, since, until)
 		}
+	}
+}
+
+func TestCommandLogFleetWideAndPerDevice(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.EnsureNode("aaaaaaaaaaaa", 4000); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.EnsureNode("bbbbbbbbbbbb", 4000); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnqueueCommand("aaaaaaaaaaaa", "stop", `{"name":"x"}`, "cli", 4001); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnqueueCommand("bbbbbbbbbbbb", "stop", `{"name":"y"}`, "web", 4002); err != nil {
+		t.Fatal(err)
+	}
+	s := New(st)
+
+	// Fleet-wide: both commands, each carrying its device.
+	_, all, err := s.commandLog(context.Background(), nil, CommandLogInput{})
+	if err != nil {
+		t.Fatalf("commandLog fleet: %v", err)
+	}
+	if len(all.Commands) != 2 {
+		t.Fatalf("expected 2 fleet commands, got %d", len(all.Commands))
+	}
+	for _, c := range all.Commands {
+		if c.Device == "" {
+			t.Fatalf("fleet-wide row missing device: %+v", c)
+		}
+	}
+
+	// Per-device: only that node's command.
+	_, one, err := s.commandLog(context.Background(), nil, CommandLogInput{Device: "aaaaaaaaaaaa"})
+	if err != nil {
+		t.Fatalf("commandLog per-device: %v", err)
+	}
+	if len(one.Commands) != 1 || one.Commands[0].Device != "aaaaaaaaaaaa" {
+		t.Fatalf("expected 1 command for aaaaaaaaaaaa, got %+v", one.Commands)
 	}
 }

@@ -60,6 +60,10 @@ func (s *Server) registerTools() {
 		Name:        "query_telemetry",
 		Description: "Query a node's telemetry: recent rows (newest-first) when no window is given, or a [since,until] epoch-seconds window (oldest-first). The kind filter applies only to windowed queries. Limit default 100, max 1000.",
 	}, s.queryTelemetry)
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "command_log",
+		Description: "Command audit: fleet-wide recent commands when device is omitted (limit default 100 max 1000), or one node's full command log when device is set.",
+	}, s.commandLog)
 }
 
 // textResult returns a non-error result carrying only a human-readable summary.
