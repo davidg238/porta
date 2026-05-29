@@ -4,7 +4,6 @@
 package mcpsrv
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -40,7 +39,16 @@ func (s *Server) Register(mux *http.ServeMux) {
 }
 
 // registerTools wires the read tools. It grows one group per implementation task.
-func (s *Server) registerTools() {}
+func (s *Server) registerTools() {
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "list_devices",
+		Description: "List all known nodes with online status and last-seen age.",
+	}, s.listDevices)
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "device_status",
+		Description: "Show one node's status: kind, source addr, last seen, observed state, undelivered command count.",
+	}, s.deviceStatus)
+}
 
 // textResult returns a non-error result carrying only a human-readable summary.
 // When a handler also returns a typed Out, the SDK fills StructuredContent and
@@ -80,4 +88,3 @@ func (s *Server) resolve(device string) (string, *mcp.CallToolResult) {
 	return id, nil
 }
 
-var _ = context.Background // keep context imported until tools land
