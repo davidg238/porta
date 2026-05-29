@@ -16,7 +16,7 @@ type QueryTelemetryInput struct {
 	Device string `json:"device" jsonschema:"node MAC (12 lowercase hex) or friendly name"`
 	Since  int64  `json:"since,omitempty" jsonschema:"window start, epoch seconds"`
 	Until  int64  `json:"until,omitempty" jsonschema:"window end, epoch seconds"`
-	Kind   string `json:"kind,omitempty" jsonschema:"filter by telemetry kind"`
+	Kind   string `json:"kind,omitempty" jsonschema:"filter by telemetry kind; applies only with a [since,until] window, ignored for recent queries"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"max rows (default 100, max 1000)"`
 }
 

@@ -58,7 +58,7 @@ func (s *Server) registerTools() {
 	}, s.containerList)
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name:        "query_telemetry",
-		Description: "Query a node's telemetry: recent rows, or a [since,until] epoch-seconds window, optional kind filter, limit default 100 max 1000.",
+		Description: "Query a node's telemetry: recent rows (newest-first) when no window is given, or a [since,until] epoch-seconds window (oldest-first). The kind filter applies only to windowed queries. Limit default 100, max 1000.",
 	}, s.queryTelemetry)
 }
 
