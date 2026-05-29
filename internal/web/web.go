@@ -127,6 +127,5 @@ func (h *Handler) handleNodesPartial(w http.ResponseWriter, r *http.Request) {
 }
 
 // Temporary stubs (filled in later tasks).
-func (h *Handler) handleNode(w http.ResponseWriter, r *http.Request)       { http.NotFound(w, r) }
 func (h *Handler) handleLog(w http.ResponseWriter, r *http.Request)        { h.render(w, "index", map[string]any{"Title": "Command Log"}) }
 func (h *Handler) handleLogPartial(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<tbody></tbody>")) }

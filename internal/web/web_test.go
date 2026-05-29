@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/davidg238/porta/internal/control"
 	"github.com/davidg238/porta/internal/store"
 )
 
@@ -61,6 +62,32 @@ func mustGet(t *testing.T, url string) *http.Response {
 		t.Fatal(err)
 	}
 	return resp
+}
+
+func TestNodeDetailRendersSections(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	if _, err := control.Set(st, "aabbccddeeff", "demo", "gain", int64(2), "cli", 1000); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.InsertReport("aabbccddeeff",
+		`{"config":{"demo":{"gain":2}},"apps":{"demo":{"crc":99,"runlevel":3}}}`, "", 1001); err != nil {
+		t.Fatal(err)
+	}
+	st.InsertData("aabbccddeeff", 1001, 0, "metric", "pm25", int64(7), "", "int")
+	srv := serve(t, st)
+
+	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
+	for _, want := range []string{"demo", "gain", "pm25", "Config", "Telemetry", "Pending", "Containers", "Actions"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("detail body missing %q: %s", want, body)
+		}
+	}
+
+	nf := mustGet(t, srv.URL+"/n/deadbeef0000")
+	if nf.StatusCode != 404 {
+		t.Errorf("unknown node got %d, want 404", nf.StatusCode)
+	}
 }
 
 func TestIndexRendersNavAndAssets(t *testing.T) {

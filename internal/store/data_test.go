@@ -126,6 +126,28 @@ func TestPruneData(t *testing.T) {
 	}
 }
 
+// TestRecentDataReturnsNewestFirstLimited verifies RecentData returns at most
+// limit rows, newest (highest ts) first.
+func TestRecentDataReturnsNewestFirstLimited(t *testing.T) {
+	st := openTestStore(t)
+	dev := "n1"
+	for i := int64(1); i <= 5; i++ {
+		if err := st.InsertData(dev, 100+i, i, "metric", "pm25", int64(i), "", "int"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := st.RecentData(dev, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("got %d rows, want 3", len(rows))
+	}
+	if rows[0].TS != 105 {
+		t.Errorf("rows[0].TS = %d, want 105 (newest first)", rows[0].TS)
+	}
+}
+
 // TestNumericAffinityWholeNumberFloat pins the SQLite quirk preserved end-to-
 // end: a float64(13.0) bound to a NUMERIC column is stored as INTEGER (13);
 // QueryData reads it back as int64(13). value_type stays "float", so the
