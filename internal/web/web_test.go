@@ -356,3 +356,18 @@ func TestLogPageRendersCommands(t *testing.T) {
 		t.Errorf("partial missing tbody/node: %s", p)
 	}
 }
+
+func TestLogPageEscapesArgs(t *testing.T) {
+	st := testStore(t)
+	// Args carries an operator-supplied string value with HTML metacharacters.
+	st.EnqueueCommand("aabbccddeeff", "set", `{"app":"demo","key":"n","value":"<script>x</script>"}`, "web", 1000)
+	srv := serve(t, st)
+
+	body := readBody(t, mustGet(t, srv.URL+"/log"))
+	if strings.Contains(body, "<script>x</script>") {
+		t.Errorf("args rendered unescaped (XSS): %s", body)
+	}
+	if !strings.Contains(body, "&lt;script&gt;x&lt;/script&gt;") {
+		t.Errorf("args not html-escaped: %s", body)
+	}
+}
