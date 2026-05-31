@@ -78,7 +78,6 @@ func TestNodeDetailRendersSections(t *testing.T) {
 		`{"config":{"demo":{"gain":2}},"apps":{"demo":{"crc":99,"runlevel":3}}}`, "", 1001); err != nil {
 		t.Fatal(err)
 	}
-	st.InsertData("aabbccddeeff", 1001, 0, "metric", "pm25", int64(7), "", "int")
 	srv := serve(t, st)
 
 	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))

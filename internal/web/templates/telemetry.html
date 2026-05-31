@@ -6,6 +6,7 @@
 </table>
 {{template "foot" .}}{{end}}
 
+{{/* telem-rows takes the whole telemVM (not .Rows): it needs .NodeID to rebuild the ?node= poll URL. */}}
 {{define "telem-rows"}}<tbody id="telem" hx-get="/partials/telemetry{{if .NodeID}}?node={{.NodeID}}{{end}}" hx-trigger="every 5s" hx-swap="outerHTML">
 {{range .Rows}}<tr><td>{{.Time}}</td><td>{{.Node}}</td><td>{{.Name}}</td><td>{{.Value}}</td><td>{{.Type}}</td></tr>{{end}}
 </tbody>{{end}}
