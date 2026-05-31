@@ -295,6 +295,26 @@ func (s *Store) CommandLog(deviceID string) ([]Command, error) {
 	return s.queryCommands("", deviceID)
 }
 
+// RecentCommandsForDevice returns the newest <= limit commands for one device
+// (delivered or not), newest first. Backs the node page's Recent commands view.
+func (s *Store) RecentCommandsForDevice(deviceID string, limit int) ([]Command, error) {
+	rows, err := s.db.Query(`SELECT `+cmdCols+`
+		FROM command_queue WHERE device_id = ? ORDER BY id DESC LIMIT ?`, deviceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Command
+	for rows.Next() {
+		c, err := scanCommand(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *c)
+	}
+	return out, rows.Err()
+}
+
 // LoggedCommand is a command queue row with its device id, for the global
 // audit view (the per-device Command lacks device_id).
 type LoggedCommand struct {
