@@ -1,0 +1,11 @@
+{{define "telemetry"}}{{template "head" .}}
+<h1>Telemetry{{if .Node}} · {{.Node}}{{end}}</h1>
+<table>
+  <thead><tr><th>Time</th><th>Node</th><th>Metric</th><th>Value</th><th>Type</th></tr></thead>
+  {{template "telem-rows" .}}
+</table>
+{{template "foot" .}}{{end}}
+
+{{define "telem-rows"}}<tbody id="telem" hx-get="/partials/telemetry{{if .NodeID}}?node={{.NodeID}}{{end}}" hx-trigger="every 5s" hx-swap="outerHTML">
+{{range .Rows}}<tr><td>{{.Time}}</td><td>{{.Node}}</td><td>{{.Name}}</td><td>{{.Value}}</td><td>{{.Type}}</td></tr>{{end}}
+</tbody>{{end}}

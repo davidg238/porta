@@ -4,7 +4,6 @@
      directly so the initial render matches what the outerHTML swap replaces. */}}
 {{template "node-header" .}}
 {{template "node-config" .}}
-{{template "node-telemetry" .}}
 {{template "node-recent" .}}
 {{template "node-actions" .}}
 {{template "node-containers" .}}
@@ -12,7 +11,7 @@
 
 {{define "node-header"}}<div id="hdr" hx-get="/n/{{.ID}}/header" hx-trigger="every 2s" hx-swap="outerHTML">
   <h1>{{.Name}} <span class="dot-{{.Gauge.Color}}">{{if .Gauge.Online}}● online{{else}}○ offline{{end}}</span></h1>
-  <p class="subtitle">{{.Kind}} · {{.IP}} · eui {{.EUI}} · poll {{.PollIntv}}</p>
+  <p class="subtitle">{{.Kind}} · {{.IP}} · eui {{.EUI}} · poll {{.PollIntv}} · <a href="/telemetry?node={{.ID}}">Telemetry →</a></p>
   <div class="gauge {{.Gauge.Color}}" style="width:280px;height:20px"><div class="fill" style="width:{{.Gauge.FillPct}}%"></div><span class="lbl">{{.Gauge.Label}}</span></div>
 </div>{{end}}
 
@@ -24,11 +23,6 @@
     <td>{{if .ObservedPresent}}{{.Observed}}{{else}}—{{end}}</td>
     <td>{{.Marker}}{{if ge .ReissueCount 2}} <span class="warn">⚠ self-healed {{.ReissueCount}}×</span>{{end}}</td></tr>{{end}}
   </tbody></table>{{else}}<p class="subtitle">no config</p>{{end}}
-</section>{{end}}
-
-{{define "node-telemetry"}}<section id="telemetry" hx-get="/n/{{.ID}}/telemetry" hx-trigger="every 2s" hx-swap="outerHTML">
-  <h2>Telemetry · last 10</h2>
-  {{if .Telem}}<table><tbody>{{range .Telem}}<tr><td>{{.TS}}</td><td>{{.Name}}</td><td>{{.Value}}</td><td>{{.ValueType}}</td></tr>{{end}}</tbody></table>{{else}}<p class="subtitle">no telemetry</p>{{end}}
 </section>{{end}}
 
 {{define "node-recent"}}<section id="recent" hx-get="/n/{{.ID}}/recent" hx-trigger="every 2s" hx-swap="outerHTML">

@@ -29,7 +29,6 @@ type detailVM struct {
 	Gauge    CheckinState
 	Config   []control.ConfigRow
 	ConfApp  string
-	Telem    []store.DataRow
 	Recent   []recentRowVM
 	Apps     []control.App
 }
@@ -69,8 +68,6 @@ func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store
 		h.render(w, "node-header", vm)
 	case "config":
 		h.render(w, "node-config", vm)
-	case "telemetry":
-		h.render(w, "node-telemetry", vm)
 	case "recent":
 		h.render(w, "node-recent", vm)
 	case "containers":
@@ -109,7 +106,6 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 	now := h.now()
 	app := firstApp(n)
 	cfg, _ := control.DesiredVsObserved(h.st, n.ID, app)
-	telem, _ := h.st.RecentData(n.ID, 10)
 	recentCmds, _ := h.st.RecentCommandsForDevice(n.ID, 10)
 	obsConfig := control.ConfigFromObserved(n.ObservedState)
 	recent := make([]recentRowVM, 0, len(recentCmds))
@@ -137,7 +133,6 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 		Gauge:    Checkin(n.LastSeen.Valid, lastSeen, n.PollIntervalS, n.MaxOfflineS, now),
 		Config:   cfg,
 		ConfApp:  app,
-		Telem:    telem,
 		Recent:   recent,
 		Apps:     apps,
 	}
