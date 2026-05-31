@@ -169,3 +169,30 @@ func TestNumericAffinityWholeNumberFloat(t *testing.T) {
 		t.Errorf("Value = %v (%T), want int64(13) (NUMERIC affinity gotcha)", rows[0].Value, rows[0].Value)
 	}
 }
+
+func TestRecentMetricsFiltersAndOrders(t *testing.T) {
+	st := openTestStore(t)
+	// Two metric rows + one log row, two devices.
+	st.InsertData("devA", 100, 1, "metric", "pm25", int64(7), "", "int")
+	st.InsertData("devA", 100, 0, "log", "", nil, "vin: pm25=7", "")
+	st.InsertData("devB", 200, 1, "metric", "temp", int64(21), "", "int")
+
+	all, err := st.RecentMetrics("", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("len = %d, want 2 (log row excluded)", len(all))
+	}
+	if all[0].TS != 200 || all[0].DeviceID != "devB" {
+		t.Errorf("not newest-first or device id missing: %+v", all[0])
+	}
+
+	just, err := st.RecentMetrics("devA", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(just) != 1 || just[0].DeviceID != "devA" || just[0].Name != "pm25" {
+		t.Errorf("device filter wrong: %+v", just)
+	}
+}
