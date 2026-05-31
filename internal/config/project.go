@@ -80,3 +80,11 @@ func decodeSetArgs(argsJSON string) (app, key string, value any, ok bool) {
 	}
 	return a, k, m["value"], true
 }
+
+// DecodeSetArgs exposes a single set command's (app, key, value) to callers
+// outside this package — e.g. command-lifecycle convergence checks. Numeric
+// values come out as json.Number (UseNumber), matching ConfigFromObserved so
+// EqualScalars compares them faithfully.
+func DecodeSetArgs(argsJSON string) (app, key string, value any, ok bool) {
+	return decodeSetArgs(argsJSON)
+}

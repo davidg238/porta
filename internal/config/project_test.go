@@ -66,3 +66,16 @@ func TestMarker(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeSetArgs(t *testing.T) {
+	app, key, val, ok := DecodeSetArgs(`{"app":"vin","key":"gain","value":5}`)
+	if !ok || app != "vin" || key != "gain" {
+		t.Fatalf("got app=%q key=%q ok=%v", app, key, ok)
+	}
+	if n, isNum := val.(json.Number); !isNum || n.String() != "5" {
+		t.Fatalf("value = %#v, want json.Number 5", val)
+	}
+	if _, _, _, ok := DecodeSetArgs(`not json`); ok {
+		t.Errorf("malformed args should return ok=false")
+	}
+}
