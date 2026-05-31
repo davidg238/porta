@@ -3,6 +3,7 @@
 {{/* Each partial emits its own polling wrapper (id + hx-*); embed them
      directly so the initial render matches what the outerHTML swap replaces. */}}
 {{template "node-header" .}}
+{{template "node-gwsettings" .}}
 {{template "node-config" .}}
 {{template "node-recent" .}}
 {{template "node-actions" .}}
@@ -14,6 +15,16 @@
   <p class="subtitle">{{.Kind}} · {{.IP}} · eui {{.EUI}} · poll {{.PollIntv}} · <a href="/telemetry?node={{.ID}}">Telemetry →</a></p>
   <div class="gauge {{.Gauge.Color}}" style="width:280px;height:20px"><div class="fill" style="width:{{.Gauge.FillPct}}%"></div><span class="lbl">{{.Gauge.Label}}</span></div>
 </div>{{end}}
+
+{{define "node-gwsettings"}}<details id="gw-settings">
+  <summary>edit gateway settings</summary>
+  <form class="action" hx-post="/n/{{.ID}}/max-offline" hx-target="#hdr" hx-swap="outerHTML">
+    <b>max-offline</b> <input name="dur" placeholder="5m" required> <button>set</button>
+  </form>
+  <form class="action" hx-post="/n/{{.ID}}/rename" hx-target="#hdr" hx-swap="outerHTML">
+    <b>rename</b> <input name="name" placeholder="new-name" required> <button>set</button>
+  </form>
+</details>{{end}}
 
 {{define "node-config"}}<section id="config" hx-get="/n/{{.ID}}/config" hx-trigger="every 2s" hx-swap="outerHTML">
   <h2>Config — desired vs observed{{if .ConfApp}} · {{.ConfApp}}{{end}}</h2>
@@ -55,11 +66,5 @@
   </form>
   <form class="action" hx-post="/n/{{.ID}}/poll-interval" hx-target="#recent" hx-swap="outerHTML">
     <b>poll-interval</b> <input name="dur" placeholder="30s" required> <button>queue</button>
-  </form>
-  <form class="action" hx-post="/n/{{.ID}}/max-offline" hx-target="#hdr" hx-swap="outerHTML">
-    <b>max-offline</b> <input name="dur" placeholder="5m" required> <button>set</button>
-  </form>
-  <form class="action" hx-post="/n/{{.ID}}/rename" hx-target="#hdr" hx-swap="outerHTML">
-    <b>rename</b> <input name="name" placeholder="new-name" required> <button>set</button>
   </form>
 </section>{{end}}

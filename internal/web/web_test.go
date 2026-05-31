@@ -174,6 +174,24 @@ func TestRenameFormRenamesNode(t *testing.T) {
 	}
 }
 
+func TestBannerGatewaySettingsToggle(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
+	for _, want := range []string{`<details id="gw-settings"`, "/n/aabbccddeeff/max-offline", "/n/aabbccddeeff/rename"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("banner gateway-settings missing %q: %s", want, body)
+		}
+	}
+	// The gateway-settings block must sit before the config section (i.e. in the
+	// banner, not inside the polled #hdr which precedes it).
+	if i, j := strings.Index(body, `id="gw-settings"`), strings.Index(body, `id="config"`); i < 0 || j < 0 || i > j {
+		t.Errorf("gw-settings (%d) should appear before config (%d)", i, j)
+	}
+}
+
 func TestGetToWriteSubPathIsRejected(t *testing.T) {
 	st := testStore(t)
 	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
