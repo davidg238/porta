@@ -2,8 +2,6 @@ package control
 
 import (
 	"database/sql"
-	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/davidg238/porta/internal/store"
@@ -11,19 +9,10 @@ import (
 
 func delivered(ts int64) sql.NullInt64 { return sql.NullInt64{Int64: ts, Valid: true} }
 
-// observed builds the app→key→value map the way ConfigFromObserved does
-// (json.Number values via UseNumber), so EqualScalars matches DecodeSetArgs.
+// observed decodes a node's observed_state JSON the same way production does.
 func observed(t *testing.T, blob string) map[string]map[string]any {
 	t.Helper()
-	dec := json.NewDecoder(strings.NewReader(blob))
-	dec.UseNumber()
-	var obj struct {
-		Config map[string]map[string]any `json:"config"`
-	}
-	if err := dec.Decode(&obj); err != nil {
-		t.Fatal(err)
-	}
-	return obj.Config
+	return ConfigFromObserved(blob)
 }
 
 func TestLifecycleOf(t *testing.T) {

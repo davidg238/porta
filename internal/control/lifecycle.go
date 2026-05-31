@@ -37,10 +37,8 @@ func LifecycleOf(c store.Command, observed map[string]map[string]any, maxOffline
 	}
 	if c.Verb == "set" {
 		if app, key, val, ok := config.DecodeSetArgs(c.Args); ok {
-			if m := observed[app]; m != nil {
-				if o, present := m[key]; present && config.EqualScalars(val, o) {
-					return LifecycleConverged
-				}
+			if o, present := observed[app][key]; present && config.EqualScalars(val, o) {
+				return LifecycleConverged
 			}
 		}
 	}
