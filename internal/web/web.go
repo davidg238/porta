@@ -42,6 +42,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.handleIndex)
 	mux.HandleFunc("/n/", h.handleNode)
 	mux.HandleFunc("/log", h.handleLog)
+	mux.HandleFunc("/telemetry", h.handleTelemetry)
+	mux.HandleFunc("/partials/telemetry", h.handleTelemetryPartial)
 	mux.HandleFunc("/partials/nodes", h.handleNodesPartial)
 	mux.HandleFunc("/partials/log", h.handleLogPartial)
 }

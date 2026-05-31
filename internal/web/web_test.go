@@ -78,11 +78,10 @@ func TestNodeDetailRendersSections(t *testing.T) {
 		`{"config":{"demo":{"gain":2}},"apps":{"demo":{"crc":99,"runlevel":3}}}`, "", 1001); err != nil {
 		t.Fatal(err)
 	}
-	st.InsertData("aabbccddeeff", 1001, 0, "metric", "pm25", int64(7), "", "int")
 	srv := serve(t, st)
 
 	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
-	for _, want := range []string{"demo", "gain", "pm25", "Config", "Telemetry", "Pending", "Containers", "Actions"} {
+	for _, want := range []string{"demo", "gain", "Config", "Telemetry", "Recent", "Containers", "Actions"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("detail body missing %q: %s", want, body)
 		}
@@ -172,6 +171,24 @@ func TestRenameFormRenamesNode(t *testing.T) {
 	n, _ := st.GetNode("aabbccddeeff")
 	if n == nil || n.Name != "foo" {
 		t.Fatalf("node not renamed, got %+v", n)
+	}
+}
+
+func TestBannerGatewaySettingsToggle(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
+	for _, want := range []string{`<details id="gw-settings"`, "/n/aabbccddeeff/max-offline", "/n/aabbccddeeff/rename"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("banner gateway-settings missing %q: %s", want, body)
+		}
+	}
+	// The gateway-settings block must sit before the config section (i.e. in the
+	// banner, not inside the polled #hdr which precedes it).
+	if i, j := strings.Index(body, `id="gw-settings"`), strings.Index(body, `id="config"`); i < 0 || j < 0 || i > j {
+		t.Errorf("gw-settings (%d) should appear before config (%d)", i, j)
 	}
 }
 
@@ -369,5 +386,56 @@ func TestLogPageEscapesArgs(t *testing.T) {
 	}
 	if !strings.Contains(body, "&lt;script&gt;x&lt;/script&gt;") {
 		t.Errorf("args not html-escaped: %s", body)
+	}
+}
+
+func TestNodeRecentCommandsBadges(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	// A delivered set whose observed config matches → converged.
+	id, err := control.Set(st, "aabbccddeeff", "demo", "gain", int64(2), "cli", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MarkDelivered(id, 1001); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.InsertReport("aabbccddeeff",
+		`{"config":{"demo":{"gain":2}},"apps":{"demo":{"crc":99,"runlevel":3}}}`, "", 1002); err != nil {
+		t.Fatal(err)
+	}
+	srv := serve(t, st)
+
+	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
+	for _, want := range []string{"Recent commands", "badge-converged", `id="recent"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("recent section missing %q: %s", want, body)
+		}
+	}
+	// The polled partial endpoint serves the same section.
+	p := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff/recent"))
+	if !strings.Contains(p, `id="recent"`) || !strings.Contains(p, "badge-") {
+		t.Errorf("recent partial missing wrapper/badge: %s", p)
+	}
+}
+
+func TestTelemetryPageMetricsOnly(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	st.InsertData("aabbccddeeff", 1001, 1, "metric", "pm25", int64(7), "", "int")
+	st.InsertData("aabbccddeeff", 1001, 0, "log", "", nil, "vin: pm25=7 (olympic)", "")
+	srv := serve(t, st)
+
+	body := readBody(t, mustGet(t, srv.URL+"/telemetry"))
+	if !strings.Contains(body, "pm25") {
+		t.Errorf("telemetry page missing metric: %s", body)
+	}
+	if strings.Contains(body, "olympic") {
+		t.Errorf("telemetry page leaked a log row: %s", body)
+	}
+	// Polled partial honors the node filter and re-emits its wrapper.
+	p := readBody(t, mustGet(t, srv.URL+"/partials/telemetry?node=aabbccddeeff"))
+	if !strings.Contains(p, `id="telem"`) || !strings.Contains(p, "pm25") {
+		t.Errorf("telemetry partial missing wrapper/metric: %s", p)
 	}
 }

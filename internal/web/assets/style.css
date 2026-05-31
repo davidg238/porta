@@ -24,6 +24,12 @@ button { padding:.3rem .7rem; border:1px solid #06c; background:#06c; color:#fff
 .warn { color:var(--red); font-size:.8rem; }
 code { background:#f0f0f0; padding:0 .2rem; border-radius:3px; }
 
+.badge { font-size:.7rem; padding:.05rem .4rem; border-radius:3px; color:#fff; }
+.badge-queued { background:var(--amber); color:#000; }
+.badge-delivered { background:#06c; }
+.badge-converged { background:var(--green); }
+.badge-expired { background:var(--red); }
+
 /* Narrow screens (phones over LAN/Tailscale): tighten padding and let wide
    tables scroll horizontally instead of forcing the page wider than the
    viewport. main wraps the page content, so the overflow lives there. */

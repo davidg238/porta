@@ -168,3 +168,31 @@ func TestRecentCommandsCrossDeviceNewestFirst(t *testing.T) {
 		t.Fatalf("want newest-first cross-device, got %+v", rows)
 	}
 }
+
+func TestRecentCommandsForDevice(t *testing.T) {
+	st := openTmp(t)
+	for i := 0; i < 3; i++ {
+		if _, err := st.EnqueueCommand("dev1", "set", `{"app":"a","key":"k","value":1}`, "cli", int64(100+i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.EnqueueCommand("dev2", "stop", `{"name":"x"}`, "cli", 200); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.RecentCommandsForDevice("dev1", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2 (limit)", len(got))
+	}
+	if got[0].ID <= got[1].ID {
+		t.Errorf("not newest-first: %d then %d", got[0].ID, got[1].ID)
+	}
+	for _, c := range got {
+		if c.Verb != "set" {
+			t.Errorf("leaked another device's command: %+v", c)
+		}
+	}
+}

@@ -23,6 +23,13 @@ type DataRow struct {
 	ValueType string
 }
 
+// LoggedData is a data_log row tagged with its device id, for the global
+// telemetry view (DataRow alone carries no device id).
+type LoggedData struct {
+	DataRow
+	DeviceID string
+}
+
 // InsertData appends one telemetry entry. value's runtime type drives the
 // SQL binding: int64 → INTEGER, float64 → REAL, nil → NULL. Empty strings
 // for name / text / valueType are bound as NULL.
@@ -128,4 +135,36 @@ func (s *Store) RecentData(deviceID string, limit int) ([]DataRow, error) {
 func (s *Store) PruneData(cutoff int64) error {
 	_, err := s.db.Exec(`DELETE FROM data_log WHERE ts < ?`, cutoff)
 	return err
+}
+
+// RecentMetrics returns the newest <= limit metric rows (kind='metric'),
+// newest first. When deviceID != "" it restricts to that device. The
+// kind='metric' filter excludes the per-report log rows (empty name/value),
+// so the telemetry table shows no blank lines.
+func (s *Store) RecentMetrics(deviceID string, limit int) ([]LoggedData, error) {
+	q := `SELECT device_id, ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,'')
+		  FROM data_log WHERE kind = 'metric'`
+	args := []any{}
+	if deviceID != "" {
+		q += ` AND device_id = ?`
+		args = append(args, deviceID)
+	}
+	q += ` ORDER BY ts DESC, seq DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LoggedData
+	for rows.Next() {
+		var r LoggedData
+		var v any
+		if err := rows.Scan(&r.DeviceID, &r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType); err != nil {
+			return nil, err
+		}
+		r.Value = normalizeNumeric(v)
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
