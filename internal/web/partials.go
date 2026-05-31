@@ -15,16 +15,16 @@ import (
 
 const maxUpload = 8 << 20 // hard cap on an uploaded image, enforced via http.MaxBytesReader
 
-// confirm renders the post-write confirmation + the refreshed pending panel,
-// so a single swap shows both "queued #N" and the new queue state. The
-// node-pending partial re-emits the #pending wrapper, so an hx-swap=outerHTML
-// targeting #pending replaces the right element.
+// confirm renders the post-write confirmation + the refreshed recent panel,
+// so a single swap shows both "queued #N" and the updated command timeline.
+// The node-recent partial re-emits the #recent wrapper, so an hx-swap=outerHTML
+// targeting #recent replaces the right element.
 func (h *Handler) confirm(w http.ResponseWriter, n *store.Node, msg string) {
 	vm := h.detailVM(n)
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, `<p class="confirm">%s — delivers on next check-in (%s)</p>`,
 		template.HTMLEscapeString(msg), template.HTMLEscapeString(vm.Gauge.Label))
-	if err := h.tmpl.ExecuteTemplate(&buf, "node-pending", vm); err != nil {
+	if err := h.tmpl.ExecuteTemplate(&buf, "node-recent", vm); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

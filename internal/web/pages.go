@@ -8,6 +8,14 @@ import (
 	"github.com/davidg238/porta/internal/store"
 )
 
+// recentRowVM is one row in the node page's Recent commands timeline.
+type recentRowVM struct {
+	ID    int64
+	Verb  string
+	Args  string
+	State string // queued | delivered | converged | expired
+}
+
 // detailVM is the view model for the per-node detail page. Every polled
 // section re-emits its own wrapper element so an outerHTML swap is idempotent.
 type detailVM struct {
@@ -22,7 +30,7 @@ type detailVM struct {
 	Config   []control.ConfigRow
 	ConfApp  string
 	Telem    []store.DataRow
-	Pending  []store.Command
+	Recent   []recentRowVM
 	Apps     []control.App
 }
 
@@ -63,8 +71,8 @@ func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store
 		h.render(w, "node-config", vm)
 	case "telemetry":
 		h.render(w, "node-telemetry", vm)
-	case "pending":
-		h.render(w, "node-pending", vm)
+	case "recent":
+		h.render(w, "node-recent", vm)
 	case "containers":
 		h.render(w, "node-containers", vm)
 	case "set", "console", "poll-interval", "max-offline", "rename", "containers/install", "containers/uninstall":
@@ -102,7 +110,17 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 	app := firstApp(n)
 	cfg, _ := control.DesiredVsObserved(h.st, n.ID, app)
 	telem, _ := h.st.RecentData(n.ID, 10)
-	pending, _ := h.st.UndeliveredCommands(n.ID)
+	recentCmds, _ := h.st.RecentCommandsForDevice(n.ID, 10)
+	obsConfig := control.ConfigFromObserved(n.ObservedState)
+	recent := make([]recentRowVM, 0, len(recentCmds))
+	for _, c := range recentCmds {
+		recent = append(recent, recentRowVM{
+			ID:    c.ID,
+			Verb:  c.Verb,
+			Args:  c.Args,
+			State: string(control.LifecycleOf(c, obsConfig, n.MaxOfflineS, now)),
+		})
+	}
 	apps, _ := control.AppsFromObserved(n.ObservedState)
 	var lastSeen int64
 	if n.LastSeen.Valid {
@@ -120,7 +138,7 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 		Config:   cfg,
 		ConfApp:  app,
 		Telem:    telem,
-		Pending:  pending,
+		Recent:   recent,
 		Apps:     apps,
 	}
 }

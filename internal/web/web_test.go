@@ -82,7 +82,7 @@ func TestNodeDetailRendersSections(t *testing.T) {
 	srv := serve(t, st)
 
 	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
-	for _, want := range []string{"demo", "gain", "pm25", "Config", "Telemetry", "Pending", "Containers", "Actions"} {
+	for _, want := range []string{"demo", "gain", "pm25", "Config", "Telemetry", "Recent", "Containers", "Actions"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("detail body missing %q: %s", want, body)
 		}
@@ -369,5 +369,35 @@ func TestLogPageEscapesArgs(t *testing.T) {
 	}
 	if !strings.Contains(body, "&lt;script&gt;x&lt;/script&gt;") {
 		t.Errorf("args not html-escaped: %s", body)
+	}
+}
+
+func TestNodeRecentCommandsBadges(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	// A delivered set whose observed config matches → converged.
+	id, err := control.Set(st, "aabbccddeeff", "demo", "gain", int64(2), "cli", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MarkDelivered(id, 1001); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.InsertReport("aabbccddeeff",
+		`{"config":{"demo":{"gain":2}},"apps":{"demo":{"crc":99,"runlevel":3}}}`, "", 1002); err != nil {
+		t.Fatal(err)
+	}
+	srv := serve(t, st)
+
+	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
+	for _, want := range []string{"Recent commands", "badge-converged", `id="recent"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("recent section missing %q: %s", want, body)
+		}
+	}
+	// The polled partial endpoint serves the same section.
+	p := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff/recent"))
+	if !strings.Contains(p, `id="recent"`) || !strings.Contains(p, "badge-") {
+		t.Errorf("recent partial missing wrapper/badge: %s", p)
 	}
 }
