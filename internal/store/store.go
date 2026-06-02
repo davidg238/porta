@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS nodes (
   poll_interval_s INTEGER DEFAULT 30,
   max_offline_s INTEGER DEFAULT 300,
   last_report_at INTEGER,
-  observed_state TEXT
+  observed_state TEXT,
+  chip TEXT,
+  sdk TEXT
 );
 CREATE TABLE IF NOT EXISTS payloads (
   crc INTEGER PRIMARY KEY,
@@ -80,6 +82,8 @@ type Node struct {
 	MaxOfflineS   int64
 	LastReportAt  sql.NullInt64
 	ObservedState string
+	Chip          string
+	Sdk           string
 }
 
 // Online reports whether the node has been seen within its max_offline window.
@@ -148,12 +152,13 @@ func (s *Store) EnsureNode(id string, now int64) error {
 
 const nodeCols = `id, COALESCE(name,''), COALESCE(source_addr,''), kind, first_seen, last_seen,
 	COALESCE(poll_interval_s,30), COALESCE(max_offline_s,300), last_report_at,
-	COALESCE(observed_state,'')`
+	COALESCE(observed_state,''), COALESCE(chip,''), COALESCE(sdk,'')`
 
 func scanNode(row interface{ Scan(...interface{}) error }) (*Node, error) {
 	var n Node
 	err := row.Scan(&n.ID, &n.Name, &n.SourceAddr, &n.Kind, &n.FirstSeen,
-		&n.LastSeen, &n.PollIntervalS, &n.MaxOfflineS, &n.LastReportAt, &n.ObservedState)
+		&n.LastSeen, &n.PollIntervalS, &n.MaxOfflineS, &n.LastReportAt, &n.ObservedState,
+		&n.Chip, &n.Sdk)
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +203,16 @@ func (s *Store) ListNodes() ([]Node, error) {
 
 func (s *Store) SetNodeName(id, name string) error {
 	_, err := s.db.Exec(`UPDATE nodes SET name = ? WHERE id = ?`, name, id)
+	return err
+}
+
+// UpdateNodeIdentity records the node's self-reported firmware identity.
+// Empty chip/sdk are COALESCEd so a report missing the field never clobbers a
+// previously-known value.
+func (s *Store) UpdateNodeIdentity(id, chip, sdk string) error {
+	_, err := s.db.Exec(
+		`UPDATE nodes SET chip = COALESCE(?, chip), sdk = COALESCE(?, sdk) WHERE id = ?`,
+		nullStr(chip), nullStr(sdk), id)
 	return err
 }
 
