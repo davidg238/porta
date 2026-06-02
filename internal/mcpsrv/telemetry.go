@@ -50,10 +50,7 @@ func (s *Server) queryTelemetry(_ context.Context, _ *mcp.CallToolRequest, in Qu
 	if in.Since == 0 && in.Until == 0 {
 		rows, err = s.st.RecentData(n.ID, limit)
 	} else {
-		rows, err = s.st.QueryData(n.ID, in.Since, in.Until, in.Kind)
-		if len(rows) > limit {
-			rows = rows[:limit]
-		}
+		rows, err = s.st.QueryDataLimited(n.ID, in.Since, in.Until, in.Kind, limit)
 	}
 	if err != nil {
 		return errorResultf("query telemetry for %q: %v", n.ID, err), QueryTelemetryOutput{}, nil

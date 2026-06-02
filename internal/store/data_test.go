@@ -172,6 +172,35 @@ func TestQueryDataUntilZeroUnbounded(t *testing.T) {
 	}
 }
 
+// TestQueryDataLimitedCapsInSQL is the #11 guard: QueryDataLimited pushes a
+// row cap into SQL (LIMIT) rather than loading the whole window and slicing
+// in Go. With ORDER BY ts,seq the cap keeps the oldest `limit` rows; limit<=0
+// means no cap.
+func TestQueryDataLimitedCapsInSQL(t *testing.T) {
+	st := openTestStore(t)
+	dev := "ee11ff22aa33"
+	for i := int64(0); i < 5; i++ {
+		st.InsertData(dev, 100+i, i, "metric", "x", int64(i), "", "int")
+	}
+	rows, err := st.QueryDataLimited(dev, 0, 0, "", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("limit 2: got %d rows, want 2", len(rows))
+	}
+	if rows[0].TS != 100 || rows[1].TS != 101 {
+		t.Errorf("got ts %d,%d; want oldest two 100,101", rows[0].TS, rows[1].TS)
+	}
+	if all, _ := st.QueryDataLimited(dev, 0, 0, "", 0); len(all) != 5 {
+		t.Errorf("limit 0 (no cap): got %d rows, want 5", len(all))
+	}
+	// QueryData stays the no-cap convenience wrapper.
+	if all, _ := st.QueryData(dev, 0, 0, ""); len(all) != 5 {
+		t.Errorf("QueryData (wrapper): got %d rows, want 5", len(all))
+	}
+}
+
 func TestPruneData(t *testing.T) {
 	st := openTestStore(t)
 	dev := "778899aabbcc"

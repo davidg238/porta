@@ -54,6 +54,14 @@ func (s *Store) InsertData(deviceID string, ts, seq int64, kind, name string, va
 // can also return []byte for some edge cases (e.g. a numeric out of int64
 // range stored textually) — normalizeNumeric handles that fallback.
 func (s *Store) QueryData(deviceID string, since, until int64, kind string) ([]DataRow, error) {
+	return s.QueryDataLimited(deviceID, since, until, kind, 0)
+}
+
+// QueryDataLimited is QueryData with a SQL-level row cap: when limit > 0 it
+// appends LIMIT so the database returns at most `limit` rows (the oldest,
+// since the order is ts,seq ascending) instead of loading the whole window
+// into memory to truncate in Go; limit <= 0 means no cap.
+func (s *Store) QueryDataLimited(deviceID string, since, until int64, kind string, limit int) ([]DataRow, error) {
 	q := `SELECT ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,'')
 		  FROM data_log WHERE device_id = ? AND ts >= ?`
 	args := []any{deviceID, since}
@@ -66,6 +74,10 @@ func (s *Store) QueryData(deviceID string, since, until int64, kind string) ([]D
 		args = append(args, kind)
 	}
 	q += ` ORDER BY ts, seq`
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
