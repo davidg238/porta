@@ -2,6 +2,7 @@
 package telemetry
 
 import (
+	"math"
 	"testing"
 
 	"github.com/davidg238/porta/internal/store"
@@ -27,6 +28,27 @@ func TestFormatLineMetricFloatWholeNumberAddsDecimal(t *testing.T) {
 	r := store.DataRow{TS: 102, Seq: 0, Kind: "metric", Name: "pm", Value: int64(13), ValueType: "float"}
 	if got := FormatLine(r); got != "102  metric  pm=13.0" {
 		t.Errorf("got %q, want %q", got, "102  metric  pm=13.0")
+	}
+}
+
+func TestFormatLineMetricFloatNaNInfRenderNull(t *testing.T) {
+	// NaN/±Inf are unreachable via the JSON wire (RFC 7159 forbids the
+	// literals) but an in-process InsertData caller could bind them; render
+	// "null" rather than the malformed "NaN.0" / "+Inf.0".
+	cases := []struct {
+		name string
+		v    float64
+	}{
+		{"NaN", math.NaN()},
+		{"+Inf", math.Inf(1)},
+		{"-Inf", math.Inf(-1)},
+	}
+	for _, c := range cases {
+		r := store.DataRow{TS: 200, Kind: "metric", Name: "pm", Value: c.v, ValueType: "float"}
+		want := "200  metric  pm=null"
+		if got := FormatLine(r); got != want {
+			t.Errorf("%s: got %q, want %q", c.name, got, want)
+		}
 	}
 }
 

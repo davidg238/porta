@@ -3,6 +3,7 @@ package telemetry
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/davidg238/porta/internal/store"
@@ -33,6 +34,11 @@ func renderMetric(r store.DataRow) string {
 		// so r.Value can be int64 13 with ValueType "float" — coerce to
 		// float64 and render with a guaranteed decimal point.
 		f := asFloat64(r.Value)
+		// NaN/±Inf have no JSON-legal rendering and FormatFloat would emit
+		// "NaN"/"+Inf" → the ".0" patch below mangles them further; degrade.
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return "null"
+		}
 		// strconv.FormatFloat with -1 precision drops trailing zeros, so
 		// 13.0 → "13"; reinstate the ".0" tail when the rendered form has
 		// no decimal point and no exponent.
