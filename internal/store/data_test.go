@@ -146,6 +146,32 @@ func TestQueryDataTimeWindow(t *testing.T) {
 	}
 }
 
+// TestQueryDataUntilZeroUnbounded pins the #10 contract: until <= 0 means
+// "no upper bound" (a since-only query), not "ts <= 0" which would always be
+// empty. A since-only telemetry query must return everything from `since` on.
+func TestQueryDataUntilZeroUnbounded(t *testing.T) {
+	st := openTestStore(t)
+	dev := "aa00bb11cc22"
+	st.InsertData(dev, 100, 0, "metric", "x", int64(1), "", "int")
+	st.InsertData(dev, 200, 1, "metric", "x", int64(2), "", "int")
+	st.InsertData(dev, 300, 2, "metric", "x", int64(3), "", "int")
+	// since=150, until=0 → rows with ts>=150 (200, 300).
+	rows, err := st.QueryData(dev, 150, 0, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("since-only (until=0): got %d rows, want 2", len(rows))
+	}
+	if rows[0].TS != 200 || rows[1].TS != 300 {
+		t.Errorf("got ts %d,%d; want 200,300", rows[0].TS, rows[1].TS)
+	}
+	// until=0 still honors the kind filter.
+	if r, _ := st.QueryData(dev, 0, 0, "metric"); len(r) != 3 {
+		t.Errorf("since=0,until=0,kind=metric: got %d, want 3", len(r))
+	}
+}
+
 func TestPruneData(t *testing.T) {
 	st := openTestStore(t)
 	dev := "778899aabbcc"

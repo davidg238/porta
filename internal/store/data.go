@@ -43,9 +43,11 @@ func (s *Store) InsertData(deviceID string, ts, seq int64, kind, name string, va
 	return err
 }
 
-// QueryData returns the device's rows with since <= ts <= until, ordered by
-// (ts, seq). When kind is non-empty, restricts to that kind. value_type ==
-// "" surfaces as the empty string (a log row or a degraded metric).
+// QueryData returns the device's rows with ts >= since (and ts <= until when
+// until > 0; until <= 0 means no upper bound, i.e. a since-only query),
+// ordered by (ts, seq). When kind is non-empty, restricts to that kind.
+// value_type == "" surfaces as the empty string (a log row or a degraded
+// metric).
 //
 // The value column is NUMERIC; Scan into *any returns the SQLite storage
 // class directly: INTEGER → int64, REAL → float64, NULL → nil. The driver
@@ -53,8 +55,12 @@ func (s *Store) InsertData(deviceID string, ts, seq int64, kind, name string, va
 // range stored textually) — normalizeNumeric handles that fallback.
 func (s *Store) QueryData(deviceID string, since, until int64, kind string) ([]DataRow, error) {
 	q := `SELECT ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,'')
-		  FROM data_log WHERE device_id = ? AND ts >= ? AND ts <= ?`
-	args := []any{deviceID, since, until}
+		  FROM data_log WHERE device_id = ? AND ts >= ?`
+	args := []any{deviceID, since}
+	if until > 0 {
+		q += ` AND ts <= ?`
+		args = append(args, until)
+	}
 	if kind != "" {
 		q += ` AND kind = ?`
 		args = append(args, kind)

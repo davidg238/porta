@@ -9,13 +9,13 @@ import (
 )
 
 // QueryTelemetryInput bounds a telemetry query. When Since and Until are both
-// zero, the most recent rows are returned; otherwise the [Since,Until] window
-// is queried. Kind filters by row kind when non-empty. Limit defaults to 100,
-// caps at 1000.
+// zero, the most recent rows are returned; otherwise the window is queried.
+// Until omitted (0) means open-ended — all rows from Since onward. Kind filters
+// by row kind when non-empty. Limit defaults to 100, caps at 1000.
 type QueryTelemetryInput struct {
 	Device string `json:"device" jsonschema:"node MAC (12 lowercase hex) or friendly name"`
 	Since  int64  `json:"since,omitempty" jsonschema:"window start, epoch seconds"`
-	Until  int64  `json:"until,omitempty" jsonschema:"window end, epoch seconds"`
+	Until  int64  `json:"until,omitempty" jsonschema:"window end, epoch seconds; omit/0 = open-ended (all rows from since on)"`
 	Kind   string `json:"kind,omitempty" jsonschema:"filter by telemetry kind; applies only with a [since,until] window, ignored for recent queries"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"max rows (default 100, max 1000)"`
 }

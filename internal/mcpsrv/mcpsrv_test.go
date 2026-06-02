@@ -277,6 +277,34 @@ func TestQueryTelemetryWindow(t *testing.T) {
 	}
 }
 
+// TestQueryTelemetrySinceOnly is the #10 guard: a since-only window (Until
+// omitted → 0) must return everything from Since on, not an empty set.
+func TestQueryTelemetrySinceOnly(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.EnsureNode("aabbccddeeff", 3000); err != nil {
+		t.Fatal(err)
+	}
+	for i := int64(0); i < 5; i++ {
+		if err := st.InsertData("aabbccddeeff", 3000+i, i, "metric", "pm25", float64(i), "", "float"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := New(st)
+	since := int64(3002) // omit Until → 0
+	_, out, err := s.queryTelemetry(context.Background(), nil, QueryTelemetryInput{Device: "aabbccddeeff", Since: since})
+	if err != nil {
+		t.Fatalf("queryTelemetry: %v", err)
+	}
+	if len(out.Rows) != 3 { // ts 3002, 3003, 3004
+		t.Fatalf("since-only: got %d rows, want 3", len(out.Rows))
+	}
+	for _, r := range out.Rows {
+		if r.TS < since {
+			t.Errorf("row ts %d < since %d", r.TS, since)
+		}
+	}
+}
+
 func TestCommandLogFleetWideAndPerDevice(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.EnsureNode("aaaaaaaaaaaa", 4000); err != nil {
