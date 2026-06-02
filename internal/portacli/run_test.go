@@ -75,6 +75,18 @@ func TestRunDeployBlocksOnUnknownIdentity(t *testing.T) {
 	}
 }
 
+func TestNewRunCmdRegistersFlags(t *testing.T) {
+	cmd := newRunCmd()
+	if cmd.Use == "" || cmd.Flags().Lookup("device") == nil {
+		t.Fatal("run cmd missing device flag")
+	}
+	for _, f := range []string{"name", "lifecycle", "trigger", "runlevel", "power-mode", "force", "verbose"} {
+		if cmd.Flags().Lookup(f) == nil {
+			t.Errorf("missing --%s flag", f)
+		}
+	}
+}
+
 func TestRunDeployRefusesSDKMismatch(t *testing.T) {
 	st := newRunStore(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
