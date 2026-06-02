@@ -144,6 +144,31 @@ func TestReadHeaderTimeoutClosesSlowClient(t *testing.T) {
 	// Any non-timeout outcome (EOF or a 408 response) means the server acted.
 }
 
+// TestRunBindsBareIPv6 is the #6 guard: a bare IPv6 bind ("::") must produce
+// a valid listen address. The old fmt.Sprintf("%s:%d") yielded ":::6970",
+// which net.Listen rejects ("too many colons"); net.JoinHostPort makes it
+// "[::]:6970". The "::" dual-stack socket accepts an IPv4 loopback connect.
+func TestRunBindsBareIPv6(t *testing.T) {
+	st := openTestStore(t)
+	port := freePort(t)
+	srv, err := New(Config{Bind: "::", Port: port}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runErr := make(chan error, 1)
+	go func() { runErr <- srv.Run(ctx) }()
+	if err := waitListening(t, port, 500*time.Millisecond); err != nil {
+		select {
+		case e := <-runErr:
+			t.Fatalf("server did not listen on [::]:%d: Run err=%v", port, e)
+		default:
+			t.Fatalf("server did not listen on [::]:%d within budget: %v", port, err)
+		}
+	}
+}
+
 func TestRunReturnsErrorOnPortInUse(t *testing.T) {
 	st := openTestStore(t)
 	port := freePort(t)

@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/davidg238/porta/internal/store"
@@ -49,7 +51,9 @@ func New(cfg Config, st *store.Store) (*Server, error) {
 	mux.Handle("/health", healthHandler(st))
 	return &Server{
 		http: &http.Server{
-			Addr:              fmt.Sprintf("%s:%d", cfg.Bind, cfg.Port),
+			// JoinHostPort brackets bare IPv6 binds ("::" → "[::]:6970");
+			// fmt.Sprintf("%s:%d") would yield the invalid ":::6970".
+			Addr:              net.JoinHostPort(cfg.Bind, strconv.Itoa(cfg.Port)),
 			Handler:           AllowlistMiddleware(nets)(mux),
 			ReadHeaderTimeout: defaultReadHeaderTimeout,
 		},
