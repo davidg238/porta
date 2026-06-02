@@ -5,6 +5,7 @@
 package httpsrv
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -14,17 +15,19 @@ import (
 // empty/whitespace-only entries (so `--http-allow-cidr=""` from cobra,
 // which arrives as []string{""}, cleanly disables the allowlist). All-empty
 // input returns nil so the middleware short-circuits to "serve any peer".
-// Returns the first parse error encountered with the offending raw string.
+// Returns the first parse error encountered, wrapped with the offending
+// slice index and raw string (so a multi-value --http-allow-cidr mistake is
+// diagnosable); the underlying net.ParseCIDR error stays unwrappable.
 func AllowCIDR(raw []string) ([]*net.IPNet, error) {
 	var out []*net.IPNet
-	for _, s := range raw {
+	for i, s := range raw {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
 		}
 		_, n, err := net.ParseCIDR(s)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("allow-cidr[%d]=%q: %w", i, s, err)
 		}
 		out = append(out, n)
 	}

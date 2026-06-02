@@ -2,9 +2,11 @@
 package httpsrv
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -25,6 +27,33 @@ func TestAllowCIDRRejectsGarbage(t *testing.T) {
 	}
 	if _, err := AllowCIDR([]string{"10.0.0.0/8", "bad"}); err == nil {
 		t.Error("expected error when one entry is bad")
+	}
+}
+
+// TestAllowCIDRErrorNamesIndexAndEntry verifies a bad entry's error pinpoints
+// which slice index (operator's flag position) and the offending string, while
+// still unwrapping to the underlying net.ParseCIDR error for errors.Is/As.
+func TestAllowCIDRErrorNamesIndexAndEntry(t *testing.T) {
+	_, err := AllowCIDR([]string{"10.0.0.0/8", "not-a-cidr", "192.168.0.0/16"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "[1]") {
+		t.Errorf("error %q does not name the offending index [1]", msg)
+	}
+	if !strings.Contains(msg, "not-a-cidr") {
+		t.Errorf("error %q does not name the offending entry", msg)
+	}
+	// The wrap must preserve the stdlib error for errors.Is/As.
+	_, _, inner := net.ParseCIDR("not-a-cidr")
+	if !errors.Is(err, inner) {
+		// net.ParseCIDR returns a fresh *net.ParseError each call; compare by
+		// confirming the wrapped error is itself a *net.ParseError.
+		var pe *net.ParseError
+		if !errors.As(err, &pe) {
+			t.Errorf("error %v does not unwrap to *net.ParseError", err)
+		}
 	}
 }
 
