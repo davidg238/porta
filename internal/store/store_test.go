@@ -169,6 +169,31 @@ func TestRecentCommandsCrossDeviceNewestFirst(t *testing.T) {
 	}
 }
 
+func TestUpdateNodeIdentity(t *testing.T) {
+	st := openTmp(t)
+	if err := st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateNodeIdentity("aabbccddeeff", "esp32c6", "v2.0.0-alpha.192"); err != nil {
+		t.Fatal(err)
+	}
+	n, err := st.GetNode("aabbccddeeff")
+	if err != nil || n == nil {
+		t.Fatalf("GetNode: %v / %v", n, err)
+	}
+	if n.Chip != "esp32c6" || n.Sdk != "v2.0.0-alpha.192" {
+		t.Errorf("got chip=%q sdk=%q, want esp32c6 / v2.0.0-alpha.192", n.Chip, n.Sdk)
+	}
+	// Empty values must not clobber a known identity.
+	if err := st.UpdateNodeIdentity("aabbccddeeff", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = st.GetNode("aabbccddeeff")
+	if n.Chip != "esp32c6" || n.Sdk != "v2.0.0-alpha.192" {
+		t.Errorf("empty update clobbered identity: chip=%q sdk=%q", n.Chip, n.Sdk)
+	}
+}
+
 func TestRecentCommandsForDevice(t *testing.T) {
 	st := openTmp(t)
 	for i := 0; i < 3; i++ {
