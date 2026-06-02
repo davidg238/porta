@@ -188,7 +188,10 @@ func TestUpdateNodeIdentity(t *testing.T) {
 	if err := st.UpdateNodeIdentity("aabbccddeeff", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	n, _ = st.GetNode("aabbccddeeff")
+	n, err = st.GetNode("aabbccddeeff")
+	if err != nil || n == nil {
+		t.Fatalf("GetNode after empty update: %v / %v", n, err)
+	}
 	if n.Chip != "esp32c6" || n.Sdk != "v2.0.0-alpha.192" {
 		t.Errorf("empty update clobbered identity: chip=%q sdk=%q", n.Chip, n.Sdk)
 	}
