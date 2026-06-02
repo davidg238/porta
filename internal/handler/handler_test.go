@@ -368,6 +368,30 @@ func TestWriteDataNonObjectLineSkipped(t *testing.T) {
 	}
 }
 
+func TestWriteDataSeqFallbackCountsAcceptedRows(t *testing.T) {
+	h, st := newH(t)
+	st.EnsureNode("abcdefabcdef", 1000)
+	// Leading blank + middle non-object: the two accepted rows must get
+	// seq 0 and 1 (success-counter), not the raw split index (1 and 3).
+	body := []byte("\n" +
+		`{"kind":"log","text":"a"}` + "\n" +
+		`42` + "\n" +
+		`{"kind":"log","text":"b"}` + "\n")
+	if err := h.Write("data?id=abcdefabcdef", "p:1", body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	rows, _ := st.QueryData("abcdefabcdef", 0, 2000, "")
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	if rows[0].Text != "a" || rows[0].Seq != 0 {
+		t.Errorf("rows[0]={Text:%q Seq:%d}, want {a 0}", rows[0].Text, rows[0].Seq)
+	}
+	if rows[1].Text != "b" || rows[1].Seq != 1 {
+		t.Errorf("rows[1]={Text:%q Seq:%d}, want {b 1}", rows[1].Text, rows[1].Seq)
+	}
+}
+
 func TestWriteDataNonScalarValueDegrades(t *testing.T) {
 	h, st := newH(t)
 	st.EnsureNode("aaaa11112222", 1000)

@@ -173,7 +173,8 @@ func (h *Handler) writeData(id, peer string, data []byte) error {
 		return err
 	}
 	now := h.now()
-	for i, raw := range bytes.Split(data, []byte("\n")) {
+	accepted := int64(0)
+	for _, raw := range bytes.Split(data, []byte("\n")) {
 		e, ok := telemetry.ParseLine(raw)
 		if !ok {
 			continue
@@ -184,8 +185,9 @@ func (h *Handler) writeData(id, peer string, data []byte) error {
 		}
 		seq := e.Seq
 		if !e.HasSeq {
-			seq = int64(i)
+			seq = accepted
 		}
+		accepted++
 		kind := e.Kind
 		if kind == "" {
 			kind = "log"
