@@ -83,6 +83,41 @@ func TestInsertAndQueryDataAllScalarTypes(t *testing.T) {
 	}
 }
 
+// TestNormalizeNumericByteSlice locks the contract of the []byte fallback
+// branch — the path a textual-numeric column read (e.g. a value out of
+// int64 range stored as text) takes. Our binds are always int64/float64/nil
+// so the driver doesn't hit it today; this pins the coercion regardless.
+func TestNormalizeNumericByteSlice(t *testing.T) {
+	cases := []struct {
+		in   []byte
+		want any
+	}{
+		{[]byte("12345"), int64(12345)},
+		{[]byte("-7"), int64(-7)},
+		{[]byte("12.5"), float64(12.5)},
+		{[]byte("1e3"), float64(1000)},
+		{[]byte("2.5E-1"), float64(0.25)},
+		{[]byte(""), nil},      // empty → nil
+		{[]byte("abc"), nil},   // non-numeric → nil
+		{[]byte("1.2.3"), nil}, // has '.', but ParseFloat fails → nil
+		{[]byte("99x"), nil},   // ParseInt fails → nil
+	}
+	for _, c := range cases {
+		got := normalizeNumeric(c.in)
+		if got != c.want {
+			t.Errorf("normalizeNumeric(%q) = %v (%T), want %v (%T)",
+				c.in, got, got, c.want, c.want)
+		}
+	}
+	// Pass-through cases: nil / int64 / float64 are returned unchanged.
+	if got := normalizeNumeric(nil); got != nil {
+		t.Errorf("normalizeNumeric(nil) = %v, want nil", got)
+	}
+	if got := normalizeNumeric(int64(9)); got != int64(9) {
+		t.Errorf("normalizeNumeric(int64(9)) = %v, want int64(9)", got)
+	}
+}
+
 func TestQueryDataKindFilter(t *testing.T) {
 	st := openTestStore(t)
 	dev := "ffeeddccbbaa"
