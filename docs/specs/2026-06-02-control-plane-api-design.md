@@ -44,9 +44,26 @@ collapse to **one path** (HTTP to the server, localhost when co-located).
   deliver the built `.bin` + run command via S1; identity/SDK guard reads via S1.
 - **S4 — Web identity/SDK visibility:** small, independent (chip/sdk header +
   SDK-match badge); can ship in parallel anytime.
+- **S5 — Console tail over the API (`porta monitor`):** the server already ingests
+  a node's console when forwarding is enabled (`set-console on` → the B3/data
+  up-path), so a **streaming** read endpoint (SSE/chunked — the one thing S1
+  excludes) lets `porta monitor -d <node>` stream the captured console in the CLI
+  session. No USB / separate `jag monitor`; works against a *remote* gateway with
+  no serial line. Its own sub-project because it needs streaming.
+- **S6 — Client-side panic decode:** a Toit panic prints a base64 blob to serial;
+  surfacing it is just S5's console tail. **Decoding** needs the image's
+  `.snapshot` for `jag decode` to symbolicate — the existing panic-decode backlog
+  was blocked because *porta stores only the relocated `.bin`, not the snapshot*.
+  This architecture resolves it: compile is client-side and the Phase-1 toolchain
+  already produces `app.snapshot` beside `app.bin`, so the **CLI retains the
+  snapshot for images it deployed** (keyed by CRC) and runs `jag decode` locally
+  against its own jag cache. Snapshots live with the client that built them — the
+  server stays language-agnostic. Caveat: an image deployed outside that CLI (raw
+  `.bin` web upload, another operator's machine) surfaces but can't auto-decode.
 - **Future — Smalltalk CLI** plugs into the same S1 API.
 
-Each of S2–S4 gets its own spec → plan → build cycle.
+Each of S2–S6 gets its own spec → plan → build cycle. S5/S6 are noted here so S1's
+"no streaming" boundary is understood as deliberate (they need it; S1 doesn't).
 
 ## 2. Locked decisions (don't re-litigate)
 
