@@ -135,8 +135,8 @@ stays in the callers").
 { "verb": "set", "args": { "app": "sampler", "key": "interval", "value": 30 } }
 ```
 
-`verb ∈ {run, stop, set, set-console, set-poll-interval, set-power-mode}`. `args` is
-verb-specific and decoded per verb:
+`verb ∈ {set, set-console, set-poll-interval, set-power-mode, stop}` — the five
+**image-less** verbs. `args` is verb-specific and decoded per verb:
 
 | verb | args | control call |
 |------|------|--------------|
@@ -145,20 +145,29 @@ verb-specific and decoded per verb:
 | `set-poll-interval` | `{interval}` (e.g. `"30s"` or seconds int) | `control.SetPollInterval` |
 | `set-power-mode` | `{mode}` | `control.SetPowerMode` |
 | `stop` | `{name}` | `control.Uninstall` |
-| `run` | `{name}` (re-run an already-installed app) | `control` run path |
 
 Response: `{ "ok": true, "data": { "command_id": 42 }, "error": "" }`.
 
-> `run` here is the bare re-run verb (queue a run for an already-present image).
-> Installing a *new* image is the multipart endpoint below; S3's `porta run` calls
-> that. The exact `control` function names are taken from the real package at
-> implementation time — the table is the mapping, not new signatures.
+> **No `run` verb here.** Running a container always needs the image: the protocol
+> `run` command carries name + size + CRC32, and `control.Install` is the single
+> operation that registers the payload *and* enqueues the run (there is no
+> control function to re-run a previously-registered payload). The JSON envelope
+> carries no file, so the run path is the multipart endpoint below; S3's
+> `porta run` calls it. The exact `control` function names are taken from the real
+> package at implementation time — the table is the mapping, not new signatures.
+> (A future "re-run the CRC-cached payload without re-uploading" verb is feasible —
+> the gateway retains payloads keyed by CRC — but is out of scope.)
 
 **`POST /api/nodes/{sel}/containers`** — Content-Type `multipart/form-data`.
 Parts: `image` (the relocated `.bin`), `name`, `lifecycle`, `runlevel`, `interval`,
 `triggers`. Maps to `control.Install` (size + CRC32 computed server-side). Mirrors
 `web.postInstall`, including the `http.MaxBytesReader` cap (reuse the `maxUpload`
-constant value). Response: `{ ok, data:{ command_id, size, crc }, error }`.
+constant value). Response: `{ ok, data:{ command_id, size }, error }`.
+
+> The CRC32 is computed inside `control.Install` and stored in the queued `run`
+> command's args (so the node verifies its download); `Install` returns only the
+> command id, so the response carries `{command_id, size}` and the CRC is read back
+> via `GET /api/nodes/{sel}/commands` rather than recomputed here.
 
 **`PATCH /api/nodes/{sel}`** — Content-Type `application/json`. Node-management
 settings, not device commands:
