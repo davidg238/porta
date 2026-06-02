@@ -3,6 +3,7 @@ package portacli
 import (
 	"bytes"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/davidg238/porta/internal/store"
@@ -46,7 +47,8 @@ func TestRunDeployHappyPath(t *testing.T) {
 	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192")
 	ex := toolchain.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192"}, &bytes.Buffer{}, false)
 
-	err := runDeploy(st, ex, "aabbccddeeff", "/tmp/app.toit",
+	var buf bytes.Buffer
+	err := runDeploy(&buf, st, ex, "aabbccddeeff", "/tmp/app.toit",
 		deployOpts{Name: "blink", Lifecycle: "run-loop", Triggers: []string{"boot"}, Runlevel: 3}, false, 2000)
 	if err != nil {
 		t.Fatalf("runDeploy: %v", err)
@@ -56,13 +58,17 @@ func TestRunDeployHappyPath(t *testing.T) {
 	if err != nil || cmd == nil || cmd.Verb != "run" {
 		t.Fatalf("expected queued run, got %+v (err %v)", cmd, err)
 	}
+	// Confirm success message was written to out.
+	if got := buf.String(); !strings.Contains(got, "enqueued run") {
+		t.Errorf("expected confirmation containing %q, got %q", "enqueued run", got)
+	}
 }
 
 func TestRunDeployBlocksOnUnknownIdentity(t *testing.T) {
 	st := newRunStore(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000) // no UpdateNodeIdentity
 	ex := toolchain.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192"}, &bytes.Buffer{}, false)
-	err := runDeploy(st, ex, "aabbccddeeff", "/tmp/app.toit",
+	err := runDeploy(&bytes.Buffer{}, st, ex, "aabbccddeeff", "/tmp/app.toit",
 		deployOpts{Name: "blink", Lifecycle: "run-once"}, false, 2000)
 	if err == nil {
 		t.Fatal("expected block on unknown identity")
@@ -74,13 +80,13 @@ func TestRunDeployRefusesSDKMismatch(t *testing.T) {
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
 	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192")
 	ex := toolchain.NewExecutor(stubRunner{sdk: "v9.9.9"}, &bytes.Buffer{}, false)
-	err := runDeploy(st, ex, "aabbccddeeff", "/tmp/app.toit",
+	err := runDeploy(&bytes.Buffer{}, st, ex, "aabbccddeeff", "/tmp/app.toit",
 		deployOpts{Name: "blink", Lifecycle: "run-once"}, false, 2000)
 	if err == nil {
 		t.Fatal("expected SDK mismatch refusal")
 	}
 	// --force overrides.
-	if err := runDeploy(st, ex, "aabbccddeeff", "/tmp/app.toit",
+	if err := runDeploy(&bytes.Buffer{}, st, ex, "aabbccddeeff", "/tmp/app.toit",
 		deployOpts{Name: "blink", Lifecycle: "run-once"}, true, 2000); err != nil {
 		t.Errorf("--force should override: %v", err)
 	}

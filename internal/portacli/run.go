@@ -3,6 +3,7 @@ package portacli
 import (
 	"bytes"
 	"fmt"
+	"io"
 
 	"github.com/davidg238/porta/internal/control"
 	"github.com/davidg238/porta/internal/store"
@@ -21,7 +22,7 @@ type deployOpts struct {
 // runDeploy is the testable core of `porta run`: identity + SDK guard, build,
 // then register-payload + enqueue-run via control.Install. force skips the SDK
 // match refusal.
-func runDeploy(st *store.Store, ex *toolchain.Executor, id, appPath string, opts deployOpts, force bool, now int64) error {
+func runDeploy(out io.Writer, st *store.Store, ex *toolchain.Executor, id, appPath string, opts deployOpts, force bool, now int64) error {
 	node, err := st.GetNode(id)
 	if err != nil {
 		return err
@@ -48,7 +49,7 @@ func runDeploy(st *store.Store, ex *toolchain.Executor, id, appPath string, opts
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s: built %s (%d B), enqueued run (command #%d)\n", id, opts.Name, len(img), cmdID)
+	fmt.Fprintf(out, "%s: built %s (%d B), enqueued run (command #%d)\n", id, opts.Name, len(img), cmdID)
 	if opts.PowerMode != "" {
 		if _, err := control.SetPowerMode(st, id, opts.PowerMode, "cli", now); err != nil {
 			return err
