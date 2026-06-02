@@ -65,25 +65,25 @@ implementation = `os/exec`); tests substitute a fake runner.
 ## 4. `porta run` flow
 
 1. Resolve `-d` → node row. Read its **chip + SDK** (§6).
-2. **Identity guard.** Unknown identity → *block* with guidance ("node aabb…
-   hasn't reported its firmware identity yet — wait for a check-in or flash it
-   via `porta flash`"). Known → build target = the node's chip/SDK.
-3. **Conflict guard.** A `--chip` / `--sdk` override that disagrees with the
-   node's reported identity → refuse with the mismatch spelled out (§5).
-4. Ensure the `(chip, SDK)` firmware envelope is cached; otherwise **fetch it
-   from `toitlang/envelopes`** (narrated download) into a local cache, mirroring
-   how jag caches its envelope (`~/.cache/jaguar/<sdk>/envelopes/`).
-5. `toit compile --snapshot -o <tmp>/app.snapshot app.toit` (narrated).
-6. Relocate the snapshot into a container image (`.bin`) for the node's chip via
-   `toit tool snapshot-to-image` (exact flags pinned during implementation —
-   this is the step the operator does by hand today). The relocation is bound to
-   the node's chip word-size and SDK so the image matches the device firmware.
-7. Compute CRC32 (existing `command.CRC32`).
-8. **Prompt** for lifecycle (`run-once` / `run-loop`) and triggers
+2. **Identity guard.** Unknown SDK → *block* with guidance ("node aabb… hasn't
+   reported its firmware identity yet — wait for a check-in or flash it via
+   `porta flash`"). Known → proceed.
+3. **SDK guard.** Compare the active build SDK (`toit version`) with the node's
+   reported SDK. Mismatch → refuse with both versions spelled out (§5),
+   overridable with `--force`. (Chip variant is *informational* for `porta run`:
+   Toit container images are VM bytecode, so the payload couples to SDK version
+   and word size, not to the xtensa/riscv chip. Chip matters for choosing the
+   flash envelope in Phase 2, not for the payload.)
+4. `toit compile --snapshot -o <tmp>/app.snapshot app.toit` (narrated).
+5. `toit tool snapshot-to-image -m32 --format=binary -o <tmp>/app.bin
+   <tmp>/app.snapshot` (narrated). All ESP32 variants are 32-bit → `-m32`; this
+   is the exact recipe nodus already uses (`host/build-envelope.sh`, CI).
+6. Compute CRC32 (existing `command.CRC32`).
+7. **Prompt** for lifecycle (`run-once` / `run-loop`) and triggers
    (`boot` / `gpio-*` / interval). **Flags** supply `--name` (default = file
    stem), `--runlevel`, `--power-mode`, `--args`. Any prompt answerable by a
    flag may be supplied non-interactively (scriptable).
-9. Existing `control.Install` uploads the payload and enqueues `run`; if
+8. Existing `control.Install` uploads the payload and enqueues `run`; if
    `--power-mode` is set, enqueue `set-power-mode` too. Node fetches on next
    poll.
 
@@ -91,16 +91,17 @@ implementation = `os/exec`); tests substitute a fake runner.
 
 | Condition | Action |
 |-----------|--------|
-| chip override ≠ node's reported chip | **refuse** — image will not boot |
-| envelope/SDK ≠ node's reported SDK | **refuse** — SDK coupling, image will not run |
+| active build SDK ≠ node's reported SDK | **refuse** — SDK coupling, image will not run (`porta run`) |
+| selected chip ≠ node's reported chip | **refuse** — wrong firmware envelope (`porta flash`, Phase 2) |
 | node identity unknown (never reported, never seeded) | **block** with guidance |
 | node offline / asleep (stale last-seen) | **proceed** (queue is durable) but inform the operator the node will pick it up on next wake |
 
-The two **refuse** cases are overridable with an explicit `--force` (for the
-advanced operator who knows the relocation is compatible); the default is to
-stop. The SDK/chip-match check is the headline guardrail — it turns the project's
-known #1 risk (per-chip relocation must match device firmware SDK) into a
-checked precondition instead of a silent boot failure.
+The **refuse** cases are overridable with an explicit `--force` (for the advanced
+operator who knows the artifact is compatible); the default is to stop. The
+SDK-match check is the headline `porta run` guardrail — it turns the project's
+known #1 risk (relocated image must match device firmware SDK) into a checked
+precondition instead of a silent boot failure. The chip-match check is a
+`porta flash` concern (selecting the right envelope), not a payload concern.
 
 ## 6. Node identity (the one protocol change)
 
@@ -108,9 +109,10 @@ The node is the TFTP **client**; the gateway only ever responds and cannot
 initiate a request to a node. So identity is **pushed, not pulled**: it rides on
 the `report` the node already sends every cycle.
 
-- **Wire (additive):** the nodus `report` body gains `chip` (e.g. `"esp32"`,
-  `"esp32c6"`, `"esp32s3"`) and `firmware.sdk` (e.g. `"v2.0.0-alpha.192"`). Both
-  are readable on-device at runtime. Documented in `docs/PROTOCOL.md`.
+- **Wire (additive):** the nodus `report` body gains two top-level keys
+  (alongside `apps`/`config`/`health`): `chip` (e.g. `"esp32"`, `"esp32c6"`,
+  `"esp32s3"`) and `sdk` (e.g. `"v2.0.0-alpha.192"`). Both readable on-device at
+  runtime. Documented in `docs/PROTOCOL.md`.
 - **Store:** new `nodes` columns `chip TEXT`, `sdk TEXT`; report ingestion writes
   them (self-healing — corrects automatically if a device is reflashed).
 - **Seed:** `porta flash` (Phase 2) writes chip/SDK onto the `nodes` row at flash
@@ -184,20 +186,26 @@ alongside Phase 2.
 ## 10. Decomposition & phasing
 
 - **Phase 1 (this spec's primary deliverable):** `internal/toolchain` (narration
-  engine + injectable runner + envelope cache/fetch + compile/relocate +
-  identity resolution + conflict guard); the additive **report identity fields**
-  (nodus + `docs/PROTOCOL.md` + `nodes` columns + ingestion); the **`porta run`**
-  cobra command (prompts + flags). Self-sufficient: identity comes from the
-  report.
-- **Phase 2:** the **`porta flash`** provision command + the nodus
-  `firmware.config["porta"]` read + early identity seed.
+  engine + injectable runner + compile/relocate via `-m32` + SDK conflict guard);
+  the additive **report identity fields** (`nodes` columns + report ingestion +
+  `docs/PROTOCOL.md`); the **`porta run`** cobra command (prompts + flags).
+  Porta-side and self-sufficiently testable. No envelope fetch (not needed for a
+  payload). **Cross-repo companion (nodus, separate plan):** emit `chip` +
+  `firmware.sdk` in the report — until that lands, a node's SDK stays unknown and
+  `porta run` blocks (the designed bootstrap), but the porta side is fully
+  unit-testable with a crafted report body.
+- **Phase 2:** the **`porta flash`** provision command (chip selection +
+  `toitlang/envelopes` fetch/cache + nodus envelope build + `firmware.config`
+  injection + early identity seed) + the nodus `firmware.config["porta"]` read.
 
 Each phase gets its own implementation plan.
 
 ## 11. Open implementation details to pin (not design risks)
 
-- Exact `toit tool snapshot-to-image` relocation flags for each chip word-size.
-- `toitlang/envelopes` release-asset URL scheme and the cache layout/key
-  (`(chip, sdk)` → envelope path).
-- The on-device API for reading `chip` and the firmware SDK version in nodus.
-- Whether the envelope cache reuses jag's cache dir or porta owns its own.
+- **Pinned:** relocation = `toit compile --snapshot` + `toit tool
+  snapshot-to-image -m32 --format=binary` (all ESP32 are 32-bit; matches nodus
+  `host/build-envelope.sh`). Active SDK version = `toit version`.
+- *(Phase 2)* `toitlang/envelopes` release-asset URL scheme and the cache
+  layout/key (`(chip, sdk)` → envelope path); whether to reuse jag's cache dir.
+- *(nodus companion)* the on-device API for reading `chip` and the firmware SDK
+  version in nodus.
