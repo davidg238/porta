@@ -3,9 +3,13 @@ package portacli
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
+
+// errSentinel is a recognizable listener error for awaitServeExit tests.
+var errSentinel = errors.New("sentinel listener failure")
 
 func TestDefaultAllowCIDRHasRFC1918LoopbackAndTailscale(t *testing.T) {
 	got := defaultAllowCIDR()
@@ -47,48 +51,87 @@ func TestNewServeCmdRegistersFlags(t *testing.T) {
 	}
 }
 
-// TestServeNilHTTPErrChannelBlocksSelect is a focused regression guard
-// for the --http-port 0 bug found in T5 review: a closed channel fired
-// the select arm immediately, exiting the serve in microseconds. The fix
-// uses a nil channel so the arm blocks forever; the test confirms the
-// select arm is reachable but never fires when the channel is nil.
-func TestServeNilHTTPErrChannelBlocksSelect(t *testing.T) {
-	var httpErr chan error // nil, like the --http-port 0 case
+// TestAwaitServeExitDrainsOnCtxCancel is the #7 guard: on SIGINT (ctx
+// cancel) the serve must wait for BOTH listener goroutines to finish their
+// graceful shutdown — draining udpErr and httpErr — before returning, rather
+// than racing the deferred conn/store Close.
+func TestAwaitServeExitDrainsOnCtxCancel(t *testing.T) {
 	udpErr := make(chan error, 1)
+	httpErr := make(chan error, 1)
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // pre-cancel so ctx.Done fires immediately
+	cancel() // SIGINT analog: ctx.Done fires immediately
 
-	got := ""
+	done := make(chan error, 1)
+	go func() { done <- awaitServeExit(ctx, udpErr, httpErr) }()
+
+	// Must not return while either listener is still shutting down.
 	select {
-	case <-udpErr:
-		got = "udp"
-	case <-httpErr:
-		got = "http" // would indicate the bug is back
-	case <-ctx.Done():
-		got = "ctx"
-	}
-	if got != "ctx" {
-		t.Errorf("got %q, want ctx (nil httpErr must not fire; udpErr was empty)", got)
+	case <-done:
+		t.Fatal("returned before draining udpErr/httpErr")
+	case <-time.After(50 * time.Millisecond):
 	}
 
-	// Sanity guard: with a real closed channel (the bug), the http arm
-	// WOULD fire. Confirm that, so the test pins the contrast.
+	// Listeners report clean shutdown; only now may awaitServeExit return.
+	udpErr <- nil
+	httpErr <- nil
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("got %v, want nil", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("did not return after both channels drained")
+	}
+}
+
+// TestAwaitServeExitNilHTTPErr covers --http-port 0: httpErr is nil. The
+// ctx-cancel drain must not deadlock waiting on a nil channel.
+func TestAwaitServeExitNilHTTPErr(t *testing.T) {
+	udpErr := make(chan error, 1)
+	var httpErr chan error // nil, like --http-port 0
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	done := make(chan error, 1)
+	go func() { done <- awaitServeExit(ctx, udpErr, httpErr) }()
+	udpErr <- nil
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("got %v, want nil", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("deadlocked draining a nil httpErr")
+	}
+}
+
+// TestAwaitServeExitPropagatesListenerErrors confirms a listener failure (no
+// ctx cancel) is returned verbatim, and a clean HTTP exit falls through to
+// wait on UDP.
+func TestAwaitServeExitPropagatesListenerErrors(t *testing.T) {
+	ctx := context.Background()
+
+	// UDP listener fails → its error propagates.
+	udpErr := make(chan error, 1)
+	udpErr <- errSentinel
+	if got := awaitServeExit(ctx, udpErr, nil); got != errSentinel {
+		t.Errorf("udp error: got %v, want errSentinel", got)
+	}
+
+	// HTTP fails → its error propagates.
+	udpErr = make(chan error, 1)
+	httpErr := make(chan error, 1)
+	httpErr <- errSentinel
+	if got := awaitServeExit(ctx, udpErr, httpErr); got != errSentinel {
+		t.Errorf("http error: got %v, want errSentinel", got)
+	}
+
+	// HTTP exits cleanly while UDP still running → fall through to UDP.
+	udpErr = make(chan error, 1)
 	httpErr = make(chan error, 1)
-	close(httpErr)
-	got = ""
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
-	timer := time.NewTimer(100 * time.Millisecond)
-	defer timer.Stop()
-	select {
-	case <-httpErr:
-		got = "http"
-	case <-ctx2.Done():
-		got = "ctx"
-	case <-timer.C:
-		got = "timer"
-	}
-	if got != "http" {
-		t.Errorf("with closed channel, expected http arm to fire; got %q", got)
+	httpErr <- nil
+	udpErr <- errSentinel
+	if got := awaitServeExit(ctx, udpErr, httpErr); got != errSentinel {
+		t.Errorf("clean http then udp error: got %v, want errSentinel", got)
 	}
 }

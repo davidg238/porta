@@ -86,23 +86,7 @@ func newServeCmd() *cobra.Command {
 				log.Printf("porta: serving HTTP on %s:%d", httpBind, httpPort)
 			}
 
-			// Either listener exiting OR ctx cancellation completes the
-			// command. Errors from either propagate. A clean HTTP exit
-			// while UDP is still running falls through to wait on UDP.
-			select {
-			case err := <-udpErr:
-				return err
-			case err := <-httpErr:
-				// Reachable only when httpPort > 0 (else httpErr is nil
-				// and this arm blocks forever). Clean HTTP exit while
-				// UDP still running → fall through to wait on UDP.
-				if err == nil {
-					return <-udpErr
-				}
-				return err
-			case <-ctx.Done():
-				return nil
-			}
+			return awaitServeExit(ctx, udpErr, httpErr)
 		},
 	}
 	cmd.Flags().IntVar(&port, "port", 6969, "UDP/TFTP port")
@@ -139,5 +123,33 @@ func serveUDPLoop(ctx context.Context, conn net.PacketConn, srv *tftp.Server) er
 				log.Printf("porta: WriteTo(%s): %v", peer, err)
 			}
 		}
+	}
+}
+
+// awaitServeExit blocks until a listener goroutine exits or ctx is cancelled.
+//
+//   - A listener error (udpErr or non-nil httpErr) propagates verbatim.
+//   - A clean HTTP exit (httpErr delivers nil) while UDP still runs falls
+//     through to wait on UDP.
+//   - On ctx cancel (SIGINT/SIGTERM) it DRAINS both channels first, so the
+//     UDP loop and the HTTP server's 5s graceful Shutdown complete before
+//     RunE returns and its deferred conn/store Close fire (#7). httpErr is
+//     nil in --http-port 0 mode; nil-channel select arms block forever and
+//     the nil guard skips draining it.
+func awaitServeExit(ctx context.Context, udpErr, httpErr <-chan error) error {
+	select {
+	case err := <-udpErr:
+		return err
+	case err := <-httpErr:
+		if err == nil {
+			return <-udpErr
+		}
+		return err
+	case <-ctx.Done():
+		<-udpErr
+		if httpErr != nil {
+			<-httpErr
+		}
+		return nil
 	}
 }
