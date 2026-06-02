@@ -1,9 +1,11 @@
 package portacli
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -102,7 +104,7 @@ func newRunCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", "", "container name (default: source file stem)")
 	cmd.Flags().StringVar(&opts.Lifecycle, "lifecycle", "", "run-once or run-loop (prompted if unset)")
 	cmd.Flags().StringArrayVar(&opts.Triggers, "trigger", nil, "trigger spec (boot, gpio-high=21, …); prompted if unset")
-	cmd.Flags().IntVar(&opts.Runlevel, "runlevel", 3, "runlevel")
+	cmd.Flags().IntVar(&opts.Runlevel, "runlevel", 3, "container start order (default 3)")
 	cmd.Flags().StringVar(&opts.PowerMode, "power-mode", "", "deep-sleep or always-on (optional)")
 	cmd.Flags().BoolVar(&force, "force", false, "deploy even if the build SDK differs from the node's")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "stream every underlying tool call")
@@ -126,8 +128,7 @@ func promptChoice(label string, options []string, def string) string {
 // promptTriggers asks for a space-separated trigger list (empty → none).
 func promptTriggers() []string {
 	fmt.Print("Triggers (space-separated: boot, gpio-high=21, …; empty = none): ")
-	var line string
-	fmt.Scanln(&line)
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return nil
