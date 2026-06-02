@@ -88,6 +88,62 @@ func TestRunServesHealthAndExitsOnCancel(t *testing.T) {
 	}
 }
 
+// TestNewSetsReadHeaderTimeout pins that New configures a positive
+// ReadHeaderTimeout — without it a slow client can hold a handler goroutine
+// open indefinitely by trickling header bytes (Slowloris).
+func TestNewSetsReadHeaderTimeout(t *testing.T) {
+	st := openTestStore(t)
+	srv, err := New(Config{Bind: "127.0.0.1", Port: freePort(t)}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv.http.ReadHeaderTimeout != defaultReadHeaderTimeout {
+		t.Errorf("ReadHeaderTimeout = %v, want %v", srv.http.ReadHeaderTimeout, defaultReadHeaderTimeout)
+	}
+}
+
+// TestReadHeaderTimeoutClosesSlowClient verifies the mechanism end-to-end: a
+// client that opens a connection and never finishes its request headers is
+// dropped by the server once ReadHeaderTimeout elapses (overridden small here
+// to keep the test fast), instead of holding the connection forever.
+func TestReadHeaderTimeoutClosesSlowClient(t *testing.T) {
+	st := openTestStore(t)
+	port := freePort(t)
+	srv, err := New(Config{Bind: "127.0.0.1", Port: port}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.http.ReadHeaderTimeout = 150 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = srv.Run(ctx) }()
+	if err := waitListening(t, port, 500*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	// Partial request: a header line with no terminating blank line, so the
+	// server keeps waiting for headers until ReadHeaderTimeout fires.
+	if _, err := conn.Write([]byte("GET /health HTTP/1.1\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	// Generous client deadline well past the server timeout. If the server had
+	// no header timeout, this Read would block until the deadline (timeout
+	// error); with the timeout, the server closes the conn first → we get a
+	// response or EOF promptly.
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	buf := make([]byte, 256)
+	_, rerr := conn.Read(buf)
+	if ne, ok := rerr.(net.Error); ok && ne.Timeout() {
+		t.Fatal("read hit client deadline: server did not close the slow connection")
+	}
+	// Any non-timeout outcome (EOF or a 408 response) means the server acted.
+}
+
 func TestRunReturnsErrorOnPortInUse(t *testing.T) {
 	st := openTestStore(t)
 	port := freePort(t)

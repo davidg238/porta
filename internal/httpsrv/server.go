@@ -11,6 +11,13 @@ import (
 	"github.com/davidg238/porta/internal/store"
 )
 
+// defaultReadHeaderTimeout bounds how long the server waits for a client to
+// send complete request headers, closing the connection otherwise. Defeats
+// the Slowloris class (trickle-a-byte connection exhaustion). ReadTimeout/
+// WriteTimeout are deliberately left unset so B4c file uploads and SSE
+// streams can run long; ReadHeaderTimeout alone closes the slow-header hole.
+const defaultReadHeaderTimeout = 5 * time.Second
+
 // Config holds the operator HTTP listener configuration. Bind+Port match
 // the cobra --http-bind/--http-port flags; AllowCIDR mirrors the
 // --http-allow-cidr flag (caller passes the raw strings; New runs
@@ -42,8 +49,9 @@ func New(cfg Config, st *store.Store) (*Server, error) {
 	mux.Handle("/health", healthHandler(st))
 	return &Server{
 		http: &http.Server{
-			Addr:    fmt.Sprintf("%s:%d", cfg.Bind, cfg.Port),
-			Handler: AllowlistMiddleware(nets)(mux),
+			Addr:              fmt.Sprintf("%s:%d", cfg.Bind, cfg.Port),
+			Handler:           AllowlistMiddleware(nets)(mux),
+			ReadHeaderTimeout: defaultReadHeaderTimeout,
 		},
 		Mux: mux,
 	}, nil
