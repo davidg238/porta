@@ -225,7 +225,9 @@ Each wake, after reconciling, the node PUTs (WRQ) one JSON object to
   "health": {
     "uptime_us": 1234567,
     "wakes": 42
-  }
+  },
+  "chip": "esp32",
+  "sdk": "v2.0.0-alpha.192"
 }
 ```
 
@@ -241,10 +243,15 @@ Fields:
 | `config` | object | Applied per-app config blob: `app → {key: value}`. May be empty `{}`. |
 | `health.uptime_us` | int | Monotonic uptime in microseconds. |
 | `health.wakes` | int | Cumulative wake count. |
+| `chip` | string (optional) | Node chip model, e.g. `"esp32"`, `"esp32c6"`, `"esp32s3"`. Used by the gateway's `porta run` to pick the flash envelope (Phase 2). Absent on firmware predating identity reporting. |
+| `sdk` | string (optional) | Toit SDK version the node firmware was built with, e.g. `"v2.0.0-alpha.192"`. `porta run` refuses to deploy an image built with a different SDK (overridable with `--force`); absent → `porta run` blocks until the node reports it. |
 
 Gateway ingest (`ReportWriter_` in `gateway/handler.toit`):
 - `apps`, `config`, `health` each default to `{}` if absent (a node that does
   not implement `config` is tolerated; `config` then defaults empty).
+- `chip` / `sdk` are optional self-reported firmware identity. The gateway records
+  them on the node row (self-healing — corrected automatically if a device is
+  reflashed); an absent or empty value never clobbers a previously-known identity.
 - The gateway stores `{"apps":…, "config":…}` as observed-state and `health`
   separately.
 - After committing the report, the gateway runs config **self-heal**: it diffs
@@ -373,3 +380,8 @@ A conforming node MAY omit `config` from its report (it defaults to empty),
 omit optional command args (defaults apply), and implement any transport that
 presents the same TFTP RRQ/WRQ resource surface (WiFi is the only transport
 today; ESP-NOW / BT-mesh are planned behind the same interface).
+
+A conforming node SHOULD report its `chip` / `sdk` identity (§3) so the gateway's
+`porta run` can verify payload/SDK compatibility before deploying; a node that
+omits them still conforms, but `porta run` blocks against it until identity is
+known.
