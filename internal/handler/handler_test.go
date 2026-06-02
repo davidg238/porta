@@ -411,6 +411,26 @@ func TestWriteDataNonScalarValueDegrades(t *testing.T) {
 	}
 }
 
+func TestWriteReportStoresIdentity(t *testing.T) {
+	h, st := newH(t)
+	body := []byte(`{"apps":{},"config":{},"health":{},"chip":"esp32c6","sdk":"v2.0.0-alpha.192"}`)
+	if err := h.Write("report?id=aabbccddeeff", "p:1", body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	n, _ := st.GetNode("aabbccddeeff")
+	if n == nil || n.Chip != "esp32c6" || n.Sdk != "v2.0.0-alpha.192" {
+		t.Fatalf("identity not stored: %+v", n)
+	}
+	// A report without chip/sdk must not clobber the stored identity.
+	if err := h.Write("report?id=aabbccddeeff", "p:1", []byte(`{"apps":{},"config":{}}`)); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = st.GetNode("aabbccddeeff")
+	if n.Chip != "esp32c6" || n.Sdk != "v2.0.0-alpha.192" {
+		t.Errorf("identity clobbered: chip=%q sdk=%q", n.Chip, n.Sdk)
+	}
+}
+
 func TestAcceptWriteRejectsDataWithoutID(t *testing.T) {
 	h, _ := newH(t)
 	if err := h.AcceptWrite("data", "p:1"); err == nil {

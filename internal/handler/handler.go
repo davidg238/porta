@@ -158,6 +158,21 @@ func (h *Handler) writeReport(id, peer string, data []byte) error {
 	if err := h.store.InsertReport(id, observed, health, h.now()); err != nil {
 		return err
 	}
+	// Self-reported firmware identity (additive; absent keys decode to "").
+	strField := func(k string) string {
+		raw, ok := obj[k]
+		if !ok {
+			return ""
+		}
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return ""
+		}
+		return s
+	}
+	if err := h.store.UpdateNodeIdentity(id, strField("chip"), strField("sdk")); err != nil {
+		h.log("porta: identity update error for %s: %v", id, err)
+	}
 	h.reconcileAfterReport(id, field("config"))
 	return nil
 }
