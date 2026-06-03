@@ -166,3 +166,40 @@ func (c *Client) Install(sel, name string, image io.Reader, opts InstallOpts) (i
 	}
 	return r.CommandID, r.NodeID, r.Size, nil
 }
+
+// patchResp decodes a PATCH /api/nodes/{sel} response.
+type patchResp struct {
+	NodeID string `json:"node_id"`
+}
+
+// PatchNode PATCHes only the present (non-nil) fields to /api/nodes/{sel} and
+// returns the server-resolved node id. Used for rename and max-offline, which
+// are gateway-side settings (not device commands).
+func (c *Client) PatchNode(sel string, name *string, maxOfflineS *int64) (string, error) {
+	body := map[string]any{}
+	if name != nil {
+		body["name"] = *name
+	}
+	if maxOfflineS != nil {
+		body["max_offline_s"] = *maxOfflineS
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequest("PATCH",
+		c.baseURL+"/api/nodes/"+url.PathEscape(sel), bytes.NewReader(raw))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	data, err := c.do(req)
+	if err != nil {
+		return "", err
+	}
+	var r patchResp
+	if err := json.Unmarshal(data, &r); err != nil {
+		return "", err
+	}
+	return r.NodeID, nil
+}
