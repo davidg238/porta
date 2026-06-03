@@ -36,14 +36,17 @@ func hasArg(args []string, want string) bool {
 func TestBuildCompilesAndRelocates(t *testing.T) {
 	fr := &fileWritingRunner{imgBytes: []byte("IMAGEBYTES")}
 	ex := NewExecutor(fr, &bytes.Buffer{}, false)
-	img, err := Build(ex, "/tmp/app.toit")
+	img, snap, cleanup, err := Build(ex, "/tmp/app.toit")
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer cleanup()
 	if string(img) != "IMAGEBYTES" {
 		t.Errorf("got %q, want IMAGEBYTES", img)
 	}
-	// Expect a compile step then a snapshot-to-image -m32 --format=binary step.
+	if snap == "" {
+		t.Error("expected a non-empty snapshot path")
+	}
 	if len(fr.calls) != 2 {
 		t.Fatalf("calls=%v", fr.calls)
 	}

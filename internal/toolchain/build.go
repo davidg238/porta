@@ -6,27 +6,37 @@ import (
 )
 
 // Build compiles a Toit app to a snapshot, relocates it to a 32-bit binary
-// container image, and returns the image bytes. All current ESP32 chips are
-// 32-bit, so the relocation is `-m32 --format=binary` (the recipe nodus uses in
-// host/build-envelope.sh); the image couples to the active SDK version, checked
-// separately via CheckSDK. Temp artifacts are cleaned up.
-func Build(ex *Executor, appPath string) ([]byte, error) {
+// container image, and returns the image bytes, the on-disk snapshot path, and a
+// cleanup func the caller must invoke (it removes the temp dir holding the
+// snapshot). The snapshot is retained until cleanup so the caller can pass it to
+// RetainSnapshot for panic decoding. All current ESP32 chips are 32-bit, so the
+// relocation is `-m32 --format=binary`; the image couples to the active SDK
+// version, checked separately via CheckSDK.
+func Build(ex *Executor, appPath string) (img []byte, snapshotPath string, cleanup func(), err error) {
+	noop := func() {}
 	dir, err := os.MkdirTemp("", "porta-build-")
 	if err != nil {
-		return nil, err
+		return nil, "", noop, err
 	}
-	defer os.RemoveAll(dir)
+	cleanup = func() { os.RemoveAll(dir) }
 
 	snap := filepath.Join(dir, "app.snapshot")
-	img := filepath.Join(dir, "app.bin")
+	bin := filepath.Join(dir, "app.bin")
 
 	if _, err := ex.Run("compile "+filepath.Base(appPath), "toit",
 		"compile", "--snapshot", "-o", snap, appPath); err != nil {
-		return nil, err
+		cleanup()
+		return nil, "", noop, err
 	}
 	if _, err := ex.Run("relocate (esp32, -m32)", "toit",
-		"tool", "snapshot-to-image", "-m32", "--format=binary", "-o", img, snap); err != nil {
-		return nil, err
+		"tool", "snapshot-to-image", "-m32", "--format=binary", "-o", bin, snap); err != nil {
+		cleanup()
+		return nil, "", noop, err
 	}
-	return os.ReadFile(img)
+	b, err := os.ReadFile(bin)
+	if err != nil {
+		cleanup()
+		return nil, "", noop, err
+	}
+	return b, snap, cleanup, nil
 }
