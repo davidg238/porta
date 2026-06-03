@@ -69,5 +69,5 @@ func (h *Handler) handleContainerInstall(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeOK(w, map[string]any{"command_id": cmdID, "size": hdr.Size})
+	writeOK(w, map[string]any{"command_id": cmdID, "node_id": id, "size": hdr.Size})
 }

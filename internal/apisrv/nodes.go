@@ -132,5 +132,5 @@ func (h *Handler) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeOK(w, map[string]any{})
+	writeOK(w, map[string]any{"node_id": id})
 }

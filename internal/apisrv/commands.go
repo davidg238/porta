@@ -41,7 +41,7 @@ func (h *Handler) handleCommand(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeOK(w, map[string]any{"command_id": cmdID})
+	writeOK(w, map[string]any{"command_id": cmdID, "node_id": id})
 }
 
 // dispatch maps a verb+args to the matching control call. Errors are caller-

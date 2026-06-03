@@ -209,3 +209,24 @@ func TestPostCommandEnsuresNode(t *testing.T) {
 		t.Fatalf("queued=%+v", cmd)
 	}
 }
+
+// TestPostCommandEchoesNodeID asserts the write response carries the resolved
+// node id (resolving by name proves it is the 12-hex id, not the selector).
+func TestPostCommandEchoesNodeID(t *testing.T) {
+	h, st := newTestHandler(t)
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+	st.SetNodeName("aabbccddeeff", "blinky")
+	rec := postCmd(t, h, "blinky", `{"verb":"set-console","args":{"state":"on"}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			NodeID string `json:"node_id"`
+		} `json:"data"`
+	}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if resp.Data.NodeID != "aabbccddeeff" {
+		t.Errorf("node_id=%q, want aabbccddeeff", resp.Data.NodeID)
+	}
+}

@@ -153,6 +153,30 @@ func TestPostContainerEmptyName(t *testing.T) {
 	}
 }
 
+// TestInstallEchoesNodeID asserts the install response carries the resolved id.
+func TestInstallEchoesNodeID(t *testing.T) {
+	h, st := newTestHandler(t)
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+	st.SetNodeName("aabbccddeeff", "blinky")
+
+	rec := postContainer(t, h, "blinky", []byte("fake-image-bytes"), map[string]string{
+		"name": "blink", "lifecycle": "run-once", "runlevel": "3",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			NodeID string `json:"node_id"`
+			Size   int64  `json:"size"`
+		} `json:"data"`
+	}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if resp.Data.NodeID != "aabbccddeeff" {
+		t.Errorf("node_id=%q", resp.Data.NodeID)
+	}
+}
+
 func TestPostContainerOversizeRejected(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
