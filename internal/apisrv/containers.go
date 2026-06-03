@@ -20,6 +20,10 @@ func (h *Handler) handleContainerInstall(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+	if err := h.st.EnsureNode(id, h.now()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
 	if err := r.ParseMultipartForm(maxUpload); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())

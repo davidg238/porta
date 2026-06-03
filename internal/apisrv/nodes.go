@@ -111,6 +111,10 @@ func (h *Handler) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if err := h.st.EnsureNode(id, h.now()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	var p nodePatch
 	if err := json.Unmarshal(readBody(r), &p); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())

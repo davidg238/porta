@@ -186,3 +186,26 @@ func TestPostCommandUnknownNode(t *testing.T) {
 		t.Fatalf("status=%d", rec.Code)
 	}
 }
+
+// TestPostCommandEnsuresNode verifies EnsureNode-on-write: a command for a
+// well-formed but never-seen MAC creates the node row and queues the command
+// (preserves bench pre-provisioning).
+func TestPostCommandEnsuresNode(t *testing.T) {
+	h, st := newTestHandler(t)
+	// "aabbccddeeff" is never touched — no node row exists.
+	rec := postCmd(t, h, "aabbccddeeff", `{"verb":"set-console","args":{"state":"on"}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	n, err := st.GetNode("aabbccddeeff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n == nil {
+		t.Fatal("EnsureNode-on-write should have created the node row")
+	}
+	cmd, _ := st.NextUndelivered("aabbccddeeff")
+	if cmd == nil || cmd.Verb != "set-console" {
+		t.Fatalf("queued=%+v", cmd)
+	}
+}

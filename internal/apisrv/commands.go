@@ -22,6 +22,12 @@ func (h *Handler) handleCommand(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// EnsureNode-on-write: a well-formed MAC may be addressed before its first
+	// poll (bench pre-provisioning). Reads stay non-creating.
+	if err := h.st.EnsureNode(id, h.now()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	var req commandReq
 	// UseNumber keeps integer-shaped config values from becoming floats.
 	dec := json.NewDecoder(bytes.NewReader(readBody(r)))
