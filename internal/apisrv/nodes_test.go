@@ -110,6 +110,26 @@ func TestGetNodeDetailUnknown(t *testing.T) {
 	}
 }
 
+// TestPatchNodeEchoesNodeID asserts PATCH returns the resolved node id.
+func TestPatchNodeEchoesNodeID(t *testing.T) {
+	h, st := newTestHandler(t)
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+	st.SetNodeName("aabbccddeeff", "blinky")
+	rec := patchNode(t, h, "blinky", `{"name":"renamed"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			NodeID string `json:"node_id"`
+		} `json:"data"`
+	}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if resp.Data.NodeID != "aabbccddeeff" {
+		t.Errorf("node_id=%q", resp.Data.NodeID)
+	}
+}
+
 func TestGetNodesList(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)

@@ -1,68 +1,103 @@
 package portacli
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
+	"github.com/davidg238/porta/internal/apiclient"
 	"github.com/davidg238/porta/internal/command"
 	"github.com/davidg238/porta/internal/config"
-	"github.com/davidg238/porta/internal/control"
-	"github.com/davidg238/porta/internal/store"
 	"github.com/spf13/cobra"
 )
 
-type installOpts struct {
-	CRC       int64 // 0 → compute from file
-	IntervalS int64
-	Triggers  []string
-	Runlevel  int
-	Lifecycle string
+// --- testable cores: each takes an *apiclient.Client and the RAW -d selector
+// (the server resolves it); confirmation lines lead with the resolved node_id. ---
+
+// runDeviceSet infers the scalar type from the operator's string and enqueues a
+// set command via the API.
+func runDeviceSet(out io.Writer, c *apiclient.Client, sel, app, key, valueStr string) error {
+	value := config.InferScalar(valueStr)
+	cmdID, nodeID, err := c.Command(sel, "set", map[string]any{"app": app, "key": key, "value": value})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s: enqueued set %s.%s=%v (command #%d)\n", nodeID, app, key, value, cmdID)
+	return nil
 }
 
-// runInstall reads a .bin, registers it under its CRC32-IEEE, and enqueues a run.
-func runInstall(st *store.Store, id, name, path string, opts installOpts, now int64) error {
+// runDeviceSetConsole enqueues a set-console command. The on/off token is
+// validated server-side.
+func runDeviceSetConsole(out io.Writer, c *apiclient.Client, sel, state string) error {
+	cmdID, nodeID, err := c.Command(sel, "set-console", map[string]any{"state": state})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s: enqueued set-console %s (command #%d)\n", nodeID, state, cmdID)
+	return nil
+}
+
+// runDeviceSetPowerMode enqueues a set-power-mode command. The mode is validated
+// server-side (command.SetPowerMode).
+func runDeviceSetPowerMode(out io.Writer, c *apiclient.Client, sel, mode string) error {
+	cmdID, nodeID, err := c.Command(sel, "set-power-mode", map[string]any{"mode": mode})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s: enqueued set-power-mode %s (command #%d)\n", nodeID, mode, cmdID)
+	return nil
+}
+
+// runSetPollInterval enqueues a set-poll-interval command. The duration string
+// is parsed server-side. Silent on success (parity with the pre-S2 CLI).
+func runSetPollInterval(c *apiclient.Client, sel, dur string) error {
+	_, _, err := c.Command(sel, "set-poll-interval", map[string]any{"interval": dur})
+	return err
+}
+
+// runUninstall enqueues a stop command.
+func runUninstall(out io.Writer, c *apiclient.Client, sel, name string) error {
+	cmdID, nodeID, err := c.Command(sel, "stop", map[string]any{"name": name})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s: enqueued stop %s (command #%d)\n", nodeID, name, cmdID)
+	return nil
+}
+
+// runInstall uploads a prebuilt .bin via multipart; the server computes the CRC
+// and registers the payload. The confirmation drops the CRC (visible via
+// `porta log`) and uses the server-reported size.
+func runInstall(out io.Writer, c *apiclient.Client, sel, name, path string, opts apiclient.InstallOpts) error {
 	if !strings.HasSuffix(path, ".bin") {
 		return fmt.Errorf("unsupported file %q (B1 accepts only prebuilt .bin)", path)
 	}
-	// Read the file first so we can compute the CRC for the confirmation printf.
-	img, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	// Resolve CRC before delegating so we can print the exact value.
-	crc := opts.CRC
-	if crc == 0 {
-		crc = int64(command.CRC32(img))
-	}
-	// Warn early if no triggers were given.
+	defer f.Close()
 	if len(opts.Triggers) == 0 && opts.IntervalS == 0 {
-		fmt.Printf("note: no triggers given — %q installed but not started\n", name)
+		fmt.Fprintf(out, "note: no triggers given — %q installed but not started\n", name)
 	}
-	cmdID, err := control.Install(st, id, name, bytes.NewReader(img), control.InstallOpts{
-		CRC: crc, IntervalS: opts.IntervalS, Triggers: opts.Triggers,
-		Runlevel: opts.Runlevel, Lifecycle: opts.Lifecycle,
-	}, "cli", now)
+	cmdID, nodeID, size, err := c.Install(sel, name, f, opts)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s: registered %s@%d (%d B); enqueued run (command #%d)\n", id, name, crc, len(img), cmdID)
+	fmt.Fprintf(out, "%s: registered %s (%d B); enqueued run (command #%d)\n", nodeID, name, size, cmdID)
 	return nil
 }
 
-func runUninstall(st *store.Store, id, name string, now int64) error {
-	cmdID, err := control.Uninstall(st, id, name, "cli", now)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("%s: enqueued stop %s (command #%d)\n", id, name, cmdID)
-	return nil
+// runDeviceName renames a node (gateway-side). Silent on success (parity).
+func runDeviceName(c *apiclient.Client, sel, newName string) error {
+	_, err := c.PatchNode(sel, &newName, nil)
+	return err
 }
 
-func runSetPollInterval(st *store.Store, id string, secs, now int64) error {
-	_, err := control.SetPollInterval(st, id, secs, "cli", now)
+// runSetMaxOffline sets the offline threshold (gateway-side). Silent on success.
+func runSetMaxOffline(c *apiclient.Client, sel string, secs int64) error {
+	_, err := c.PatchNode(sel, nil, &secs)
 	return err
 }
 
@@ -70,26 +105,15 @@ func runSetPollInterval(st *store.Store, id string, secs, now int64) error {
 
 func newContainerInstallCmd() *cobra.Command {
 	var device string
-	var opts installOpts
+	var opts apiclient.InstallOpts
 	var interval string
 	cmd := &cobra.Command{
 		Use:   "install <name> <file.bin>",
 		Short: "Register a prebuilt image and enqueue run",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
-			if err := st.EnsureNode(id, nowSec()); err != nil {
-				return err
-			}
 			if interval != "" {
+				var err error
 				if opts.IntervalS, err = command.ParseDurationSeconds(interval); err != nil {
 					return err
 				}
@@ -97,11 +121,11 @@ func newContainerInstallCmd() *cobra.Command {
 			if opts.Lifecycle == "" {
 				opts.Lifecycle = "run-once"
 			}
-			return runInstall(st, id, args[0], args[1], opts, nowSec())
+			c := apiclient.New(serverURL())
+			return runInstall(cmd.OutOrStdout(), c, device, args[0], args[1], opts)
 		},
 	}
 	deviceFlag(cmd, &device)
-	cmd.Flags().Int64Var(&opts.CRC, "crc", 0, "override the computed CRC32")
 	cmd.Flags().StringVar(&interval, "interval", "", "interval trigger (e.g. 30s)")
 	cmd.Flags().StringArrayVar(&opts.Triggers, "trigger", nil, "trigger spec (boot, gpio-high=21, …); repeatable")
 	cmd.Flags().IntVar(&opts.Runlevel, "runlevel", 3, "runlevel")
@@ -116,19 +140,8 @@ func newContainerUninstallCmd() *cobra.Command {
 		Short: "Enqueue stop for an app",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
-			if err := st.EnsureNode(id, nowSec()); err != nil {
-				return err
-			}
-			return runUninstall(st, id, args[0], nowSec())
+			c := apiclient.New(serverURL())
+			return runUninstall(cmd.OutOrStdout(), c, device, args[0])
 		},
 	}
 	deviceFlag(cmd, &device)
@@ -139,26 +152,11 @@ func newDeviceSetPollIntervalCmd() *cobra.Command {
 	var device string
 	cmd := &cobra.Command{
 		Use:   "set-poll-interval <dur>",
-		Short: "Enqueue a poll-interval change (and cache it)",
+		Short: "Enqueue a poll-interval change",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
-			if err := st.EnsureNode(id, nowSec()); err != nil {
-				return err
-			}
-			secs, err := command.ParseDurationSeconds(args[0])
-			if err != nil {
-				return err
-			}
-			return runSetPollInterval(st, id, secs, nowSec())
+			c := apiclient.New(serverURL())
+			return runSetPollInterval(c, device, args[0])
 		},
 	}
 	deviceFlag(cmd, &device)
@@ -172,23 +170,12 @@ func newDeviceSetMaxOfflineCmd() *cobra.Command {
 		Short: "Set the offline threshold (gateway-side only)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
-			if err := st.EnsureNode(id, nowSec()); err != nil {
-				return err
-			}
 			secs, err := command.ParseDurationSeconds(args[0])
 			if err != nil {
 				return err
 			}
-			return control.SetMaxOffline(st, id, secs)
+			c := apiclient.New(serverURL())
+			return runSetMaxOffline(c, device, secs)
 		},
 	}
 	deviceFlag(cmd, &device)
@@ -202,36 +189,12 @@ func newDeviceNameCmd() *cobra.Command {
 		Short: "Override the auto-assigned friendly name",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
-			if err := st.EnsureNode(id, nowSec()); err != nil {
-				return err
-			}
-			return control.Rename(st, id, args[0])
+			c := apiclient.New(serverURL())
+			return runDeviceName(c, device, args[0])
 		},
 	}
 	deviceFlag(cmd, &device)
 	return cmd
-}
-
-// runDeviceSet is the testable core of `porta device set`: it infers the
-// scalar type from the operator's string, enqueues a set command tagged
-// issued_by="cli", and prints a confirmation line to out.
-func runDeviceSet(out io.Writer, st *store.Store, id, app, key, valueStr string, now int64) error {
-	value := config.InferScalar(valueStr)
-	cmdID, err := control.Set(st, id, app, key, value, "cli", now)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "%s: enqueued set %s.%s=%v (command #%d)\n", id, app, key, value, cmdID)
-	return nil
 }
 
 func newDeviceSetCmd() *cobra.Command {
@@ -241,56 +204,12 @@ func newDeviceSetCmd() *cobra.Command {
 		Short: "Enqueue a per-app config write (set verb)",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
-			if err := st.EnsureNode(id, nowSec()); err != nil {
-				return err
-			}
-			return runDeviceSet(cmd.OutOrStdout(), st, id, args[0], args[1], args[2], nowSec())
+			c := apiclient.New(serverURL())
+			return runDeviceSet(cmd.OutOrStdout(), c, device, args[0], args[1], args[2])
 		},
 	}
 	deviceFlag(cmd, &device)
 	return cmd
-}
-
-// runDeviceSetConsole is the testable core of `porta device set-console`:
-// it validates the state token, enqueues a set-console command tagged
-// issued_by="cli", and prints a confirmation line.
-func runDeviceSetConsole(out io.Writer, st *store.Store, id, state string, now int64) error {
-	var on bool
-	switch state {
-	case "on":
-		on = true
-	case "off":
-		on = false
-	default:
-		return fmt.Errorf("set-console: state must be 'on' or 'off', got %q", state)
-	}
-	cmdID, err := control.SetConsole(st, id, on, "cli", now)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "%s: enqueued set-console %s (command #%d)\n", id, state, cmdID)
-	return nil
-}
-
-// runDeviceSetPowerMode is the testable core of `porta device set-power-mode`:
-// it enqueues a set-power-mode command tagged issued_by="cli" and prints a
-// confirmation line. Mode validation lives in command.SetPowerMode.
-func runDeviceSetPowerMode(out io.Writer, st *store.Store, id, mode string, now int64) error {
-	cmdID, err := control.SetPowerMode(st, id, mode, "cli", now)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "%s: enqueued set-power-mode %s (command #%d)\n", id, mode, cmdID)
-	return nil
 }
 
 func newDeviceSetPowerModeCmd() *cobra.Command {
@@ -300,19 +219,8 @@ func newDeviceSetPowerModeCmd() *cobra.Command {
 		Short: "Set a node's power mode (always-on keeps run-loop daemons alive)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
-			if err := st.EnsureNode(id, nowSec()); err != nil {
-				return err
-			}
-			return runDeviceSetPowerMode(cmd.OutOrStdout(), st, id, args[0], nowSec())
+			c := apiclient.New(serverURL())
+			return runDeviceSetPowerMode(cmd.OutOrStdout(), c, device, args[0])
 		},
 	}
 	deviceFlag(cmd, &device)
@@ -326,19 +234,8 @@ func newDeviceSetConsoleCmd() *cobra.Command {
 		Short: "Toggle a node's console/telemetry forwarding",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
-			if err := st.EnsureNode(id, nowSec()); err != nil {
-				return err
-			}
-			return runDeviceSetConsole(cmd.OutOrStdout(), st, id, args[0], nowSec())
+			c := apiclient.New(serverURL())
+			return runDeviceSetConsole(cmd.OutOrStdout(), c, device, args[0])
 		},
 	}
 	deviceFlag(cmd, &device)

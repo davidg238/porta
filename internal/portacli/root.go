@@ -27,6 +27,8 @@ func NewRootCmd() *cobra.Command {
 		Short: "porta — northbound gateway for nodus-style nodes",
 	}
 	root.PersistentFlags().StringVar(&dbPath, "db", "porta.db", "SQLite database path")
+	root.PersistentFlags().StringVar(&serverFlag, "server", "",
+		"porta server base URL for write commands (default $PORTA_SERVER or http://localhost:6970)")
 	root.AddCommand(
 		newServeCmd(),
 		newScanCmd(),

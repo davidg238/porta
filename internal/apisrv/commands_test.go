@@ -186,3 +186,47 @@ func TestPostCommandUnknownNode(t *testing.T) {
 		t.Fatalf("status=%d", rec.Code)
 	}
 }
+
+// TestPostCommandEnsuresNode verifies EnsureNode-on-write: a command for a
+// well-formed but never-seen MAC creates the node row and queues the command
+// (preserves bench pre-provisioning).
+func TestPostCommandEnsuresNode(t *testing.T) {
+	h, st := newTestHandler(t)
+	// "aabbccddeeff" is never touched — no node row exists.
+	rec := postCmd(t, h, "aabbccddeeff", `{"verb":"set-console","args":{"state":"on"}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	n, err := st.GetNode("aabbccddeeff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n == nil {
+		t.Fatal("EnsureNode-on-write should have created the node row")
+	}
+	cmd, _ := st.NextUndelivered("aabbccddeeff")
+	if cmd == nil || cmd.Verb != "set-console" {
+		t.Fatalf("queued=%+v", cmd)
+	}
+}
+
+// TestPostCommandEchoesNodeID asserts the write response carries the resolved
+// node id (resolving by name proves it is the 12-hex id, not the selector).
+func TestPostCommandEchoesNodeID(t *testing.T) {
+	h, st := newTestHandler(t)
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+	st.SetNodeName("aabbccddeeff", "blinky")
+	rec := postCmd(t, h, "blinky", `{"verb":"set-console","args":{"state":"on"}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			NodeID string `json:"node_id"`
+		} `json:"data"`
+	}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if resp.Data.NodeID != "aabbccddeeff" {
+		t.Errorf("node_id=%q, want aabbccddeeff", resp.Data.NodeID)
+	}
+}

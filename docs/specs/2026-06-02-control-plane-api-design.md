@@ -146,7 +146,7 @@ stays in the callers").
 | `set-power-mode` | `{mode}` | `control.SetPowerMode` |
 | `stop` | `{name}` | `control.Uninstall` |
 
-Response: `{ "ok": true, "data": { "command_id": 42 }, "error": "" }`.
+Response: `{ "ok": true, "data": { "command_id": 42, "node_id": "aabbccddeeff" }, "error": "" }`.
 
 > **No `run` verb here.** Running a container always needs the image: the protocol
 > `run` command carries name + size + CRC32, and `control.Install` is the single
@@ -164,11 +164,11 @@ and a repeatable `trigger` part (singular, matching the CLI `--trigger` flag). M
 to `control.Install` (size + CRC32 computed server-side); the upload is capped via
 `http.MaxBytesReader` (the same `maxUpload` mechanism `web.postInstall` uses, though
 the API handler additionally honours `runlevel`/`trigger`, which the web handler
-ignores). Response: `{ ok, data:{ command_id, size }, error }`.
+ignores). Response: `{ ok, data:{ command_id, node_id, size }, error }`.
 
 > The CRC32 is computed inside `control.Install` and stored in the queued `run`
 > command's args (so the node verifies its download); `Install` returns only the
-> command id, so the response carries `{command_id, size}` and the CRC is read back
+> command id, so the response carries `{command_id, node_id, size}` and the CRC is read back
 > via `GET /api/nodes/{sel}/commands` rather than recomputed here.
 
 **`PATCH /api/nodes/{sel}`** — Content-Type `application/json`. Node-management
@@ -180,7 +180,18 @@ settings, not device commands:
 
 Both fields optional; apply whichever is present (rename / set-max-offline). Kept
 separate from the command queue, mirroring the web's gw-settings-vs-actions split.
-Response: `{ ok, data:{ }, error }`.
+Response: `{ ok, data:{ node_id }, error }`.
+
+### S2 backport (2026-06-02)
+
+The three write responses now also carry `node_id` (the server-resolved 12-hex
+id), and the write handlers call `EnsureNode` after selector resolution so a
+well-formed MAC can be addressed before its first poll (bench pre-provisioning).
+Both changes are additive and backward-compatible. Response shapes:
+
+- `POST /api/nodes/{sel}/commands` → `{ command_id, node_id }`
+- `POST /api/nodes/{sel}/containers` → `{ command_id, node_id, size }`
+- `PATCH /api/nodes/{sel}` → `{ node_id }`
 
 ### Reads
 

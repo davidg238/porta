@@ -20,6 +20,10 @@ func (h *Handler) handleContainerInstall(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+	if err := h.st.EnsureNode(id, h.now()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
 	if err := r.ParseMultipartForm(maxUpload); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -65,5 +69,5 @@ func (h *Handler) handleContainerInstall(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeOK(w, map[string]any{"command_id": cmdID, "size": hdr.Size})
+	writeOK(w, map[string]any{"command_id": cmdID, "node_id": id, "size": hdr.Size})
 }
