@@ -3,8 +3,11 @@ package portacli
 
 import (
 	"fmt"
+	"io"
 	"strings"
+	"time"
 
+	"github.com/davidg238/porta/internal/apiclient"
 	"github.com/davidg238/porta/internal/toolchain"
 )
 
@@ -32,4 +35,47 @@ func (d jagDecoder) Decode(blob string) (string, error) {
 		return "", fmt.Errorf("jag decode: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// panicTime formats a panic row's epoch-seconds timestamp for display.
+func panicTime(ts int64) string {
+	return time.Unix(ts, 0).Format("2006-01-02 15:04:05")
+}
+
+// indentLines prefixes every line of s with prefix.
+func indentLines(s, prefix string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = prefix + l
+	}
+	return strings.Join(lines, "\n")
+}
+
+// renderPanic writes a panic row: a "‼ PANIC <time>" header, then the decoded
+// trace (indented) or — on decode failure or a nil decoder — the raw blob plus
+// a hint that the snapshot lives where the image was built.
+func renderPanic(out io.Writer, r apiclient.DataRow, dec panicDecoder) {
+	fmt.Fprintf(out, "‼ PANIC  %s\n", panicTime(r.TS))
+	if dec != nil {
+		if trace, err := dec.Decode(r.Text); err == nil {
+			fmt.Fprintln(out, indentLines(trace, "  "))
+			return
+		}
+	}
+	fmt.Fprintf(out, "  (no local snapshot — decode where the image was built)\n  jag decode %s\n", r.Text)
+}
+
+// panicSummary is the one-line summary for `panic list`: the first non-empty
+// decoded line, or a fallback marker when it cannot decode.
+func panicSummary(r apiclient.DataRow, dec panicDecoder) string {
+	if dec != nil {
+		if trace, err := dec.Decode(r.Text); err == nil {
+			for _, l := range strings.Split(trace, "\n") {
+				if s := strings.TrimSpace(l); s != "" {
+					return s
+				}
+			}
+		}
+	}
+	return "(no local snapshot — decode where built)"
 }
