@@ -1,7 +1,8 @@
-// Package apiclient is the write-side HTTP client for the porta control-plane
-// API (internal/apisrv). It is cobra-free and store-free: the CLI's mutating
+// Package apiclient is the HTTP client for the porta control-plane API
+// (internal/apisrv). It is cobra-free and store-free: the CLI's mutating
 // commands use it to POST/PATCH the server instead of opening the store, which
-// keeps the server the single writer (one trustworthy audit trail).
+// keeps the server the single writer (one trustworthy audit trail). It also
+// carries one narrow read — NodeIdentity — for `porta run`'s SDK guard.
 package apiclient
 
 import (
@@ -202,4 +203,30 @@ func (c *Client) PatchNode(sel string, name *string, maxOfflineS *int64) (string
 		return "", err
 	}
 	return r.NodeID, nil
+}
+
+// identityResp decodes just the chip/sdk fields of a GET /api/nodes/{sel} detail.
+type identityResp struct {
+	Chip string `json:"chip"`
+	Sdk  string `json:"sdk"`
+}
+
+// NodeIdentity fetches the node's reported chip/sdk (GET /api/nodes/{sel}), for
+// `porta run`'s SDK guard. The full node-detail read stays deferred (S2). A node
+// that exists but hasn't reported yet returns ("", "", nil); an unknown node
+// surfaces the server's 404 error string. Other detail fields are ignored.
+func (c *Client) NodeIdentity(sel string) (chip, sdk string, err error) {
+	req, err := http.NewRequest("GET", c.baseURL+"/api/nodes/"+url.PathEscape(sel), nil)
+	if err != nil {
+		return "", "", err
+	}
+	data, err := c.do(req)
+	if err != nil {
+		return "", "", err
+	}
+	var r identityResp
+	if err := json.Unmarshal(data, &r); err != nil {
+		return "", "", err
+	}
+	return r.Chip, r.Sdk, nil
 }
