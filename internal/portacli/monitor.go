@@ -7,55 +7,73 @@ import (
 	"io"
 	"time"
 
+	"github.com/davidg238/porta/internal/apiclient"
 	"github.com/davidg238/porta/internal/command"
 	"github.com/davidg238/porta/internal/store"
 	"github.com/davidg238/porta/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
-// runMonitor is the testable core of `porta monitor`. It prints the
-// data_log rows for (id, sinceS look-back, kind filter), formatted via
-// telemetry.FormatLine. If follow=true, it polls every pollInterval until
-// ctx is cancelled, advancing the watermark by (last+1) to dedup. The
-// boundary-row edge case (rows sharing the poll-tick ts) is accepted as-is
-// (see spec §7).
-func runMonitor(ctx context.Context, out io.Writer, st *store.Store,
-	id string, sinceS int64, kind string, follow bool,
+// telemetryReader is the slice of apiclient.Client that monitor needs, so the
+// follow loop can be tested with an in-memory fake.
+type telemetryReader interface {
+	QueryTelemetryWindow(sel string, since, until int64, kind string, limit int) ([]apiclient.DataRow, error)
+	QueryTelemetryAfter(sel string, after int64, kind string, limit int) ([]apiclient.DataRow, error)
+}
+
+// toStoreRow adapts an apiclient.DataRow to the store.DataRow telemetry.FormatLine
+// expects, so monitor's output is byte-for-byte identical to the db-backed past.
+func toStoreRow(r apiclient.DataRow) store.DataRow {
+	return store.DataRow{
+		TS: r.TS, Seq: r.Seq, Kind: r.Kind, Name: r.Name,
+		Value: r.Value, Text: r.Text, ValueType: r.ValueType,
+	}
+}
+
+// runMonitor is the testable core of `porta monitor`. It prints the node's
+// telemetry over the API: first the ts window [now-sinceS, now], then — if
+// follow — it polls every pollInterval for rows with id past the highest id
+// seen, advancing an exact id cursor (no timestamp-tie boundary case). It
+// returns nil on ctx cancellation (Ctrl-C).
+func runMonitor(ctx context.Context, out io.Writer, c telemetryReader,
+	sel string, sinceS int64, kind string, follow bool,
 	now func() int64, pollInterval time.Duration,
 ) error {
 	until := now()
-	since := until - sinceS
-	rows, err := st.QueryData(id, since, until, kind)
+	rows, err := c.QueryTelemetryWindow(sel, until-sinceS, until, kind, 0)
 	if err != nil {
 		return err
 	}
+	var cursor int64
 	for _, r := range rows {
-		fmt.Fprintln(out, telemetry.FormatLine(r))
+		fmt.Fprintln(out, telemetry.FormatLine(toStoreRow(r)))
+		if r.ID > cursor {
+			cursor = r.ID
+		}
 	}
 	if !follow {
 		return nil
 	}
-	last := until
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			err := ctx.Err()
-			if err == context.Canceled {
+			if ctx.Err() == context.Canceled {
 				return nil
 			}
-			return err
+			return ctx.Err()
 		case <-ticker.C:
-			t := now()
-			rows, err := st.QueryData(id, last+1, t, kind)
+			rows, err := c.QueryTelemetryAfter(sel, cursor, kind, 0)
 			if err != nil {
 				return err
 			}
 			for _, r := range rows {
-				fmt.Fprintln(out, telemetry.FormatLine(r))
+				fmt.Fprintln(out, telemetry.FormatLine(toStoreRow(r)))
+				if r.ID > cursor {
+					cursor = r.ID
+				}
 			}
-			last = t
 		}
 	}
 }
@@ -65,17 +83,8 @@ func newMonitorCmd() *cobra.Command {
 	var follow bool
 	cmd := &cobra.Command{
 		Use:   "monitor",
-		Short: "Print a node's telemetry; --follow tails new rows as wakes deliver them",
+		Short: "Print a node's telemetry over the API; --follow tails new rows",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			st, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
 			sinceS := int64(3600)
 			if since != "" {
 				s, err := command.ParseDurationSeconds(since)
@@ -84,12 +93,13 @@ func newMonitorCmd() *cobra.Command {
 				}
 				sinceS = s
 			}
-			return runMonitor(cmd.Context(), cmd.OutOrStdout(), st, id, sinceS, kind, follow, nowSec, 2*time.Second)
+			c := apiclient.New(serverURL())
+			return runMonitor(cmd.Context(), cmd.OutOrStdout(), c, device, sinceS, kind, follow, nowSec, 2*time.Second)
 		},
 	}
 	deviceFlag(cmd, &device)
 	cmd.Flags().StringVar(&since, "since", "", "look-back window, e.g. 30m, 1h (default 1h)")
 	cmd.Flags().StringVar(&kind, "kind", "", "filter to 'log' or 'metric'")
-	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "poll the store and tail new rows")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "poll the server and tail new rows")
 	return cmd
 }
