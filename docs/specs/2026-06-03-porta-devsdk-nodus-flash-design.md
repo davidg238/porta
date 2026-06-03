@@ -90,13 +90,20 @@ porta/                              module: github.com/davidg238/porta
 │                                   apisrv, httpsrv, mcpsrv, web, control, telemetry, config
 ├── devsdk/                         NEW, PUBLIC (importable by node repos):
 │   ├── apiclient/                  HTTP control-plane client (promoted from internal/apiclient)
-│   ├── opverbs/                    neutral verbs: list · log · monitor (composable cobra cmds)
-│   ├── provision/                  WiFi + gateway-addr firmware.config injection
-│   ├── flash/                      flash ORCHESTRATION (transport-agnostic interface + jag wrap)
-│   ├── narrate/                    apt-style narration (default tidy summary, -v transcript)
-│   └── exec/                       Runner iface + ExecRunner (promoted from internal/toolchain)
-├── docs/PROTOCOL.md                southbound contract (the wire)
+│   ├── exec/                       injectable narrating runner: Runner+ExecRunner+Executor
+│   │                               (promoted from internal/toolchain/exec.go — one cohesive pkg)
+│   ├── provision/                  gateway-addr firmware.config["porta"] shape + render
+│   ├── (flash/   — DEFERRED to C3: NEUTRAL interface only, shape derived from the real
+│   │              nodus flasher then promoted here if nodus-st reuses it; the jag-specific
+│   │              wrapper is Toit/ESP code → lives in nodus/tool/flash, NOT devsdk)
+│   └── (opverbs/ — DEFERRED: extracting list/log/monitor cobra cmds is entangled with
+│                  porta root flags+store and off the nodus critical path; do when a
+│                  frontend actually needs hosted neutral verbs)
+├── docs/PROTOCOL.md                southbound contract (the wire) — keeps the NEUTRAL
+│                                   kind:"panic" envelope; payload+decode are node-defined
 └── docs/DEVSDK.md                  NEW: northbound contract (HTTP API shape + dev-SDK surface)
+                                    — the PROTOCOL.md peer for tooling
+   (docs/PANIC-REPORTING.md — Toit-specific payload+jag-decode recipe — MOVES to nodus in C2)
 ```
 
 Carve rule: the **reusable** half of today's `internal/toolchain` + `internal/apiclient`
@@ -115,10 +122,12 @@ nodus/                              module: github.com/davidg238/nodus
 ├── src/                            Toit firmware: supervisor, report, config_store (the NODE)
 ├── examples/  host/                envelope recipe, SDK_VERSION (already present)
 ├── tool/   (Go)                    NEW: the Toit dev-CLI — imports porta/devsdk
-│   ├── main.go                     frontend = neutral verbs (devsdk/opverbs) + Toit verbs
+│   ├── main.go                     frontend = neutral verbs (via devsdk) + Toit verbs
 │   ├── build/                      toit compile + snapshot-to-image -m32 (Xtensa)
 │   ├── flash/                      jag-flash wrap + envelope assembly + provision
+│   ├── decode/                     jag-decode panic tooling (moved from porta in C2)
 │   └── run.go  flash.go            the language verbs
+├── docs/PANIC-REPORTING.md         Toit panic payload + jag-decode recipe (moved from porta, C2)
 └── ext/    (Go, FUTURE)            kind="toit" gw sidecar (per-kind UI/decode), §6 — not built here
 ```
 
@@ -147,25 +156,44 @@ consumer that proves the seam is language-neutral.
 ## 4. Phase plan (3 phases, 2 repos)
 
 ### Phase C1 — porta: carve out `devsdk/`  *(pure refactor + new public surface)*
-- Promote `internal/apiclient` → `devsdk/apiclient`; promote reusable `internal/toolchain`
-  bits (`exec`, narration) → `devsdk/exec`, `devsdk/narrate`.
-- Add `devsdk/provision` (config-injection helpers) and `devsdk/flash` (transport-agnostic
-  orchestration interface + the `jag flash` wrapper) as new scaffolding.
-- Add `devsdk/opverbs` (neutral `list`/`log`/`monitor`) and re-point porta's own client.
-- Write `docs/DEVSDK.md`.
-- **Acceptance:** zero behavior change; all existing porta tests green; `porta serve`,
-  `porta run` (still present until C2), `device …`, `log`, `monitor` all work as before.
+- Promote `internal/apiclient` → `devsdk/apiclient` (package name unchanged); re-point its
+  five porta importers in `internal/portacli`.
+- Promote `internal/toolchain/exec.go` (Runner + ExecRunner + Executor, the injectable
+  narrating runner) → `devsdk/exec` as one cohesive package; re-point the porta consumers
+  (`internal/toolchain/{build,sdk,retain}.go` and `internal/portacli/{run,decode}.go`).
+  *(The exec/narrate two-package split in an earlier draft is collapsed: Executor depends
+  on Runner and they are one responsibility — "run external tools, narrated, injectable".)*
+- Add `devsdk/provision`: the stable `firmware.config["porta"]` contract
+  (`{"host":<str>,"port":<int>}`) + its render/parse — real, table-testable content.
+- Write `docs/DEVSDK.md` (the northbound contract: API envelope shape + the `devsdk`
+  public surface + the `firmware.config["porta"]` shape).
+- **Deferred out of C1** (see §3.1): `devsdk/flash` (neutral interface — derive in C3 from
+  the real nodus flasher), `devsdk/opverbs` (cobra extraction, off critical path).
+- The Toit-specific `internal/toolchain/{build,sdk,retain}.go` and `porta run` **stay in
+  porta** through C1 (they import the new `devsdk/exec`); they move to nodus in C2.
+- **Acceptance:** zero behavior change; `go build ./... && go vet ./... && go test ./...`
+  green; `porta serve`, `porta run`, `device …`, `log`, `monitor` all work as before.
 
-### Phase C2 — nodus: birth the `nodus` tool, migrate `run`  *(parity move)*
+### Phase C2 — nodus: birth the `nodus` tool, migrate `run` + panic decode  *(parity move)*
 - Create `nodus/tool` (Go) importing `porta/devsdk`.
-- Move Toit-specific build/relocate + the `run` verb here → `nodus run app.toit -d <node>`.
-- Wire neutral verbs from `devsdk/opverbs`.
-- Remove `porta run` + the language bits from porta.
+- Move **all Toit-specific CLI** here:
+  - build/relocate + the `run` verb → `nodus run app.toit -d <node>`;
+  - the **panic-decode tooling** (the `run` snapshot-retain, the `monitor` `kind:"panic"`
+    decode hook, and `panic list`/`show`) — all Toit/jag-specific;
+  - the **`docs/PANIC-REPORTING.md`** doc (the Toit payload + jag-decode recipe), reworded
+    to reference `porta/docs/PROTOCOL.md` for the neutral `kind:"panic"` envelope.
+- On the porta side: remove `porta run` + the Toit/jag CLI + `docs/PANIC-REPORTING.md`;
+  keep the **neutral** `kind:"panic"` row in `PROTOCOL.md`, reworded so the payload format
+  and decode are *node-defined* (point at the node repo's doc), not jag-hardwired.
+- Neutral verbs (`list`/`log`/`monitor` without the decode hook): for C2 the `nodus` tool
+  may shell to / depend on `porta` for these, or carry a thin copy; the reusable
+  `devsdk/opverbs` extraction stays deferred (spec §3.1) until a frontend needs it hosted.
 - Fold in the Phase-1 review nits: live `-v` streaming (Runner wires `cmd.Stdout/Stderr`
   when verbose), validate deploy opts (lifecycle/trigger syntax) *before* the multi-second
   compile.
 - **Acceptance:** `nodus run` deploys exactly as `porta run` did (HW parity: compile +
-  relocate + TFTP deliver + queue run); porta no longer references toit/jag.
+  relocate + TFTP deliver + queue run); panic decode works under `nodus`; **porta no longer
+  references toit/jag anywhere** (the neutrality goal of §6.1 is fully achieved).
 
 ### Phase C3 — nodus: `nodus flash` + firmware companion  *(the new capability)*
 - **`nodus flash`** (purely local, no porta API calls):
