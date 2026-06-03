@@ -34,6 +34,8 @@ porta owns the contract; nodus is pointed at it and built separately.
 2. porta snapshot retention into jag's decode cache.
 3. porta `monitor` auto-decode, verified against **synthetic** `kind:"panic"`
    rows (no nodus dependency to build/test the porta side).
+4. porta `panic list` / `panic show` — retrospective browse-and-decode of
+   recent panics for a node.
 
 The **nodus capture** work (§4) is launched separately, consuming
 `docs/PANIC-REPORTING.md`; hardware end-to-end happens once it lands.
@@ -148,6 +150,31 @@ payload throws (any process)
 - Decode never breaks the tail loop: any decoder error degrades to raw-blob
   output and the loop continues.
 
+## 6b. porta — panic browse command (`panic list` / `panic show`)
+
+Panics arrive in bursts (a wedged payload can panic repeatedly), so beyond the
+live tail, an operator needs to browse recent panics retrospectively. A new
+`panic` cobra group, reading the same telemetry API filtered to `kind:"panic"`
+and reusing the §6 `panicDecoder` seam:
+
+- **`porta panic list -d <node> [--since 24h] [--limit 20]`** — a numbered table:
+  ```
+  ID     TIME                 SUMMARY
+  482    2026-06-03 14:22:01  UNHANDLED EXCEPTION: OUT_OF_BOUNDS
+  479    2026-06-03 14:21:58  (no local snapshot — decode where built)
+  ```
+  `ID` is the stable `data_log.id` (the S5 id cursor exposes it on
+  `apiclient.DataRow.ID`). `SUMMARY` is the first meaningful line of the decoded
+  trace; if decode fails, a short raw/fallback marker. Reads via
+  `QueryTelemetryWindow(..., kind:"panic", limit)`.
+- **`porta panic show -d <node> [--id <id>]`** — the full decoded trace for one
+  panic. Default (no `--id`): the most recent panic in the window. Selector is the
+  `data_log.id` shown by `list` (stateless-CLI-friendly; not a per-listing index).
+  Decode/fallback identical to `monitor` (raw blob + hint when no local snapshot).
+
+This surface is read-only and additive; no new API endpoint (the S5 telemetry
+GET with the `kind` filter already serves it), no schema change.
+
 ## 7. Error handling / edge cases
 
 - `jag` missing on PATH or decode non-zero exit → raw blob + hint, loop continues.
@@ -169,6 +196,11 @@ payload throws (any process)
   with the blob and the decoded text rendered under a `‼ PANIC` header;
   non-panic rows unchanged.
 - decode-failure path → raw blob + hint rendered, loop continues.
+- `panic list`: fake reader returns a mix of decodable/undecodable panic rows →
+  asserts numbered table with `data_log.id`, time, and summary (headline vs
+  fallback marker).
+- `panic show`: `--id` selects the matching row and renders the full decoded
+  trace; no `--id` selects the most recent; unknown `--id` → clear error.
 - e2e via cobra `--server` against a fake apisrv (mirrors S5 `monitor_test`).
 
 **nodus (host):**
@@ -193,10 +225,13 @@ needed only for the live hardware e2e. Order:
 2. porta — snapshot retention (`toolchain` + `runDeploy`).
 3. porta — `porta monitor` auto-decode (decoder seam + render + `--no-decode`),
    verified against synthetic `kind:"panic"` rows.
+4. porta — `panic list` / `panic show` browse command (reuses the decoder seam +
+   telemetry API; synthetic rows).
 
 **Separate, launched once the doc is available:**
-4. nodus — `TraceServiceProvider` capture + forward, per `docs/PANIC-REPORTING.md`.
-5. Hardware e2e (induce a payload panic → decoded trace in `porta monitor`).
+5. nodus — `TraceServiceProvider` capture + forward, per `docs/PANIC-REPORTING.md`.
+6. Hardware e2e (induce a payload panic → decoded trace in `porta monitor` /
+   `porta panic show`).
 
 ## 10. Out of scope
 
