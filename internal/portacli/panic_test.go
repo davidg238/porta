@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidg238/porta/internal/apiclient"
+	"github.com/davidg238/porta/devsdk/apiclient"
 )
 
 // echoPanicDecoder echoes the blob so tests can assert which row was selected.

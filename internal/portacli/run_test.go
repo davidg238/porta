@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidg238/porta/internal/apiclient"
+	"github.com/davidg238/porta/devsdk/apiclient"
 	"github.com/davidg238/porta/internal/apisrv"
 	"github.com/davidg238/porta/internal/store"
 	"github.com/davidg238/porta/internal/toolchain"
