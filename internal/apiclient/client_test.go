@@ -209,3 +209,53 @@ func TestPatchNodeMaxOffline(t *testing.T) {
 		t.Errorf("name must be omitted when nil: %v", body)
 	}
 }
+
+func TestNodeIdentity(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Path != "/api/nodes/aabbccddeeff" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true,"data":{"id":"aabbccddeeff","chip":"esp32","sdk":"v2.0.0-alpha.192"}}`)
+	}))
+	defer srv.Close()
+
+	chip, sdk, err := New(srv.URL).NodeIdentity("aabbccddeeff")
+	if err != nil {
+		t.Fatalf("NodeIdentity: %v", err)
+	}
+	if chip != "esp32" || sdk != "v2.0.0-alpha.192" {
+		t.Errorf("got chip=%q sdk=%q, want esp32 / v2.0.0-alpha.192", chip, sdk)
+	}
+}
+
+func TestNodeIdentityServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		io.WriteString(w, `{"ok":false,"error":"node not found"}`)
+	}))
+	defer srv.Close()
+
+	_, _, err := New(srv.URL).NodeIdentity("nope")
+	if err == nil || !strings.Contains(err.Error(), "node not found") {
+		t.Fatalf("expected server error string, got %v", err)
+	}
+}
+
+func TestNodeIdentityNotYetReported(t *testing.T) {
+	// A node that exists but hasn't reported identity → 2xx with empty chip/sdk;
+	// must return ("","",nil), NOT an error (porta run's guard branches on sdk=="").
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true,"data":{"id":"aabbccddeeff","chip":"","sdk":""}}`)
+	}))
+	defer srv.Close()
+
+	chip, sdk, err := New(srv.URL).NodeIdentity("aabbccddeeff")
+	if err != nil {
+		t.Fatalf("not-yet-reported must not error: %v", err)
+	}
+	if chip != "" || sdk != "" {
+		t.Errorf("got chip=%q sdk=%q, want empty/empty", chip, sdk)
+	}
+}
