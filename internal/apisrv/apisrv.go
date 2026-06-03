@@ -32,6 +32,7 @@ func New(st *store.Store) *Handler {
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/nodes/{sel}/commands", h.handleCommand)
 	mux.HandleFunc("POST /api/nodes/{sel}/containers", h.handleContainerInstall)
+	mux.HandleFunc("PATCH /api/nodes/{sel}", h.handlePatchNode)
 }
 
 // envelope is the uniform response shape, echoing jast-gw's Response.
