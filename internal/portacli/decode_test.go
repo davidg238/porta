@@ -36,7 +36,23 @@ func TestJagDecoderSuccess(t *testing.T) {
 func TestJagDecoderError(t *testing.T) {
 	rr := &recordingRunner{out: []byte("No such file"), err: errors.New("exit status 1")}
 	d := jagDecoder{r: rr}
-	if _, err := d.Decode("BLOB"); err == nil {
+	_, err := d.Decode("BLOB")
+	if err == nil {
 		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "No such file") {
+		t.Errorf("error should surface stderr, got %q", err.Error())
+	}
+}
+
+func TestJagDecoderErrorEmptyOutput(t *testing.T) {
+	rr := &recordingRunner{out: nil, err: errors.New("exit status 1")}
+	d := jagDecoder{r: rr}
+	_, err := d.Decode("BLOB")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.HasSuffix(err.Error(), ": ") {
+		t.Errorf("error should not end with a dangling colon, got %q", err.Error())
 	}
 }

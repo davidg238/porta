@@ -26,7 +26,10 @@ func newJagDecoder() jagDecoder { return jagDecoder{r: toolchain.ExecRunner{}} }
 func (d jagDecoder) Decode(blob string) (string, error) {
 	out, err := d.r.Run("jag", "decode", blob)
 	if err != nil {
-		return "", fmt.Errorf("jag decode: %w: %s", err, strings.TrimSpace(string(out)))
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			return "", fmt.Errorf("jag decode: %w: %s", err, msg)
+		}
+		return "", fmt.Errorf("jag decode: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
