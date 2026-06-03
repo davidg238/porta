@@ -1,6 +1,7 @@
 package apisrv
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,6 +37,18 @@ func TestPostCommandVerbs(t *testing.T) {
 			rec := postCmd(t, h, "aabbccddeeff", c.body)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			var resp struct {
+				OK   bool `json:"ok"`
+				Data struct {
+					CommandID int64 `json:"command_id"`
+				} `json:"data"`
+			}
+			if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if !resp.OK || resp.Data.CommandID <= 0 {
+				t.Fatalf("want ok+command_id>0, got ok=%v command_id=%d", resp.OK, resp.Data.CommandID)
 			}
 			cmd, err := st.NextUndelivered("aabbccddeeff")
 			if err != nil || cmd == nil || cmd.Verb != c.wantVerb {

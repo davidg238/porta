@@ -55,6 +55,9 @@ func (h *Handler) dispatch(id string, req commandReq) (int64, error) {
 		if a.App == "" || a.Key == "" {
 			return 0, fmt.Errorf("set requires app and key")
 		}
+		if a.Value == nil {
+			return 0, fmt.Errorf("set requires value")
+		}
 		val, err := coerceScalar(a.Value)
 		if err != nil {
 			return 0, err
@@ -125,7 +128,7 @@ func coerceScalar(v any) (any, error) {
 
 // decodeArgs unmarshals the verb's args object (UseNumber for value typing).
 func decodeArgs(raw json.RawMessage, dst any) error {
-	if len(raw) == 0 {
+	if len(raw) == 0 || string(raw) == "null" {
 		return nil
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))

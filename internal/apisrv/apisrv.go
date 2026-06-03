@@ -57,8 +57,9 @@ func writeJSON(w http.ResponseWriter, status int, env envelope) {
 	_ = json.NewEncoder(w).Encode(env)
 }
 
-// readBody reads the full request body, swallowing the error (an empty/short
-// body simply fails JSON decode downstream with a clear message).
+// readBody reads the full request body. Network/read errors are intentionally
+// ignored: the truncated bytes will cause a JSON parse failure downstream,
+// which produces a clear 400 response without needing a separate error path.
 func readBody(r *http.Request) []byte {
 	b, _ := io.ReadAll(r.Body)
 	return b
