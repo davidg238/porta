@@ -93,7 +93,7 @@ func TestGetNodeDetail(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 		t.Fatal(err)
 	}
-	if env.Data.ID != "aabbccddeeff" || env.Data.Chip != "esp32" || env.Data.Sdk != "v2.0.0-alpha.192" {
+	if env.Data.ID != "aabbccddeeff" || env.Data.Name != "blinky" || env.Data.Chip != "esp32" || env.Data.Sdk != "v2.0.0-alpha.192" {
 		t.Errorf("detail=%+v", env.Data)
 	}
 }

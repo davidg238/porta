@@ -3,7 +3,6 @@ package apisrv
 import (
 	"encoding/json"
 	"net/http"
-	"sort"
 
 	"github.com/davidg238/porta/internal/control"
 )
@@ -96,15 +95,13 @@ func (h *Handler) handleNodeDetail(w http.ResponseWriter, r *http.Request) {
 // firstAppName returns the lexically-first observed app name (the app whose
 // config the detail view surfaces), or "" if none.
 func firstAppName(apps []control.App) string {
-	names := make([]string, 0, len(apps))
+	first := ""
 	for _, a := range apps {
-		names = append(names, a.Name)
+		if first == "" || a.Name < first {
+			first = a.Name
+		}
 	}
-	sort.Strings(names)
-	if len(names) == 0 {
-		return ""
-	}
-	return names[0]
+	return first
 }
 
 // handlePatchNode applies rename / max-offline node settings (gateway-side,
