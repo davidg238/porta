@@ -69,3 +69,50 @@ func TestRunPanicListLimitKeepsNewest(t *testing.T) {
 		t.Errorf("limit=2 should keep newest two (2,3) and drop 1: %q", s)
 	}
 }
+
+func TestRunPanicShowMostRecent(t *testing.T) {
+	f := &fakeReader{window: []apiclient.DataRow{
+		{ID: 10, TS: 100, Kind: "panic", Text: "A"},
+		{ID: 11, TS: 200, Kind: "panic", Text: "B"},
+	}}
+	var out bytes.Buffer
+	if err := runPanicShow(&out, f, fakeDecoder{ok: true}, "dev", 86400, 0, func() int64 { return 1000 }); err != nil {
+		t.Fatal(err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "‼ PANIC") || !strings.Contains(s, "OUT_OF_BOUNDS") {
+		t.Errorf("got %q", s)
+	}
+}
+
+func TestRunPanicShowByID(t *testing.T) {
+	f := &fakeReader{window: []apiclient.DataRow{
+		{ID: 10, TS: 100, Kind: "panic", Text: "A"},
+		{ID: 11, TS: 200, Kind: "panic", Text: "B"},
+	}}
+	var out bytes.Buffer
+	if err := runPanicShow(&out, f, fakeDecoder{ok: true}, "dev", 86400, 10, func() int64 { return 1000 }); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "‼ PANIC") {
+		t.Errorf("got %q", out.String())
+	}
+}
+
+func TestRunPanicShowUnknownID(t *testing.T) {
+	f := &fakeReader{window: []apiclient.DataRow{
+		{ID: 10, TS: 100, Kind: "panic", Text: "A"},
+	}}
+	var out bytes.Buffer
+	if err := runPanicShow(&out, f, fakeDecoder{ok: true}, "dev", 86400, 999, func() int64 { return 1000 }); err == nil {
+		t.Fatal("expected error for unknown id")
+	}
+}
+
+func TestRunPanicShowEmpty(t *testing.T) {
+	f := &fakeReader{}
+	var out bytes.Buffer
+	if err := runPanicShow(&out, f, fakeDecoder{ok: true}, "dev", 86400, 0, func() int64 { return 1000 }); err == nil {
+		t.Fatal("expected error when there are no panics")
+	}
+}
