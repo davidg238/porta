@@ -45,10 +45,11 @@ func runDeploy(out io.Writer, c *apiclient.Client, ex *toolchain.Executor, sel, 
 			return err
 		}
 	}
-	img, err := toolchain.Build(ex, appPath)
+	img, _, cleanup, err := toolchain.Build(ex, appPath)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 	cmdID, nodeID, size, err := c.Install(sel, opts.Name, bytes.NewReader(img), apiclient.InstallOpts{
 		Lifecycle: opts.Lifecycle, Runlevel: opts.Runlevel, Triggers: opts.Triggers,
 	})
