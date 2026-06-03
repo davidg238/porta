@@ -9,8 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/davidg238/porta/internal/control"
-	"github.com/davidg238/porta/internal/store"
+	"github.com/davidg238/porta/internal/apiclient"
 	"github.com/davidg238/porta/internal/toolchain"
 	"github.com/spf13/cobra"
 )
@@ -24,23 +23,25 @@ type deployOpts struct {
 	PowerMode string // "" → leave unchanged
 }
 
-// runDeploy is the testable core of `porta run`: identity + SDK guard, build,
-// then register-payload + enqueue-run via control.Install. force skips the SDK
-// match refusal.
-func runDeploy(out io.Writer, st *store.Store, ex *toolchain.Executor, id, appPath string, opts deployOpts, force bool, now int64) error {
-	node, err := st.GetNode(id)
+// runDeploy is the testable core of `porta run`: SDK guard (read the node's
+// reported sdk via the API, compare against the local toolchain), local build,
+// then deliver the image + enqueue run via the control-plane API. force skips
+// the SDK match refusal (but not the unknown-identity block). The server stamps
+// issued_by="api".
+func runDeploy(out io.Writer, c *apiclient.Client, ex *toolchain.Executor, sel, appPath string, opts deployOpts, force bool) error {
+	_, sdk, err := c.NodeIdentity(sel)
 	if err != nil {
 		return err
 	}
-	if node == nil || node.Sdk == "" {
-		return fmt.Errorf("node %s hasn't reported its firmware identity yet — wait for a check-in (or flash it via `porta flash`) before deploying", id)
+	if sdk == "" {
+		return fmt.Errorf("node %s hasn't reported its firmware identity yet — wait for a check-in (or flash it via `porta flash`) before deploying", sel)
 	}
 	active, err := toolchain.SDKVersion(ex)
 	if err != nil {
 		return err
 	}
 	if !force {
-		if err := toolchain.CheckSDK(node.Sdk, active); err != nil {
+		if err := toolchain.CheckSDK(sdk, active); err != nil {
 			return err
 		}
 	}
@@ -48,15 +49,15 @@ func runDeploy(out io.Writer, st *store.Store, ex *toolchain.Executor, id, appPa
 	if err != nil {
 		return err
 	}
-	cmdID, err := control.Install(st, id, opts.Name, bytes.NewReader(img), control.InstallOpts{
-		Triggers: opts.Triggers, Runlevel: opts.Runlevel, Lifecycle: opts.Lifecycle,
-	}, "cli", now)
+	cmdID, nodeID, size, err := c.Install(sel, opts.Name, bytes.NewReader(img), apiclient.InstallOpts{
+		Lifecycle: opts.Lifecycle, Runlevel: opts.Runlevel, Triggers: opts.Triggers,
+	})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%s: built %s (%d B), enqueued run (command #%d)\n", id, opts.Name, len(img), cmdID)
+	fmt.Fprintf(out, "%s: built %s (%d B), enqueued run (command #%d)\n", nodeID, opts.Name, size, cmdID)
 	if opts.PowerMode != "" {
-		if _, err := control.SetPowerMode(st, id, opts.PowerMode, "cli", now); err != nil {
+		if _, _, err := c.Command(sel, "set-power-mode", map[string]any{"mode": opts.PowerMode}); err != nil {
 			return err
 		}
 	}
@@ -76,15 +77,6 @@ func newRunCmd() *cobra.Command {
 			if !strings.HasSuffix(appPath, ".toit") {
 				return fmt.Errorf("expected a .toit source file, got %q", appPath)
 			}
-			st, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
 			if opts.Name == "" {
 				base := filepath.Base(appPath)
 				opts.Name = strings.TrimSuffix(base, filepath.Ext(base))
@@ -96,8 +88,9 @@ func newRunCmd() *cobra.Command {
 			if len(opts.Triggers) == 0 {
 				opts.Triggers = promptTriggers()
 			}
+			c := apiclient.New(serverURL())
 			ex := toolchain.NewExecutor(toolchain.ExecRunner{}, cmd.OutOrStdout(), verbose)
-			return runDeploy(cmd.OutOrStdout(), st, ex, id, appPath, opts, force, nowSec())
+			return runDeploy(cmd.OutOrStdout(), c, ex, device, appPath, opts, force)
 		},
 	}
 	deviceFlag(cmd, &device)
