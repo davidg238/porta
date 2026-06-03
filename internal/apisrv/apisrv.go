@@ -31,6 +31,7 @@ func New(st *store.Store) *Handler {
 // the shared mux's CIDR allowlist middleware (applied by httpsrv) covers them.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/nodes/{sel}/commands", h.handleCommand)
+	mux.HandleFunc("POST /api/nodes/{sel}/containers", h.handleContainerInstall)
 }
 
 // envelope is the uniform response shape, echoing jast-gw's Response.
