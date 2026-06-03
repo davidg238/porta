@@ -205,6 +205,122 @@ func (c *Client) PatchNode(sel string, name *string, maxOfflineS *int64) (string
 	return r.NodeID, nil
 }
 
+// DataRow is one telemetry row returned by the telemetry reads. Value is the
+// typed scalar reconstructed from value_type: int64 for int/bool, float64 for
+// float, nil for string & log rows (their payload is in Text).
+type DataRow struct {
+	ID        int64
+	TS        int64
+	Seq       int64
+	Kind      string
+	Name      string
+	Value     any
+	Text      string
+	ValueType string
+}
+
+// wireRow is the on-the-wire shape; Value stays raw so typedValue can coerce it
+// by value_type without losing int64 precision through a float.
+type wireRow struct {
+	ID        int64           `json:"id"`
+	TS        int64           `json:"ts"`
+	Seq       int64           `json:"seq"`
+	Kind      string          `json:"kind"`
+	Name      string          `json:"name"`
+	Value     json.RawMessage `json:"value"`
+	Text      string          `json:"text"`
+	ValueType string          `json:"value_type"`
+}
+
+// typedValue coerces a raw JSON value to the Go type FormatLine expects for the
+// given value_type: int64 for int/bool (falling back to float64 if the value
+// arrived non-integer-shaped), float64 for float, nil otherwise (a JSON null,
+// a string row, or an unknown tag — the payload then lives in Text).
+func typedValue(valueType string, raw json.RawMessage) any {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	switch valueType {
+	case "float":
+		var f float64
+		if json.Unmarshal(raw, &f) == nil {
+			return f
+		}
+	case "int", "bool":
+		var i int64
+		if json.Unmarshal(raw, &i) == nil {
+			return i
+		}
+		var f float64
+		if json.Unmarshal(raw, &f) == nil {
+			return f
+		}
+	}
+	return nil
+}
+
+// QueryTelemetryWindow reads the ts window [since, until] (until<=0 = unbounded)
+// for sel, optionally filtered by kind and capped by limit. Used for monitor's
+// initial look-back.
+func (c *Client) QueryTelemetryWindow(sel string, since, until int64, kind string, limit int) ([]DataRow, error) {
+	q := url.Values{}
+	q.Set("since", strconv.FormatInt(since, 10))
+	if until > 0 {
+		q.Set("until", strconv.FormatInt(until, 10))
+	}
+	if kind != "" {
+		q.Set("kind", kind)
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	return c.getTelemetry(sel, q)
+}
+
+// QueryTelemetryAfter tails rows with id > after (ordered by id) for sel. Used
+// for monitor --follow polls: exact dedup, no timestamp boundary case.
+func (c *Client) QueryTelemetryAfter(sel string, after int64, kind string, limit int) ([]DataRow, error) {
+	q := url.Values{}
+	q.Set("after", strconv.FormatInt(after, 10))
+	if kind != "" {
+		q.Set("kind", kind)
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	return c.getTelemetry(sel, q)
+}
+
+// getTelemetry GETs /api/nodes/{sel}/telemetry with q and decodes the rows.
+func (c *Client) getTelemetry(sel string, q url.Values) ([]DataRow, error) {
+	u := c.baseURL + "/api/nodes/" + url.PathEscape(sel) + "/telemetry"
+	if enc := q.Encode(); enc != "" {
+		u += "?" + enc
+	}
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Rows []wireRow `json:"rows"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	out := make([]DataRow, 0, len(resp.Rows))
+	for _, w := range resp.Rows {
+		out = append(out, DataRow{
+			ID: w.ID, TS: w.TS, Seq: w.Seq, Kind: w.Kind, Name: w.Name,
+			Value: typedValue(w.ValueType, w.Value), Text: w.Text, ValueType: w.ValueType,
+		})
+	}
+	return out, nil
+}
+
 // identityResp decodes just the chip/sdk fields of a GET /api/nodes/{sel} detail.
 type identityResp struct {
 	Chip string `json:"chip"`
