@@ -1,0 +1,67 @@
+// Package apisrv exposes porta's control plane as an authenticated JSON HTTP
+// API on the shared operator listener, so a CLI (and future language tooling)
+// can drive the gateway over the network instead of opening the store directly.
+// It is a thin adapter over internal/control + internal/store; control/store
+// stays the single writer. Every response is a {ok,data,error} envelope plus a
+// meaningful HTTP status.
+package apisrv
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/davidg238/porta/internal/control"
+	"github.com/davidg238/porta/internal/store"
+)
+
+// Handler holds the store and a clock. now is injectable for tests.
+type Handler struct {
+	st  *store.Store
+	now func() int64
+}
+
+// New builds a Handler over st with a wall-clock now (Unix seconds).
+func New(st *store.Store) *Handler {
+	return &Handler{st: st, now: func() int64 { return time.Now().Unix() }}
+}
+
+// Register mounts the API routes on mux. Routes use Go 1.22+ method patterns;
+// the shared mux's CIDR allowlist middleware (applied by httpsrv) covers them.
+func (h *Handler) Register(mux *http.ServeMux) {
+	// Routes are added by subsequent tasks.
+}
+
+// envelope is the uniform response shape, echoing jast-gw's Response.
+type envelope struct {
+	OK    bool   `json:"ok"`
+	Data  any    `json:"data"`
+	Error string `json:"error"`
+}
+
+// writeOK emits a 200 {ok:true,data,error:""} response.
+func writeOK(w http.ResponseWriter, data any) {
+	writeJSON(w, http.StatusOK, envelope{OK: true, Data: data})
+}
+
+// writeErr emits a non-2xx {ok:false,data:null,error} response.
+func writeErr(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, envelope{OK: false, Error: msg})
+}
+
+func writeJSON(w http.ResponseWriter, status int, env envelope) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(env)
+}
+
+// resolveSel resolves a {sel} path value (node id or name) to a node id.
+// On failure it writes a 404 envelope and returns ok=false.
+func (h *Handler) resolveSel(w http.ResponseWriter, sel string) (string, bool) {
+	id, err := control.ResolveNodeID(h.st, sel)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return "", false
+	}
+	return id, true
+}
