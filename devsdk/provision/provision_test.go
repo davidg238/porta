@@ -8,9 +8,18 @@ import (
 func TestGatewayPortaConfig(t *testing.T) {
 	g := Gateway{Host: "192.168.0.175", Port: 6969}
 	got := g.PortaConfig()
-	want := map[string]any{"host": "192.168.0.175", "port": 6969}
+	// Nested dotted keys under the "porta" group, matching the nodus supervisor's
+	// gateway_config.toit reader and porta tools-toit-design.md §7.
+	want := map[string]any{"gateway.host": "192.168.0.175", "gateway.port": 6969}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("PortaConfig() = %#v, want %#v", got, want)
+	}
+}
+
+func TestGatewayKeyConstants(t *testing.T) {
+	if PortaConfigKey != "porta" || GatewayHostKey != "gateway.host" || GatewayPortKey != "gateway.port" {
+		t.Fatalf("key constants drifted: group=%q host=%q port=%q",
+			PortaConfigKey, GatewayHostKey, GatewayPortKey)
 	}
 }
 

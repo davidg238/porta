@@ -1,10 +1,12 @@
 // Package provision renders the gateway-address provisioning that a node-repo
 // flash tool (e.g. nodus flash) injects into a device's firmware.config. The
-// neutral contract is the firmware.config["porta"] object:
+// neutral contract is the firmware.config["porta"] object, with dotted sub-keys
+// under the "porta" group (mirroring how "wifi" nests):
 //
-//	{"host": <string>, "port": <int>}
+//	{"gateway.host": <string>, "gateway.port": <int>}
 //
-// which the node's supervisor reads to find its gateway. WiFi is out of scope
+// which the node's supervisor reads to find its gateway (see the nodus
+// gateway_config.toit reader and porta tools-toit-design.md §7). WiFi is out of scope
 // here (node tools provision it via their own flasher, e.g. jag's --wifi-*
 // flags). The injection MECHANISM is the node tool's concern; this package
 // fixes only the shape.
@@ -21,9 +23,15 @@ import (
 	"strings"
 )
 
-// PortaConfigKey is the firmware.config key under which the gateway address
-// lives: firmware.config["porta"].
-const PortaConfigKey = "porta"
+// Firmware-config keys for the gateway address. PortaConfigKey is the group
+// under which it lives (firmware.config["porta"]); the host/port ride dotted
+// sub-keys within that group. These strings are the wire contract — they must
+// match the nodus supervisor's gateway_config.toit reader exactly.
+const (
+	PortaConfigKey = "porta"
+	GatewayHostKey = "gateway.host"
+	GatewayPortKey = "gateway.port"
+)
 
 // Gateway is a node's gateway address.
 type Gateway struct {
@@ -31,9 +39,10 @@ type Gateway struct {
 	Port int
 }
 
-// PortaConfig returns the firmware.config["porta"] object for g.
+// PortaConfig returns the firmware.config["porta"] object for g, with the dotted
+// sub-keys the nodus supervisor reads.
 func (g Gateway) PortaConfig() map[string]any {
-	return map[string]any{"host": g.Host, "port": g.Port}
+	return map[string]any{GatewayHostKey: g.Host, GatewayPortKey: g.Port}
 }
 
 // ParseGateway parses "host" or "host:port". When the port is omitted it uses
