@@ -49,6 +49,7 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, envelope{OK: false, Error: msg})
 }
 
+// writeJSON sets Content-Type, writes the status, and JSON-encodes env.
 func writeJSON(w http.ResponseWriter, status int, env envelope) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

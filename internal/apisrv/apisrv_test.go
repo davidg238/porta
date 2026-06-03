@@ -52,12 +52,18 @@ func TestWriteErr(t *testing.T) {
 		t.Fatalf("status=%d", rec.Code)
 	}
 	var env struct {
-		OK    bool   `json:"ok"`
-		Error string `json:"error"`
+		OK    bool            `json:"ok"`
+		Data  json.RawMessage `json:"data"`
+		Error string          `json:"error"`
 	}
-	json.Unmarshal(rec.Body.Bytes(), &env)
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
 	if env.OK || env.Error != "no such node" {
 		t.Errorf("env=%+v", env)
+	}
+	if string(env.Data) != "null" {
+		t.Errorf("data=%s, want null", env.Data)
 	}
 }
 
