@@ -105,7 +105,7 @@ func newPanicShowCmd() *cobra.Command {
 	}
 	deviceFlag(cmd, &device)
 	cmd.Flags().StringVar(&since, "since", "", "look-back window, e.g. 6h, 24h (default 24h)")
-	cmd.Flags().Int64Var(&id, "id", 0, "data_log id from `porta panic list` (default: most recent)")
+	cmd.Flags().Int64Var(&id, "id", 0, "data_log id shown by 'porta panic list' (default: most recent)")
 	return cmd
 }
 

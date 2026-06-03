@@ -8,6 +8,11 @@ import (
 	"github.com/davidg238/porta/internal/apiclient"
 )
 
+// echoPanicDecoder echoes the blob so tests can assert which row was selected.
+type echoPanicDecoder struct{}
+
+func (echoPanicDecoder) Decode(blob string) (string, error) { return "trace for " + blob, nil }
+
 func TestRunPanicListNewestFirst(t *testing.T) {
 	// fakeReader returns rows ascending (oldest first); list must show newest first.
 	f := &fakeReader{window: []apiclient.DataRow{
@@ -76,12 +81,15 @@ func TestRunPanicShowMostRecent(t *testing.T) {
 		{ID: 11, TS: 200, Kind: "panic", Text: "B"},
 	}}
 	var out bytes.Buffer
-	if err := runPanicShow(&out, f, fakeDecoder{ok: true}, "dev", 86400, 0, func() int64 { return 1000 }); err != nil {
+	if err := runPanicShow(&out, f, echoPanicDecoder{}, "dev", 86400, 0, func() int64 { return 1000 }); err != nil {
 		t.Fatal(err)
 	}
 	s := out.String()
-	if !strings.Contains(s, "‼ PANIC") || !strings.Contains(s, "OUT_OF_BOUNDS") {
-		t.Errorf("got %q", s)
+	if !strings.Contains(s, "‼ PANIC") || !strings.Contains(s, "trace for B") {
+		t.Errorf("expected the most-recent row (ID 11, blob B), got %q", s)
+	}
+	if strings.Contains(s, "trace for A") {
+		t.Errorf("should not have shown the older row (ID 10): %q", s)
 	}
 }
 
@@ -91,11 +99,15 @@ func TestRunPanicShowByID(t *testing.T) {
 		{ID: 11, TS: 200, Kind: "panic", Text: "B"},
 	}}
 	var out bytes.Buffer
-	if err := runPanicShow(&out, f, fakeDecoder{ok: true}, "dev", 86400, 10, func() int64 { return 1000 }); err != nil {
+	if err := runPanicShow(&out, f, echoPanicDecoder{}, "dev", 86400, 10, func() int64 { return 1000 }); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "‼ PANIC") {
-		t.Errorf("got %q", out.String())
+	s := out.String()
+	if !strings.Contains(s, "trace for A") {
+		t.Errorf("expected the row selected by id=10 (blob A), got %q", s)
+	}
+	if strings.Contains(s, "trace for B") {
+		t.Errorf("should not have shown a different row: %q", s)
 	}
 }
 
