@@ -336,10 +336,10 @@ Each line is one entry:
 
 | Key | Type | Required | Default at gateway | Meaning |
 |-----|------|----------|--------------------|---------|
-| `kind` | string | no | `"log"` | Entry kind, e.g. `"log"` or `"metric"`. |
+| `kind` | string | no | `"log"` | Entry kind, e.g. `"log"`, `"metric"`, or `"panic"`. |
 | `name` | string | no | `null` | Metric/series name. |
 | `value` | scalar | no | `null` | int / float / bool — typed scalar value. |
-| `text` | string | no | `null` | Log text (or string-valued reading). |
+| `text` | string | no | `null` | Log text, string-valued reading, or (for `"panic"`) the base64 trace blob. |
 | `ts` | int | no | gateway receive time | Timestamp (epoch seconds). |
 | `seq` | int | no | line index | Sequence within the batch. |
 
@@ -347,7 +347,15 @@ Entries the node emits in practice:
 ```json
 {"kind": "log", "text": "hello from node"}
 {"kind": "metric", "name": "pm2_5", "value": 12}
+{"kind": "panic", "text": "<base64 trace blob>"}
 ```
+
+The `"panic"` kind reports an uncaught payload exception: `text` is the base64 of
+the node's raw Toit trace ("system message"), which the gateway operator decodes
+with `jag decode`. The full normative contract and node-implementer guidance live
+in **[`PANIC-REPORTING.md`](PANIC-REPORTING.md)**. `kind` is free-form: the
+gateway stores any value verbatim, so the panic kind is additive (no schema or
+ingest change).
 
 Gateway ingest (`DataWriter_` in `gateway/handler.toit`) decodes each line and
 appends it to the data_log, preserving the runtime type of `value` via a
@@ -375,6 +383,8 @@ A conforming node MUST:
   shape in §3, echoing per-app `crc`/`runlevel`/`lifecycle`/`triggers` and the
   applied `config` blob.
 - (If it forwards telemetry) ship JSONL to `data?id=` per §6.
+- (If it forwards telemetry) report uncaught payload exceptions as `kind:"panic"`
+  entries per [`PANIC-REPORTING.md`](PANIC-REPORTING.md).
 
 A conforming node MAY omit `config` from its report (it defaults to empty),
 omit optional command args (defaults apply), and implement any transport that

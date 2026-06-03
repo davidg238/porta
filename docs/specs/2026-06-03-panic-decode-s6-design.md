@@ -24,7 +24,19 @@ telemetry kind, `porta run` retains the snapshot into jag's decode cache, and
 `porta monitor` auto-decodes panic rows inline.
 
 This spans two repos (coupled only over the wire, per `docs/PROTOCOL.md`):
-**nodus** (capture) and **porta** (retain + decode).
+**porta** (retain + decode + the canonical contract doc) and **nodus** (capture).
+porta owns the contract; nodus is pointed at it and built separately.
+
+**S6 deliverables in this (porta) sub-project:**
+1. `docs/PANIC-REPORTING.md` — the canonical, node-facing panic-report contract
+   (porta-owned, like `PROTOCOL.md`), plus the `kind:"panic"` row added to
+   `PROTOCOL.md §6`. This is the handoff artifact for the nodus work.
+2. porta snapshot retention into jag's decode cache.
+3. porta `monitor` auto-decode, verified against **synthetic** `kind:"panic"`
+   rows (no nodus dependency to build/test the porta side).
+
+The **nodus capture** work (§4) is launched separately, consuming
+`docs/PANIC-REPORTING.md`; hardware end-to-end happens once it lands.
 
 ## 2. Locked decisions (don't re-litigate)
 
@@ -53,6 +65,11 @@ This spans two repos (coupled only over the wire, per `docs/PROTOCOL.md`):
 - **Serial behavior unchanged.** The node's trace handler returns the message to
   the system after forwarding, so the blob still prints to serial for USB
   debugging.
+- **porta owns the contract doc.** The panic-report contract is canonical in
+  porta (`docs/PANIC-REPORTING.md` + `PROTOCOL.md §6`), normative wire shape
+  separated from recommended Toit implementation, so heterogeneous nodes
+  (future Smalltalk) conform via the wire contract alone. nodus consumes the doc;
+  it is not a porta dependency.
 
 ## 3. Architecture & data flow
 
@@ -68,7 +85,12 @@ payload throws (any process)
    → porta run earlier retained <uuid>.snapshot in jag's cache → resolves [porta]
 ```
 
-## 4. nodus — panic capture (upstream dependency)
+## 4. nodus — panic capture (separate effort; consumes `docs/PANIC-REPORTING.md`)
+
+> Built and launched separately, pointed at the porta-owned contract doc. The
+> porta side (§5–§6) does **not** depend on this landing — it is verified against
+> synthetic `kind:"panic"` rows. Hardware e2e (§8) needs this piece.
+
 
 - New `TraceServiceProvider` implementing `system.api.trace.TraceService`
   (`handle-trace message/ByteArray -> ByteArray?`, SELECTOR uuid
@@ -162,13 +184,19 @@ failed precisely because the snapshot was absent — this verifies retention.)
 ## 9. Phasing
 
 The porta retain + decode work is independently buildable and testable against a
-synthetic `kind:"panic"` row; the nodus capture change is the upstream piece
-required only for the live hardware e2e. Suggested order:
+synthetic `kind:"panic"` row; the nodus capture change is launched separately and
+needed only for the live hardware e2e. Order:
 
-1. porta — snapshot retention (`toolchain` + `runDeploy`).
-2. porta — `porta monitor` auto-decode (decoder seam + render + `--no-decode`).
-3. nodus — `TraceServiceProvider` capture + forward.
-4. Hardware e2e + `docs/PROTOCOL.md` `kind:"panic"` documentation finalized.
+**This (porta) sub-project:**
+1. Contract docs — `docs/PANIC-REPORTING.md` + `PROTOCOL.md §6` `kind:"panic"`
+   (the nodus handoff artifact). *(Done in the design/branch already.)*
+2. porta — snapshot retention (`toolchain` + `runDeploy`).
+3. porta — `porta monitor` auto-decode (decoder seam + render + `--no-decode`),
+   verified against synthetic `kind:"panic"` rows.
+
+**Separate, launched once the doc is available:**
+4. nodus — `TraceServiceProvider` capture + forward, per `docs/PANIC-REPORTING.md`.
+5. Hardware e2e (induce a payload panic → decoded trace in `porta monitor`).
 
 ## 10. Out of scope
 
