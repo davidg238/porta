@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 
+	"github.com/davidg238/porta/internal/apisrv"
 	"github.com/davidg238/porta/internal/handler"
 	"github.com/davidg238/porta/internal/httpsrv"
 	"github.com/davidg238/porta/internal/mcpsrv"
@@ -81,6 +82,7 @@ func newServeCmd() *cobra.Command {
 				}
 				web.New(st).Register(srv.Mux)
 				mcpsrv.New(st).Register(srv.Mux)
+				apisrv.New(st).Register(srv.Mux)
 				httpErr = make(chan error, 1)
 				go func() { httpErr <- srv.Run(ctx) }()
 				log.Printf("porta: serving HTTP on %s:%d", httpBind, httpPort)
