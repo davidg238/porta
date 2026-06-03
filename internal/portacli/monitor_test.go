@@ -4,6 +4,7 @@ package portacli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,6 +44,16 @@ func dr(id, ts int64, name string, value any, vtype string) apiclient.DataRow {
 	return apiclient.DataRow{ID: id, TS: ts, Seq: id, Kind: "metric", Name: name, Value: value, ValueType: vtype}
 }
 
+// fakeDecoder: ok=true returns a canned 2-line trace; ok=false fails (no snapshot).
+type fakeDecoder struct{ ok bool }
+
+func (d fakeDecoder) Decode(blob string) (string, error) {
+	if !d.ok {
+		return "", errors.New("no snapshot")
+	}
+	return "UNHANDLED EXCEPTION: OUT_OF_BOUNDS\n  at main.foo", nil
+}
+
 func TestRunMonitorWindowPrintsAllScalars(t *testing.T) {
 	f := &fakeReader{window: []apiclient.DataRow{
 		dr(1, 100, "pm", int64(13), "int"),
@@ -53,7 +64,7 @@ func TestRunMonitorWindowPrintsAllScalars(t *testing.T) {
 	}}
 	var out bytes.Buffer
 	now := func() int64 { return 200 }
-	if err := runMonitor(context.Background(), &out, f, "dev", 200, "", false, now, 10*time.Millisecond); err != nil {
+	if err := runMonitor(context.Background(), &out, f, nil, "dev", 200, "", false, now, 10*time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
@@ -84,7 +95,7 @@ func TestRunMonitorFollowDedupsByID(t *testing.T) {
 	now := func() int64 { return 200 }
 	done := make(chan error, 1)
 	go func() {
-		done <- runMonitor(ctx, &out, f, "dev", 200, "", true, now, 5*time.Millisecond)
+		done <- runMonitor(ctx, &out, f, nil, "dev", 200, "", true, now, 5*time.Millisecond)
 	}()
 	// Give the loop time to poll at least twice, then cancel.
 	time.Sleep(40 * time.Millisecond)
@@ -111,7 +122,7 @@ func TestRunMonitorKindFilterPassedThrough(t *testing.T) {
 	f := &fakeReader{window: []apiclient.DataRow{{ID: 1, TS: 100, Kind: "log", Text: "hi"}}}
 	var out bytes.Buffer
 	now := func() int64 { return 200 }
-	if err := runMonitor(context.Background(), &out, f, "dev", 200, "log", false, now, 10*time.Millisecond); err != nil {
+	if err := runMonitor(context.Background(), &out, f, nil, "dev", 200, "log", false, now, 10*time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "hi") {
@@ -155,5 +166,34 @@ func TestMonitorCmdE2EOverAPI(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "metric  pm=42") {
 		t.Fatalf("out = %q", out.String())
+	}
+}
+
+func TestRunMonitorDecodesPanic(t *testing.T) {
+	f := &fakeReader{window: []apiclient.DataRow{
+		{ID: 1, TS: 100, Kind: "panic", Text: "BLOB"},
+	}}
+	var out bytes.Buffer
+	now := func() int64 { return 200 }
+	if err := runMonitor(context.Background(), &out, f, fakeDecoder{ok: true}, "dev", 200, "", false, now, time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "‼ PANIC") || !strings.Contains(s, "OUT_OF_BOUNDS") {
+		t.Errorf("got %q", s)
+	}
+}
+
+func TestRunMonitorPanicFallback(t *testing.T) {
+	f := &fakeReader{window: []apiclient.DataRow{
+		{ID: 1, TS: 100, Kind: "panic", Text: "BLOB"},
+	}}
+	var out bytes.Buffer
+	now := func() int64 { return 200 }
+	if err := runMonitor(context.Background(), &out, f, fakeDecoder{ok: false}, "dev", 200, "", false, now, time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if s := out.String(); !strings.Contains(s, "jag decode BLOB") || !strings.Contains(s, "no local snapshot") {
+		t.Errorf("got %q", s)
 	}
 }
