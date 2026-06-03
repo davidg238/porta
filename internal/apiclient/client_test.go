@@ -110,3 +110,54 @@ func TestCommandNonJSONResponse(t *testing.T) {
 		t.Fatalf("want 'invalid response' diagnostic, got %v", err)
 	}
 }
+
+func TestInstallBuildsMultipart(t *testing.T) {
+	var rec recordedReq
+	srv := stubServer(t, http.StatusOK,
+		`{"ok":true,"data":{"command_id":6,"node_id":"aabbccddeeff","size":16},"error":""}`, &rec)
+	c := New(srv.URL)
+
+	img := strings.NewReader("fake-image-bytes")
+	cmdID, nodeID, size, err := c.Install("blinky", "blink", img, InstallOpts{
+		Lifecycle: "run-loop", Runlevel: 3, IntervalS: 30, Triggers: []string{"boot", "gpio-high=21"},
+	})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if cmdID != 6 || nodeID != "aabbccddeeff" || size != 16 {
+		t.Fatalf("cmdID=%d nodeID=%q size=%d", cmdID, nodeID, size)
+	}
+	if rec.method != "POST" || rec.path != "/api/nodes/blinky/containers" {
+		t.Fatalf("request = %s %s", rec.method, rec.path)
+	}
+	if !strings.HasPrefix(rec.contentType, "multipart/form-data") {
+		t.Fatalf("content-type=%q", rec.contentType)
+	}
+	// The body must carry the image file part and the form fields.
+	for _, want := range []string{
+		`name="image"`, `filename="blink.bin"`, "fake-image-bytes",
+		`name="name"`, "blink",
+		`name="lifecycle"`, "run-loop",
+		`name="runlevel"`, "3",
+		`name="interval"`, "30",
+		`name="trigger"`, "boot", "gpio-high=21",
+	} {
+		if !strings.Contains(rec.body, want) {
+			t.Errorf("multipart body missing %q", want)
+		}
+	}
+}
+
+func TestInstallOmitsZeroInterval(t *testing.T) {
+	var rec recordedReq
+	srv := stubServer(t, http.StatusOK,
+		`{"ok":true,"data":{"command_id":1,"node_id":"x","size":1},"error":""}`, &rec)
+	c := New(srv.URL)
+	if _, _, _, err := c.Install("n", "app", strings.NewReader("x"),
+		InstallOpts{Lifecycle: "run-once", Runlevel: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(rec.body, `name="interval"`) {
+		t.Error("interval field should be omitted when IntervalS == 0")
+	}
+}

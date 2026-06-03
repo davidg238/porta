@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -99,4 +101,68 @@ func (c *Client) Command(sel, verb string, args any) (int64, string, error) {
 		return 0, "", err
 	}
 	return r.CommandID, r.NodeID, nil
+}
+
+// InstallOpts carries the client-facing install knobs. CRC and size are
+// server-computed (the server owns the CRC; size comes back in the response).
+type InstallOpts struct {
+	Lifecycle string
+	Runlevel  int
+	IntervalS int64
+	Triggers  []string
+}
+
+// installResp decodes a container-install write response.
+type installResp struct {
+	CommandID int64  `json:"command_id"`
+	NodeID    string `json:"node_id"`
+	Size      int64  `json:"size"`
+}
+
+// Install builds a multipart body (an "image" file part named "<name>.bin" plus
+// name/lifecycle/runlevel/interval and repeatable "trigger" fields) and POSTs
+// it to /api/nodes/{sel}/containers. The server computes the CRC and registers
+// the payload; it returns the queued run command id, the resolved node id, and
+// the stored image size.
+func (c *Client) Install(sel, name string, image io.Reader, opts InstallOpts) (int64, string, int64, error) {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("image", name+".bin")
+	if err != nil {
+		return 0, "", 0, err
+	}
+	if _, err := io.Copy(fw, image); err != nil {
+		return 0, "", 0, err
+	}
+	_ = mw.WriteField("name", name)
+	if opts.Lifecycle != "" {
+		_ = mw.WriteField("lifecycle", opts.Lifecycle)
+	}
+	_ = mw.WriteField("runlevel", strconv.Itoa(opts.Runlevel))
+	if opts.IntervalS != 0 {
+		// The server re-parses this with command.ParseDurationSeconds, which
+		// accepts a bare integer as seconds.
+		_ = mw.WriteField("interval", strconv.FormatInt(opts.IntervalS, 10))
+	}
+	for _, t := range opts.Triggers {
+		_ = mw.WriteField("trigger", t)
+	}
+	if err := mw.Close(); err != nil {
+		return 0, "", 0, err
+	}
+	req, err := http.NewRequest("POST",
+		c.baseURL+"/api/nodes/"+url.PathEscape(sel)+"/containers", &buf)
+	if err != nil {
+		return 0, "", 0, err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	data, err := c.do(req)
+	if err != nil {
+		return 0, "", 0, err
+	}
+	var r installResp
+	if err := json.Unmarshal(data, &r); err != nil {
+		return 0, "", 0, err
+	}
+	return r.CommandID, r.NodeID, r.Size, nil
 }
