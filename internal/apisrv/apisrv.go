@@ -31,6 +31,7 @@ func New(st *store.Store) *Handler {
 // the shared mux's CIDR allowlist middleware (applied by httpsrv) covers them.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/nodes", h.handleListNodes)
+	mux.HandleFunc("GET /api/nodes/{sel}", h.handleNodeDetail)
 	mux.HandleFunc("POST /api/nodes/{sel}/commands", h.handleCommand)
 	mux.HandleFunc("POST /api/nodes/{sel}/containers", h.handleContainerInstall)
 	mux.HandleFunc("PATCH /api/nodes/{sel}", h.handlePatchNode)

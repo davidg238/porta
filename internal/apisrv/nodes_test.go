@@ -69,6 +69,47 @@ func TestPatchNodeBothFields(t *testing.T) {
 	}
 }
 
+func TestGetNodeDetail(t *testing.T) {
+	h, st := newTestHandler(t)
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+	st.SetNodeName("aabbccddeeff", "blinky")
+	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192")
+
+	mux := http.NewServeMux()
+	h.Register(mux)
+	req := httptest.NewRequest("GET", "/api/nodes/blinky", nil) // resolve by name
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var env struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			ID, Name, Chip, Sdk string
+			PollIntervalS       int64 `json:"poll_interval_s"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.Data.ID != "aabbccddeeff" || env.Data.Chip != "esp32" || env.Data.Sdk != "v2.0.0-alpha.192" {
+		t.Errorf("detail=%+v", env.Data)
+	}
+}
+
+func TestGetNodeDetailUnknown(t *testing.T) {
+	h, _ := newTestHandler(t)
+	mux := http.NewServeMux()
+	h.Register(mux)
+	req := httptest.NewRequest("GET", "/api/nodes/ghost", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status=%d", rec.Code)
+	}
+}
+
 func TestGetNodesList(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)

@@ -3,6 +3,7 @@ package apisrv
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 
 	"github.com/davidg238/porta/internal/control"
 )
@@ -44,6 +45,66 @@ func (h *Handler) handleListNodes(w http.ResponseWriter, r *http.Request) {
 type nodePatch struct {
 	Name        *string `json:"name"`
 	MaxOfflineS *int64  `json:"max_offline_s"`
+}
+
+// nodeDetail is GET /api/nodes/{sel}: identity + observed apps + config
+// (desired-vs-observed for the first app, mirroring the web detail page) +
+// timings. The SDK guard in `porta run` reads chip/sdk from here.
+type nodeDetail struct {
+	ID            string              `json:"id"`
+	Name          string              `json:"name"`
+	Kind          string              `json:"kind"`
+	IP            string              `json:"ip"`
+	Online        bool                `json:"online"`
+	Chip          string              `json:"chip"`
+	Sdk           string              `json:"sdk"`
+	PollIntervalS int64               `json:"poll_interval_s"`
+	MaxOfflineS   int64               `json:"max_offline_s"`
+	LastSeen      int64               `json:"last_seen"`
+	LastReportAt  int64               `json:"last_report_at"`
+	Apps          []control.App       `json:"apps"`
+	ConfigApp     string              `json:"config_app"`
+	Config        []control.ConfigRow `json:"config"`
+}
+
+// handleNodeDetail returns one node's full detail.
+func (h *Handler) handleNodeDetail(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.resolveSel(w, r.PathValue("sel"))
+	if !ok {
+		return
+	}
+	n, err := h.st.GetNode(id)
+	if err != nil || n == nil {
+		writeErr(w, http.StatusNotFound, "node not found")
+		return
+	}
+	apps, _ := control.AppsFromObserved(n.ObservedState)
+	confApp := firstAppName(apps)
+	var cfg []control.ConfigRow
+	if confApp != "" {
+		cfg, _ = control.DesiredVsObserved(h.st, id, confApp)
+	}
+	writeOK(w, nodeDetail{
+		ID: n.ID, Name: n.Name, Kind: n.Kind, IP: n.SourceAddr,
+		Online: n.Online(h.now()), Chip: n.Chip, Sdk: n.Sdk,
+		PollIntervalS: n.PollIntervalS, MaxOfflineS: n.MaxOfflineS,
+		LastSeen: n.LastSeen.Int64, LastReportAt: n.LastReportAt.Int64,
+		Apps: apps, ConfigApp: confApp, Config: cfg,
+	})
+}
+
+// firstAppName returns the lexically-first observed app name (the app whose
+// config the detail view surfaces), or "" if none.
+func firstAppName(apps []control.App) string {
+	names := make([]string, 0, len(apps))
+	for _, a := range apps {
+		names = append(names, a.Name)
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return ""
+	}
+	return names[0]
 }
 
 // handlePatchNode applies rename / max-offline node settings (gateway-side,
