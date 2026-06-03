@@ -3,6 +3,8 @@ package toolchain
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/davidg238/porta/devsdk/exec"
 )
 
 // Build compiles a Toit app to a snapshot, relocates it to a 32-bit binary
@@ -12,7 +14,7 @@ import (
 // RetainSnapshot for panic decoding. All current ESP32 chips are 32-bit, so the
 // relocation is `-m32 --format=binary`; the image couples to the active SDK
 // version, checked separately via CheckSDK.
-func Build(ex *Executor, appPath string) (img []byte, snapshotPath string, cleanup func(), err error) {
+func Build(ex *exec.Executor, appPath string) (img []byte, snapshotPath string, cleanup func(), err error) {
 	noop := func() {}
 	dir, err := os.MkdirTemp("", "porta-build-")
 	if err != nil {

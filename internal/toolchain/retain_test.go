@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/davidg238/porta/devsdk/exec"
 )
 
 // uuidRunner returns a fixed UUID for `toit tool snapshot uuid`.
@@ -23,7 +25,7 @@ func TestRetainSnapshotCopiesToCache(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ex := NewExecutor(uuidRunner{uuid: "abcd-uuid"}, &bytes.Buffer{}, false)
+	ex := exec.NewExecutor(uuidRunner{uuid: "abcd-uuid"}, &bytes.Buffer{}, false)
 	uuid, err := RetainSnapshot(ex, snap)
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +48,7 @@ func TestRetainSnapshotEmptyUUID(t *testing.T) {
 	if err := os.WriteFile(snap, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ex := NewExecutor(uuidRunner{uuid: ""}, &bytes.Buffer{}, false)
+	ex := exec.NewExecutor(uuidRunner{uuid: ""}, &bytes.Buffer{}, false)
 	if _, err := RetainSnapshot(ex, snap); err == nil {
 		t.Fatal("expected error on empty uuid")
 	}

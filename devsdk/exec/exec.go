@@ -1,12 +1,13 @@
-// Package toolchain wraps the Toit SDK CLI behind an injectable runner and a
-// narrating executor, so porta can compile + relocate payloads while showing
-// the operator every underlying command ("trainer wheels").
-package toolchain
+// Package exec is porta's injectable, narrating runner for external dev tools
+// ("trainer wheels"): Runner abstracts the shell-out (tests inject a fake);
+// Executor narrates each command (apt-style summary, or full transcript when
+// verbose). Promoted from internal/toolchain so node-repo dev tools can reuse it.
+package exec
 
 import (
 	"fmt"
 	"io"
-	"os/exec"
+	osexec "os/exec"
 	"strings"
 	"time"
 )
@@ -21,7 +22,7 @@ type Runner interface {
 type ExecRunner struct{}
 
 func (ExecRunner) Run(name string, args ...string) ([]byte, error) {
-	return exec.Command(name, args...).CombinedOutput()
+	return osexec.Command(name, args...).CombinedOutput()
 }
 
 // Executor narrates and runs commands. When verbose, child output is written

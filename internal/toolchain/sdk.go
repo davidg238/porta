@@ -3,10 +3,12 @@ package toolchain
 import (
 	"fmt"
 	"strings"
+
+	"github.com/davidg238/porta/devsdk/exec"
 )
 
 // SDKVersion returns the active Toit SDK version (`toit version`), trimmed.
-func SDKVersion(ex *Executor) (string, error) {
+func SDKVersion(ex *exec.Executor) (string, error) {
 	out, err := ex.Run("toit version", "toit", "version")
 	if err != nil {
 		return "", err
