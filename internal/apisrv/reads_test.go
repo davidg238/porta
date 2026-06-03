@@ -7,6 +7,18 @@ import (
 	"testing"
 )
 
+func TestGetNodeCommandsUnknownNode(t *testing.T) {
+	h, _ := newTestHandler(t)
+	mux := http.NewServeMux()
+	h.Register(mux)
+	req := httptest.NewRequest("GET", "/api/nodes/ghost/commands", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
 func TestGetNodeCommands(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
