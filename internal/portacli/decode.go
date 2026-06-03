@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davidg238/porta/internal/apiclient"
-	"github.com/davidg238/porta/internal/toolchain"
+	"github.com/davidg238/porta/devsdk/apiclient"
+	"github.com/davidg238/porta/devsdk/exec"
 )
 
 // panicDecoder symbolicates a base64 trace blob into a readable stack trace.
@@ -19,12 +19,12 @@ type panicDecoder interface {
 
 // jagDecoder shells out to `jag decode <blob>`, which resolves the blob's
 // embedded program UUID against jag's local snapshot cache (populated by
-// `porta run`, see toolchain.RetainSnapshot). It uses a plain Runner (not the
-// narrating Executor) so decode adds no "→ jag decode …" noise to monitor output.
-type jagDecoder struct{ r toolchain.Runner }
+// `porta run`, see toolchain.RetainSnapshot). It uses exec.Runner directly (not
+// the narrating exec.Executor) so decode adds no "→ jag decode …" noise to monitor output.
+type jagDecoder struct{ r exec.Runner }
 
 // newJagDecoder builds the production decoder over os/exec.
-func newJagDecoder() jagDecoder { return jagDecoder{r: toolchain.ExecRunner{}} }
+func newJagDecoder() jagDecoder { return jagDecoder{r: exec.ExecRunner{}} }
 
 func (d jagDecoder) Decode(blob string) (string, error) {
 	out, err := d.r.Run("jag", "decode", blob)

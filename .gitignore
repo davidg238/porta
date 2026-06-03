@@ -29,3 +29,6 @@ nodus/host/firmware
 
 # brainstorming visual-companion artifacts
 .superpowers/
+
+# Runtime / soak logs
+*.log

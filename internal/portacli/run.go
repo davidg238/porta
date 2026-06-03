@@ -9,7 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/davidg238/porta/internal/apiclient"
+	"github.com/davidg238/porta/devsdk/apiclient"
+	"github.com/davidg238/porta/devsdk/exec"
 	"github.com/davidg238/porta/internal/toolchain"
 	"github.com/spf13/cobra"
 )
@@ -28,7 +29,7 @@ type deployOpts struct {
 // then deliver the image + enqueue run via the control-plane API. force skips
 // the SDK match refusal (but not the unknown-identity block). The server stamps
 // issued_by="api".
-func runDeploy(out io.Writer, c *apiclient.Client, ex *toolchain.Executor, sel, appPath string, opts deployOpts, force bool) error {
+func runDeploy(out io.Writer, c *apiclient.Client, ex *exec.Executor, sel, appPath string, opts deployOpts, force bool) error {
 	_, sdk, err := c.NodeIdentity(sel)
 	if err != nil {
 		return err
@@ -93,7 +94,7 @@ func newRunCmd() *cobra.Command {
 				opts.Triggers = promptTriggers()
 			}
 			c := apiclient.New(serverURL())
-			ex := toolchain.NewExecutor(toolchain.ExecRunner{}, cmd.OutOrStdout(), verbose)
+			ex := exec.NewExecutor(exec.ExecRunner{}, cmd.OutOrStdout(), verbose)
 			return runDeploy(cmd.OutOrStdout(), c, ex, device, appPath, opts, force)
 		},
 	}

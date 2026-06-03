@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"os"
 	"testing"
+
+	"github.com/davidg238/porta/devsdk/exec"
 )
 
-// fileWritingRunner extends fakeRunner: when it sees a `-o <path>` arg, it
-// writes canned image bytes there (simulating snapshot-to-image output).
+// fileWritingRunner is a standalone test Runner: when it sees a `-o <path>` arg,
+// it writes canned image bytes there (simulating snapshot-to-image output).
 type fileWritingRunner struct {
 	calls    [][]string
 	imgBytes []byte
@@ -35,7 +37,7 @@ func hasArg(args []string, want string) bool {
 
 func TestBuildCompilesAndRelocates(t *testing.T) {
 	fr := &fileWritingRunner{imgBytes: []byte("IMAGEBYTES")}
-	ex := NewExecutor(fr, &bytes.Buffer{}, false)
+	ex := exec.NewExecutor(fr, &bytes.Buffer{}, false)
 	img, snap, cleanup, err := Build(ex, "/tmp/app.toit")
 	if err != nil {
 		t.Fatal(err)

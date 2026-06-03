@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidg238/porta/internal/apiclient"
+	"github.com/davidg238/porta/devsdk/apiclient"
+	"github.com/davidg238/porta/devsdk/exec"
 	"github.com/davidg238/porta/internal/apisrv"
 	"github.com/davidg238/porta/internal/store"
-	"github.com/davidg238/porta/internal/toolchain"
 )
 
 // stubRunner: `toit version` → fixed SDK; `snapshot uuid` → fixed uuid (or empty
@@ -77,7 +77,7 @@ func TestRunDeployHappyPath(t *testing.T) {
 	t.Setenv("PORTA_SNAPSHOT_DIR", t.TempDir())
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
 	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192")
-	ex := toolchain.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192"}, &bytes.Buffer{}, false)
+	ex := exec.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192"}, &bytes.Buffer{}, false)
 
 	var buf bytes.Buffer
 	err := runDeploy(&buf, c, ex, "aabbccddeeff", "/tmp/app.toit",
@@ -103,7 +103,7 @@ func TestRunDeployHappyPath(t *testing.T) {
 func TestRunDeployBlocksOnUnknownIdentity(t *testing.T) {
 	c, st := newRunClientServer(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000) // no UpdateNodeIdentity → sdk=""
-	ex := toolchain.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192"}, &bytes.Buffer{}, false)
+	ex := exec.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192"}, &bytes.Buffer{}, false)
 	// Blocked even with force=true (force overrides mismatch, not unknown identity).
 	if err := runDeploy(&bytes.Buffer{}, c, ex, "aabbccddeeff", "/tmp/app.toit",
 		deployOpts{Name: "blink", Lifecycle: "run-once"}, true); err == nil {
@@ -115,7 +115,7 @@ func TestRunDeployRefusesSDKMismatch(t *testing.T) {
 	c, st := newRunClientServer(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
 	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192")
-	ex := toolchain.NewExecutor(stubRunner{sdk: "v9.9.9"}, &bytes.Buffer{}, false)
+	ex := exec.NewExecutor(stubRunner{sdk: "v9.9.9"}, &bytes.Buffer{}, false)
 	if err := runDeploy(&bytes.Buffer{}, c, ex, "aabbccddeeff", "/tmp/app.toit",
 		deployOpts{Name: "blink", Lifecycle: "run-once"}, false); err == nil {
 		t.Fatal("expected SDK mismatch refusal")
@@ -135,7 +135,7 @@ func TestRunDeploySetsPowerMode(t *testing.T) {
 	c, st := newRunClientServer(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
 	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192")
-	ex := toolchain.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192"}, &bytes.Buffer{}, false)
+	ex := exec.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192"}, &bytes.Buffer{}, false)
 
 	err := runDeploy(&bytes.Buffer{}, c, ex, "aabbccddeeff", "/tmp/app.toit",
 		deployOpts{Name: "blink", Lifecycle: "run-loop", PowerMode: "always-on"}, false)
@@ -179,7 +179,7 @@ func TestRunDeployRetainsSnapshot(t *testing.T) {
 	t.Setenv("PORTA_SNAPSHOT_DIR", cache)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
 	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192")
-	ex := toolchain.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192"}, &bytes.Buffer{}, false)
+	ex := exec.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192"}, &bytes.Buffer{}, false)
 
 	var buf bytes.Buffer
 	if err := runDeploy(&buf, c, ex, "aabbccddeeff", "/tmp/app.toit",
@@ -196,7 +196,7 @@ func TestRunDeployRetentionFailureIsNonFatal(t *testing.T) {
 	t.Setenv("PORTA_SNAPSHOT_DIR", t.TempDir())
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
 	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192")
-	ex := toolchain.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192", badUUID: true}, &bytes.Buffer{}, false)
+	ex := exec.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192", badUUID: true}, &bytes.Buffer{}, false)
 
 	var buf bytes.Buffer
 	if err := runDeploy(&buf, c, ex, "aabbccddeeff", "/tmp/app.toit",

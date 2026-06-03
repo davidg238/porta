@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/davidg238/porta/internal/apiclient"
+	"github.com/davidg238/porta/devsdk/apiclient"
 	"github.com/davidg238/porta/internal/command"
 	"github.com/davidg238/porta/internal/config"
 	"github.com/spf13/cobra"

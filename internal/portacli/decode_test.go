@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidg238/porta/internal/apiclient"
+	"github.com/davidg238/porta/devsdk/apiclient"
 )
 
-// recordingRunner satisfies toolchain.Runner; returns canned output and records argv.
+// recordingRunner satisfies exec.Runner; returns canned output and records argv.
 type recordingRunner struct {
 	out  []byte
 	err  error
