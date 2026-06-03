@@ -160,9 +160,11 @@ Response: `{ "ok": true, "data": { "command_id": 42 }, "error": "" }`.
 
 **`POST /api/nodes/{sel}/containers`** — Content-Type `multipart/form-data`.
 Parts: `image` (the relocated `.bin`), `name`, `lifecycle`, `runlevel`, `interval`,
-`triggers`. Maps to `control.Install` (size + CRC32 computed server-side). Mirrors
-`web.postInstall`, including the `http.MaxBytesReader` cap (reuse the `maxUpload`
-constant value). Response: `{ ok, data:{ command_id, size }, error }`.
+and a repeatable `trigger` part (singular, matching the CLI `--trigger` flag). Maps
+to `control.Install` (size + CRC32 computed server-side); the upload is capped via
+`http.MaxBytesReader` (the same `maxUpload` mechanism `web.postInstall` uses, though
+the API handler additionally honours `runlevel`/`trigger`, which the web handler
+ignores). Response: `{ ok, data:{ command_id, size }, error }`.
 
 > The CRC32 is computed inside `control.Install` and stored in the queued `run`
 > command's args (so the node verifies its download); `Install` returns only the
@@ -188,15 +190,22 @@ Response: `{ ok, data:{ }, error }`.
   config desired-vs-observed rows, poll interval, online/check-in. Reuses the same
   `control` view-model functions the web detail page and MCP `device_status` use.
 - **`GET /api/nodes/{sel}/commands`** → recent command log for the node
-  (`{id, verb, args, state, issued_by, ts}` rows) for `porta log`.
+  (`{id, verb, args, issued_at, issued_by, delivered}` rows, newest first, capped
+  at 50) for `porta log`. `delivered` is derived from whether the command's
+  `delivered_at` column is set.
 
 ## 5. Response schema & audit
 
 - **Envelope:** every response is JSON `{ ok: bool, data: object|null, error: string }`
   (echoing jast-gw's `Response`), **plus** a meaningful HTTP status:
   - `200` success · `400` bad request (unknown/missing verb, bad args, bad
-    duration) · `404` unknown node · `409` control-layer conflict · `413` upload
-    too large.
+    duration, oversize upload, control-layer rejection) · `404` unknown node ·
+    `500` internal error (store failure, recovered panic).
+  - **S1 simplification:** the distinct `409` (control-layer conflict) and `413`
+    (upload too large) codes sketched in earlier drafts collapse to `400` in S1 —
+    control validation errors and `MaxBytesReader` overflow both surface as `400`
+    with the passed-through message. Splitting them out is a cheap later refinement
+    (a `409`/`413` mapping) if a client ever needs to branch on them.
   - `ok=false` always carries a human-readable `error`; `ok=true` always carries
     `data` (possibly empty object).
 - **Audit:** every write stamps `issued_by = "api"` into the existing command-log,
@@ -210,11 +219,12 @@ Response: `{ ok, data:{ }, error }`.
 - Unknown/missing `verb`, missing required `args`, unparseable duration → `400`
   with `{ok:false,error}`.
 - Unknown `{sel}` → `404`.
-- A `control.*` error (validation, e.g. rejecting a daemon power-mode on a
-  duty-cycle node) → `400`/`409` with the control error message passed through.
+- A `control.*` error (validation, e.g. rejecting an invalid power-mode) → `400`
+  with the control error message passed through.
 - Oversize multipart → `http.MaxBytesReader` makes `ParseMultipartForm` fail →
-  `400`/`413` (same mechanism as `web.postInstall`).
-- All handlers are panic-safe (recover → `500` `{ok:false}`), so one bad request
+  `400` (same mechanism as `web.postInstall`).
+- All handlers are panic-safe: a `recoverer` middleware wraps every registered
+  route and turns a panic into a `500` `{ok:false}` envelope, so one bad request
   never takes down the shared listener.
 
 ## 7. Testing
