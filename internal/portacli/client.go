@@ -7,8 +7,8 @@ import "os"
 var serverFlag string
 
 // serverURL resolves the porta server base URL: --server, then $PORTA_SERVER,
-// then http://localhost:6970 (matches serve's default --http-port). Only the 8
-// mutating commands consume it; reads stay db-backed.
+// then http://localhost:6970 (matches serve's default --http-port). The
+// mutating commands and `monitor` consume it; the remaining reads stay db-backed.
 func serverURL() string {
 	if serverFlag != "" {
 		return serverFlag

@@ -14,6 +14,7 @@ import "strconv"
 //	"string" → Value == nil; Text holds the payload
 //	""       → log row (Value == nil; Text holds the line)
 type DataRow struct {
+	ID        int64
 	TS        int64
 	Seq       int64
 	Kind      string
@@ -62,7 +63,7 @@ func (s *Store) QueryData(deviceID string, since, until int64, kind string) ([]D
 // since the order is ts,seq ascending) instead of loading the whole window
 // into memory to truncate in Go; limit <= 0 means no cap.
 func (s *Store) QueryDataLimited(deviceID string, since, until int64, kind string, limit int) ([]DataRow, error) {
-	q := `SELECT ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,'')
+	q := `SELECT id, ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,'')
 		  FROM data_log WHERE device_id = ? AND ts >= ?`
 	args := []any{deviceID, since}
 	if until > 0 {
@@ -87,7 +88,43 @@ func (s *Store) QueryDataLimited(deviceID string, since, until int64, kind strin
 	for rows.Next() {
 		var r DataRow
 		var v any
-		if err := rows.Scan(&r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType); err != nil {
+		if err := rows.Scan(&r.ID, &r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType); err != nil {
+			return nil, err
+		}
+		r.Value = normalizeNumeric(v)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// QueryDataAfter returns the device's rows with id > after, ordered by id
+// (the data_log AUTOINCREMENT primary key — strictly monotonic, never reused),
+// so `porta monitor --follow` tails exactly the rows inserted since the last
+// poll with no timestamp-tie boundary case. kind restricts to that kind when
+// non-empty; limit caps the row count in SQL when > 0.
+func (s *Store) QueryDataAfter(deviceID string, after int64, kind string, limit int) ([]DataRow, error) {
+	q := `SELECT id, ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,'')
+		  FROM data_log WHERE device_id = ? AND id > ?`
+	args := []any{deviceID, after}
+	if kind != "" {
+		q += ` AND kind = ?`
+		args = append(args, kind)
+	}
+	q += ` ORDER BY id`
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DataRow
+	for rows.Next() {
+		var r DataRow
+		var v any
+		if err := rows.Scan(&r.ID, &r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType); err != nil {
 			return nil, err
 		}
 		r.Value = normalizeNumeric(v)
