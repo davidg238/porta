@@ -26,6 +26,8 @@ type detailVM struct {
 	IP       string
 	EUI      string
 	PollIntv string
+	Chip     string
+	Sdk      string
 	Gauge    CheckinState
 	Config   []control.ConfigRow
 	ConfApp  string
@@ -130,6 +132,8 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 		IP:       n.SourceAddr,
 		EUI:      n.ID,
 		PollIntv: humanizeDur(n.PollIntervalS),
+		Chip:     n.Chip,
+		Sdk:      n.Sdk,
 		Gauge:    Checkin(n.LastSeen.Valid, lastSeen, n.PollIntervalS, n.MaxOfflineS, now),
 		Config:   cfg,
 		ConfApp:  app,

@@ -419,6 +419,35 @@ func TestNodeRecentCommandsBadges(t *testing.T) {
 	}
 }
 
+func TestNodeHeaderShowsIdentity(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	if err := st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192"); err != nil {
+		t.Fatal(err)
+	}
+	srv := serve(t, st)
+
+	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
+	for _, want := range []string{"esp32", "v2.0.0-alpha.192"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("header missing reported identity %q: %s", want, body)
+		}
+	}
+}
+
+func TestNodeHeaderIdentityFallback(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000) // no UpdateNodeIdentity → chip/sdk empty
+	srv := serve(t, st)
+
+	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
+	for _, want := range []string{"chip ?", "sdk —"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("header missing identity fallback %q: %s", want, body)
+		}
+	}
+}
+
 func TestTelemetryPageMetricsOnly(t *testing.T) {
 	st := testStore(t)
 	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
