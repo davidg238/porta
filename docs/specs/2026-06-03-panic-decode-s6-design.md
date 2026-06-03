@@ -166,7 +166,10 @@ and reusing the §6 `panicDecoder` seam:
   `ID` is the stable `data_log.id` (the S5 id cursor exposes it on
   `apiclient.DataRow.ID`). `SUMMARY` is the first meaningful line of the decoded
   trace; if decode fails, a short raw/fallback marker. Reads via
-  `QueryTelemetryWindow(..., kind:"panic", limit)`.
+  `QueryTelemetryWindow(..., kind:"panic", 0)` (full window) and applies
+  `--limit` client-side to the **tail** (newest N). As-built note: the server's
+  `limit` returns the *oldest* N (rows are ascending by `ts,seq`), so to show the
+  most-recent N the window is fetched unbounded and truncated client-side.
 - **`porta panic show -d <node> [--id <id>]`** — the full decoded trace for one
   panic. Default (no `--id`): the most recent panic in the window. Selector is the
   `data_log.id` shown by `list` (stateless-CLI-friendly; not a per-listing index).

@@ -104,7 +104,7 @@ func newMonitorCmd() *cobra.Command {
 	}
 	deviceFlag(cmd, &device)
 	cmd.Flags().StringVar(&since, "since", "", "look-back window, e.g. 30m, 1h (default 1h)")
-	cmd.Flags().StringVar(&kind, "kind", "", "filter to 'log' or 'metric'")
+	cmd.Flags().StringVar(&kind, "kind", "", "filter to 'log', 'metric', or 'panic'")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "poll the server and tail new rows")
 	cmd.Flags().BoolVar(&noDecode, "no-decode", false, "print raw panic blobs instead of running jag decode")
 	return cmd
