@@ -2,6 +2,7 @@ package apisrv
 
 import (
 	"bytes"
+	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -41,6 +42,72 @@ func TestPostContainerInstall(t *testing.T) {
 	cmd, err := st.NextUndelivered("aabbccddeeff")
 	if err != nil || cmd == nil || cmd.Verb != "run" {
 		t.Fatalf("expected queued run, got %+v (err %v)", cmd, err)
+	}
+}
+
+// TestPostContainerInstallRunlevelAndTriggers verifies that the runlevel and
+// trigger fields sent in a multipart install request actually land in the queued
+// run command's args JSON.  This exercises the plumbing from
+// handleContainerInstall → control.Install → command.Run.
+func TestPostContainerInstallRunlevelAndTriggers(t *testing.T) {
+	h, st := newTestHandler(t)
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+
+	// Build a multipart request with runlevel=5, lifecycle=run-loop, and two
+	// trigger entries (boot and interval=60).
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("image", "widget.bin")
+	fw.Write([]byte("IMAGEBYTES"))
+	mw.WriteField("name", "widget")
+	mw.WriteField("runlevel", "5")
+	mw.WriteField("lifecycle", "run-loop")
+	mw.WriteField("trigger", "boot")
+	mw.WriteField("trigger", "interval=60")
+	mw.Close()
+
+	mux := http.NewServeMux()
+	h.Register(mux)
+	req := httptest.NewRequest("POST", "/api/nodes/aabbccddeeff/containers", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	cmd, err := st.NextUndelivered("aabbccddeeff")
+	if err != nil || cmd == nil {
+		t.Fatalf("no queued command (err=%v)", err)
+	}
+	if cmd.Verb != "run" {
+		t.Fatalf("verb=%q, want run", cmd.Verb)
+	}
+
+	// Decode the args JSON to verify runlevel, lifecycle, and triggers.
+	var args struct {
+		Runlevel  int                `json:"runlevel"`
+		Lifecycle string             `json:"lifecycle"`
+		Triggers  map[string]float64 `json:"triggers"` // json.Unmarshal defaults to float64
+	}
+	if err := json.Unmarshal([]byte(cmd.Args), &args); err != nil {
+		t.Fatalf("decode args %q: %v", cmd.Args, err)
+	}
+	if args.Runlevel != 5 {
+		t.Errorf("runlevel=%d, want 5", args.Runlevel)
+	}
+	if args.Lifecycle != "run-loop" {
+		t.Errorf("lifecycle=%q, want run-loop", args.Lifecycle)
+	}
+	if _, hasBoot := args.Triggers["boot"]; !hasBoot {
+		t.Errorf("triggers=%v, want boot key", args.Triggers)
+	}
+	if _, hasInterval := args.Triggers["interval"]; !hasInterval {
+		t.Errorf("triggers=%v, want interval key", args.Triggers)
+	}
+	if args.Triggers["interval"] != 60 {
+		t.Errorf("triggers[interval]=%v, want 60", args.Triggers["interval"])
 	}
 }
 

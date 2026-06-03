@@ -58,6 +58,118 @@ func TestPostCommandVerbs(t *testing.T) {
 	}
 }
 
+// TestCoerceScalar locks the precision-preserving behaviour: integer-shaped
+// json.Numbers stay int64, float-shaped become float64, and non-Numbers pass
+// through unchanged (spec §3 / B2 review hardenings).
+func TestCoerceScalar(t *testing.T) {
+	cases := []struct {
+		name  string
+		input any
+		check func(t *testing.T, got any)
+	}{
+		{
+			name:  "integer json.Number becomes int64",
+			input: json.Number("30"),
+			check: func(t *testing.T, got any) {
+				v, ok := got.(int64)
+				if !ok {
+					t.Fatalf("type=%T, want int64", got)
+				}
+				if v != 30 {
+					t.Errorf("value=%d, want 30", v)
+				}
+			},
+		},
+		{
+			name:  "float json.Number becomes float64",
+			input: json.Number("3.5"),
+			check: func(t *testing.T, got any) {
+				v, ok := got.(float64)
+				if !ok {
+					t.Fatalf("type=%T, want float64", got)
+				}
+				if v != 3.5 {
+					t.Errorf("value=%v, want 3.5", v)
+				}
+			},
+		},
+		{
+			name:  "plain string passes through",
+			input: "hello",
+			check: func(t *testing.T, got any) {
+				v, ok := got.(string)
+				if !ok {
+					t.Fatalf("type=%T, want string", got)
+				}
+				if v != "hello" {
+					t.Errorf("value=%q, want hello", v)
+				}
+			},
+		},
+		{
+			name:  "bool passes through",
+			input: true,
+			check: func(t *testing.T, got any) {
+				v, ok := got.(bool)
+				if !ok {
+					t.Fatalf("type=%T, want bool", got)
+				}
+				if !v {
+					t.Errorf("value=%v, want true", v)
+				}
+			},
+		},
+		{
+			name:  "nil passes through as nil",
+			input: nil,
+			check: func(t *testing.T, got any) {
+				if got != nil {
+					t.Fatalf("got=%v (%T), want nil", got, got)
+				}
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := coerceScalar(c.input)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			c.check(t, got)
+		})
+	}
+}
+
+// TestPostCommandValidationError verifies that a control-layer validation
+// rejection surfaces as a 400 response with a non-empty error message.
+//
+// set-power-mode validates the mode value at enqueue time via command.SetPowerMode
+// (rejects anything other than "deep-sleep" or "always-on"), making it the ideal
+// probe. The other verbs — set, set-console, set-poll-interval, stop — validate
+// their own structural args before reaching control but do not have a mode enum
+// that control rejects; their validation is inline in dispatch().
+func TestPostCommandValidationError(t *testing.T) {
+	h, st := newTestHandler(t)
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+	rec := postCmd(t, h, "aabbccddeeff", `{"verb":"set-power-mode","args":{"mode":"turbo"}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var env struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if env.OK {
+		t.Error("ok should be false on validation error")
+	}
+	if env.Error == "" {
+		t.Error("error message should be non-empty")
+	}
+}
+
 func TestPostCommandUnknownVerb(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)

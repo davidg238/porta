@@ -67,6 +67,36 @@ func TestWriteErr(t *testing.T) {
 	}
 }
 
+// TestRecoverer verifies the panic-safety middleware: a panicking handler must
+// produce a 500 {ok:false} envelope instead of aborting the connection.
+func TestRecoverer(t *testing.T) {
+	panicking := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("synthetic panic")
+	})
+	wrapped := recoverer(panicking)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	wrapped.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d, want 500", rec.Code)
+	}
+	var env struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode body: %v — body=%s", err, rec.Body.String())
+	}
+	if env.OK {
+		t.Error("ok should be false")
+	}
+	if env.Error == "" {
+		t.Error("error message should be non-empty")
+	}
+}
+
 func TestResolveSel(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)

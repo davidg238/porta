@@ -27,15 +27,30 @@ func New(st *store.Store) *Handler {
 	return &Handler{st: st, now: func() int64 { return time.Now().Unix() }}
 }
 
+// recoverer wraps h so a panic in any API handler becomes a 500 {ok:false}
+// envelope instead of aborting the connection (spec §6 panic-safety).
+func recoverer(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				writeErr(w, http.StatusInternalServerError, "internal error")
+			}
+		}()
+		h(w, r)
+	}
+}
+
 // Register mounts the API routes on mux. Routes use Go 1.22+ method patterns;
 // the shared mux's CIDR allowlist middleware (applied by httpsrv) covers them.
+// Every handler is wrapped with recoverer so panics produce a 500 envelope
+// rather than aborting the connection (spec §6).
 func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/nodes", h.handleListNodes)
-	mux.HandleFunc("GET /api/nodes/{sel}", h.handleNodeDetail)
-	mux.HandleFunc("POST /api/nodes/{sel}/commands", h.handleCommand)
-	mux.HandleFunc("POST /api/nodes/{sel}/containers", h.handleContainerInstall)
-	mux.HandleFunc("PATCH /api/nodes/{sel}", h.handlePatchNode)
-	mux.HandleFunc("GET /api/nodes/{sel}/commands", h.handleNodeCommands)
+	mux.HandleFunc("GET /api/nodes", recoverer(h.handleListNodes))
+	mux.HandleFunc("GET /api/nodes/{sel}", recoverer(h.handleNodeDetail))
+	mux.HandleFunc("POST /api/nodes/{sel}/commands", recoverer(h.handleCommand))
+	mux.HandleFunc("POST /api/nodes/{sel}/containers", recoverer(h.handleContainerInstall))
+	mux.HandleFunc("PATCH /api/nodes/{sel}", recoverer(h.handlePatchNode))
+	mux.HandleFunc("GET /api/nodes/{sel}/commands", recoverer(h.handleNodeCommands))
 }
 
 // envelope is the uniform response shape, echoing jast-gw's Response.
