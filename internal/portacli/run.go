@@ -45,7 +45,7 @@ func runDeploy(out io.Writer, c *apiclient.Client, ex *toolchain.Executor, sel, 
 			return err
 		}
 	}
-	img, _, cleanup, err := toolchain.Build(ex, appPath)
+	img, snapPath, cleanup, err := toolchain.Build(ex, appPath)
 	if err != nil {
 		return err
 	}
@@ -57,6 +57,9 @@ func runDeploy(out io.Writer, c *apiclient.Client, ex *toolchain.Executor, sel, 
 		return err
 	}
 	fmt.Fprintf(out, "%s: built %s (%d B), enqueued run (command #%d)\n", nodeID, opts.Name, size, cmdID)
+	if _, rerr := toolchain.RetainSnapshot(ex, snapPath); rerr != nil {
+		fmt.Fprintf(out, "warning: snapshot not retained for panic decode: %v\n", rerr)
+	}
 	if opts.PowerMode != "" {
 		if _, _, err := c.Command(sel, "set-power-mode", map[string]any{"mode": opts.PowerMode}); err != nil {
 			return err

@@ -14,25 +14,45 @@ import (
 	"github.com/davidg238/porta/internal/toolchain"
 )
 
-// stubRunner: `toit version` → fixed SDK; snapshot-to-image -o → canned bytes.
-type stubRunner struct{ sdk string }
+// stubRunner: `toit version` → fixed SDK; `snapshot uuid` → fixed uuid (or empty
+// when badUUID); compile/-o and snapshot-to-image/-o write canned files.
+type stubRunner struct {
+	sdk     string
+	badUUID bool
+}
 
 func (s stubRunner) Run(name string, args ...string) ([]byte, error) {
 	for i := 0; i < len(args); i++ {
 		if args[i] == "version" {
 			return []byte(s.sdk + "\n"), nil
 		}
+		if args[i] == "uuid" {
+			if s.badUUID {
+				return []byte("\n"), nil
+			}
+			return []byte("deadbeef-uuid\n"), nil
+		}
 	}
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == "-o" {
-			for _, a := range args {
-				if a == "snapshot-to-image" {
-					_ = os.WriteFile(args[i+1], []byte("IMG"), 0o600)
-				}
+			if runArgsContain(args, "compile") {
+				_ = os.WriteFile(args[i+1], []byte("SNAP"), 0o600)
+			}
+			if runArgsContain(args, "snapshot-to-image") {
+				_ = os.WriteFile(args[i+1], []byte("IMG"), 0o600)
 			}
 		}
 	}
 	return nil, nil
+}
+
+func runArgsContain(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
 }
 
 // newRunClientServer stands up the REAL apisrv.Handler over a temp store behind
@@ -54,6 +74,7 @@ func newRunClientServer(t *testing.T) (*apiclient.Client, *store.Store) {
 
 func TestRunDeployHappyPath(t *testing.T) {
 	c, st := newRunClientServer(t)
+	t.Setenv("PORTA_SNAPSHOT_DIR", t.TempDir())
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
 	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192")
 	ex := toolchain.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192"}, &bytes.Buffer{}, false)
@@ -149,5 +170,43 @@ func TestNewRunCmdRegistersFlags(t *testing.T) {
 		if cmd.Flags().Lookup(f) == nil {
 			t.Errorf("missing --%s flag", f)
 		}
+	}
+}
+
+func TestRunDeployRetainsSnapshot(t *testing.T) {
+	c, st := newRunClientServer(t)
+	cache := t.TempDir()
+	t.Setenv("PORTA_SNAPSHOT_DIR", cache)
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192")
+	ex := toolchain.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192"}, &bytes.Buffer{}, false)
+
+	var buf bytes.Buffer
+	if err := runDeploy(&buf, c, ex, "aabbccddeeff", "/tmp/app.toit",
+		deployOpts{Name: "blink", Lifecycle: "run-loop", Triggers: []string{"boot"}, Runlevel: 3}, false); err != nil {
+		t.Fatalf("runDeploy: %v", err)
+	}
+	if _, err := os.Stat(cache + "/deadbeef-uuid.snapshot"); err != nil {
+		t.Errorf("expected retained snapshot in cache: %v", err)
+	}
+}
+
+func TestRunDeployRetentionFailureIsNonFatal(t *testing.T) {
+	c, st := newRunClientServer(t)
+	t.Setenv("PORTA_SNAPSHOT_DIR", t.TempDir())
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192")
+	ex := toolchain.NewExecutor(stubRunner{sdk: "v2.0.0-alpha.192", badUUID: true}, &bytes.Buffer{}, false)
+
+	var buf bytes.Buffer
+	if err := runDeploy(&buf, c, ex, "aabbccddeeff", "/tmp/app.toit",
+		deployOpts{Name: "blink", Lifecycle: "run-loop", Triggers: []string{"boot"}, Runlevel: 3}, false); err != nil {
+		t.Fatalf("runDeploy should succeed despite retention failure: %v", err)
+	}
+	if !strings.Contains(buf.String(), "warning") {
+		t.Errorf("expected a retention warning, got %q", buf.String())
+	}
+	if cmd, err := st.NextUndelivered("aabbccddeeff"); err != nil || cmd == nil || cmd.Verb != "run" {
+		t.Fatalf("expected queued run despite retention failure, got %+v (err %v)", cmd, err)
 	}
 }
