@@ -44,6 +44,48 @@ func TestPostContainerInstall(t *testing.T) {
 	}
 }
 
+func TestPostContainerBadRunlevel(t *testing.T) {
+	h, st := newTestHandler(t)
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+	rec := postContainer(t, h, "aabbccddeeff", []byte("IMAGEBYTES"),
+		map[string]string{"name": "blink", "runlevel": "abc"})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad runlevel: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if cmd, _ := st.NextUndelivered("aabbccddeeff"); cmd != nil {
+		t.Fatalf("bad runlevel must not queue a command, got %+v", cmd)
+	}
+}
+
+// TestPostContainerEmptyName verifies that a filename that strips to "" (e.g. ".bin")
+// with no explicit name field yields a 400 and no queued command.
+func TestPostContainerEmptyName(t *testing.T) {
+	h, st := newTestHandler(t)
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+
+	// Build multipart inline so we can use filename ".bin" (strips to "").
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("image", ".bin") // TrimSuffix(".bin", ".bin") == ""
+	fw.Write([]byte("IMAGEBYTES"))
+	// no "name" field
+	mw.Close()
+
+	mux := http.NewServeMux()
+	h.Register(mux)
+	req := httptest.NewRequest("POST", "/api/nodes/aabbccddeeff/containers", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("empty name: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if cmd, _ := st.NextUndelivered("aabbccddeeff"); cmd != nil {
+		t.Fatalf("empty name must not queue a command, got %+v", cmd)
+	}
+}
+
 func TestPostContainerOversizeRejected(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)

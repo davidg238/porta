@@ -58,9 +58,7 @@ func (h *Handler) handleContainerInstall(w http.ResponseWriter, r *http.Request)
 		}
 		opts.IntervalS = secs
 	}
-	if r.MultipartForm != nil {
-		opts.Triggers = r.MultipartForm.Value["trigger"] // repeatable field
-	}
+	opts.Triggers = r.MultipartForm.Value["trigger"] // repeatable field
 
 	cmdID, err := control.Install(h.st, id, name, file, opts, "api", h.now())
 	if err != nil {
