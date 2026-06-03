@@ -58,7 +58,7 @@ func renderPanic(out io.Writer, r apiclient.DataRow, dec panicDecoder) {
 	fmt.Fprintf(out, "‼ PANIC  %s\n", panicTime(r.TS))
 	if dec != nil {
 		if trace, err := dec.Decode(r.Text); err == nil {
-			fmt.Fprintln(out, indentLines(trace, "  "))
+			fmt.Fprintln(out, indentLines(strings.TrimRight(trace, "\n"), "  "))
 			return
 		}
 	}

@@ -82,6 +82,26 @@ func TestRenderPanicDecoded(t *testing.T) {
 	}
 }
 
+// trailingNLDecoder returns a trace that ends with a newline.
+type trailingNLDecoder struct{}
+
+func (trailingNLDecoder) Decode(string) (string, error) {
+	return "UNHANDLED EXCEPTION\n  at main.foo\n", nil
+}
+
+func TestRenderPanicNoTrailingBlankLine(t *testing.T) {
+	var b bytes.Buffer
+	renderPanic(&b, apiclient.DataRow{TS: 100, Kind: "panic", Text: "BLOB"}, trailingNLDecoder{})
+	s := b.String()
+	// Exactly one trailing newline; no dangling indented blank line.
+	if strings.HasSuffix(s, "  \n") {
+		t.Errorf("dangling indented blank line: %q", s)
+	}
+	if !strings.HasSuffix(s, "at main.foo\n") {
+		t.Errorf("got %q", s)
+	}
+}
+
 func TestRenderPanicFallback(t *testing.T) {
 	var b bytes.Buffer
 	renderPanic(&b, apiclient.DataRow{TS: 100, Kind: "panic", Text: "BLOB"}, localDecoder{ok: false})
