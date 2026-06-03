@@ -31,14 +31,15 @@ and tails), but remote-capable and over the single-writer server.
 
 Today's `--follow` advances a **timestamp watermark** (`since = last+1`), which has a
 known boundary edge case: rows sharing a poll-tick second can be dropped or
-double-counted (current spec §7 accepts it). S5 replaces it with an **exact rowid
+double-counted (current spec §7 accepts it). S5 replaces it with an **exact id
 cursor**:
 
-- `data_log` is an ordinary rowid table; `InsertData` appends, so `rowid` is
-  monotonic in insertion order — exactly "what arrived since I last looked."
+- `data_log` already has `id INTEGER PRIMARY KEY AUTOINCREMENT` (the rowid alias).
+  AUTOINCREMENT guarantees `id` is strictly monotonic and never reused, so it is an
+  exact "what arrived since I last looked" cursor — stronger than a bare rowid.
 - The **initial window** read is still time-based (`since = now - sinceS`), and each
-  returned row carries its `rowid`. The client remembers `cursor = max(rowid)`.
-- Each **`--follow` poll** requests rows with `rowid > cursor`, ordered by `rowid`,
+  returned row carries its `id`. The client remembers `cursor = max(id)`.
+- Each **`--follow` poll** requests rows with `id > cursor`, ordered by `id`,
   and advances the cursor. No ties, no boundary case — the edge case is eliminated,
   not carried over.
 
@@ -54,7 +55,7 @@ Two modes on one endpoint, selected by whether `after` is present:
 
 | Param    | Type        | Meaning                                                        |
 |----------|-------------|---------------------------------------------------------------|
-| `after`  | int (rowid) | **Cursor mode.** Return rows with `rowid > after`, ordered by `rowid`. When present, `since`/`until` are ignored. |
+| `after`  | int (`id`)  | **Cursor mode.** Return rows with `id > after`, ordered by `id`. When present, `since`/`until` are ignored. |
 | `since`  | int (epoch) | **Window mode.** Lower bound `ts >= since`. Default 0.        |
 | `until`  | int (epoch) | Window upper bound `ts <= until`; `0`/omitted = unbounded.    |
 | `kind`   | string      | Optional `log`\|`metric` filter (both modes).                 |
@@ -65,7 +66,7 @@ Malformed integer params → `400` envelope. Unknown selector → `404` (resolve
 Each row in `rows`:
 
 ```json
-{ "rowid": 1234, "ts": 1717370000, "seq": 3, "kind": "metric",
+{ "id": 1234, "ts": 1717370000, "seq": 3, "kind": "metric",
   "name": "pm25", "value": 7, "text": "", "value_type": "int" }
 ```
 
@@ -74,13 +75,13 @@ log rows where the payload is in `text`). `value_type` drives client-side render
 
 ## 4. Store layer (`internal/store/data.go`)
 
-- Add `Rowid int64` to `DataRow`. Have `QueryDataLimited` also `SELECT rowid` and
-  populate `r.Rowid`. Additive and benign — existing consumers ignore the new field;
-  the window response now carries rowids.
+- Add `ID int64` to `DataRow`. Have `QueryDataLimited` also `SELECT id` and
+  populate `r.ID`. Additive and benign — existing consumers ignore the new field;
+  the window response now carries ids.
 - New `QueryDataAfter(deviceID string, after int64, kind string, limit int)
   ([]DataRow, error)`:
-  `SELECT rowid, ts, seq, … FROM data_log WHERE device_id=? AND rowid > ?
-   [AND kind=?] ORDER BY rowid [LIMIT ?]`. Mirrors `QueryDataLimited`'s scan/normalize.
+  `SELECT id, ts, seq, … FROM data_log WHERE device_id=? AND id > ?
+   [AND kind=?] ORDER BY id [LIMIT ?]`. Mirrors `QueryDataLimited`'s scan/normalize.
 
 No schema change, no migration ([[porta-no-legacy]]).
 
@@ -94,12 +95,12 @@ New `telemetry.go` with `handleTelemetry`:
    `st.QueryDataLimited(id, since, until, kind, limit)`.
 4. Map `[]store.DataRow` → `[]telemetryRow` DTO; `writeOK(w, map[string]any{"rows": out})`.
 
-`telemetryRow` is a JSON DTO (`rowid,ts,seq,kind,name,value,text,value_type`) so the
+`telemetryRow` is a JSON DTO (`id,ts,seq,kind,name,value,text,value_type`) so the
 wire shape is owned by apisrv, not store.
 
 ## 6. apiclient (`internal/apiclient/client.go`) — stays store-free
 
-- Wire type `apiclient.DataRow` mirroring the row (incl. `Rowid`). `value` decoded
+- Wire type `apiclient.DataRow` mirroring the row (incl. `ID`). `value` decoded
   with a `json.Number`-safe path coerced by `value_type` (reuse the S1 `coerceScalar`
   shape) so int/float/bool/string typing survives the round-trip; large int64s keep
   precision.
@@ -117,7 +118,7 @@ wire shape is owned by apisrv, not store.
 - `runMonitor` signature changes: replace `st *store.Store` with a small client
   interface (for test injection). Flow:
   1. Window read `QueryTelemetryWindow(sel, now-sinceS, now, kind, 0)`; print each via
-     `telemetry.FormatLine`; set `cursor = max(rowid)` (0 if empty).
+     `telemetry.FormatLine`; set `cursor = max(id)` (0 if empty).
   2. If `!follow`, return.
   3. Ticker every 2 s: `QueryTelemetryAfter(sel, cursor, kind, 0)`; print; advance
      `cursor`. `ctx.Done()` → return `nil` on `context.Canceled` (Ctrl-C via
@@ -133,7 +134,7 @@ wire shape is owned by apisrv, not store.
 
 ## 9. Testing
 
-- **store:** `QueryDataAfter` rowid filter + ordering + `kind` + `limit`; `Rowid`
+- **store:** `QueryDataAfter` id filter + ordering + `kind` + `limit`; `ID`
   populated by the window query; empty-result case.
 - **apisrv:** window mode, cursor mode (after-takes-precedence), `kind`/`limit`,
   malformed param → 400, unknown selector → 404, value-typing round-trip
@@ -141,7 +142,7 @@ wire shape is owned by apisrv, not store.
 - **apiclient:** decode `{"rows":[…]}`, value typing per `value_type`, error
   propagation.
 - **portacli:** `runMonitor` one-shot + follow with an injected fake client, fake
-  clock + injectable tick; assert rowid dedup (no dup across polls) and
+  clock + injectable tick; assert id dedup (no dup across polls) and
   ctx-cancel → nil.
 - **e2e:** cobra `monitor --server` against a real `apisrv` over `httptest` (mirrors
   S2's `mutate_test`/`e2e_test`), one-shot path.
