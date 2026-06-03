@@ -30,6 +30,7 @@ func New(st *store.Store) *Handler {
 // Register mounts the API routes on mux. Routes use Go 1.22+ method patterns;
 // the shared mux's CIDR allowlist middleware (applied by httpsrv) covers them.
 func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/nodes", h.handleListNodes)
 	mux.HandleFunc("POST /api/nodes/{sel}/commands", h.handleCommand)
 	mux.HandleFunc("POST /api/nodes/{sel}/containers", h.handleContainerInstall)
 	mux.HandleFunc("PATCH /api/nodes/{sel}", h.handlePatchNode)

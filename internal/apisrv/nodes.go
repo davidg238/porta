@@ -7,6 +7,38 @@ import (
 	"github.com/davidg238/porta/internal/control"
 )
 
+// nodeListItem is one row of GET /api/nodes.
+type nodeListItem struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	IP       string `json:"ip"`
+	LastSeen int64  `json:"last_seen"`
+	Online   bool   `json:"online"`
+	Chip     string `json:"chip"`
+	Sdk      string `json:"sdk"`
+}
+
+// handleListNodes returns the fleet list, including self-reported identity.
+func (h *Handler) handleListNodes(w http.ResponseWriter, r *http.Request) {
+	nodes, err := h.st.ListNodes()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	now := h.now()
+	out := make([]nodeListItem, 0, len(nodes))
+	for i := range nodes {
+		n := &nodes[i]
+		out = append(out, nodeListItem{
+			ID: n.ID, Name: n.Name, Kind: n.Kind, IP: n.SourceAddr,
+			LastSeen: n.LastSeen.Int64, Online: n.Online(now),
+			Chip: n.Chip, Sdk: n.Sdk,
+		})
+	}
+	writeOK(w, map[string]any{"nodes": out})
+}
+
 // nodePatch carries optional node-management settings; pointer fields let the
 // handler apply only what was sent.
 type nodePatch struct {
