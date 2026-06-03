@@ -34,11 +34,14 @@ that a node tool may choose to mirror.
 
 ## `firmware.config["porta"]` provisioning contract
 
-A node finds its gateway from its firmware config at the key `porta`:
+A node finds its gateway from its firmware config at the key `porta`, with dotted
+sub-keys under that group (mirroring how `wifi` nests):
 
-    firmware.config["porta"] = {"host": <string>, "port": <int>}
+    firmware.config["porta"] = {"gateway.host": <string>, "gateway.port": <int>}
 
-`devsdk/provision` fixes this shape (`Gateway.PortaConfig()`, `ParseGateway`).
+`devsdk/provision` fixes this shape (`Gateway.PortaConfig()`, the `PortaConfigKey`
+/ `GatewayHostKey` / `GatewayPortKey` constants, `ParseGateway`). The key strings
+must match the nodus supervisor's `gateway_config.toit` reader exactly.
 A node-repo flash tool injects it at first flash; the node's supervisor reads
 it (falling back to a compiled-in default for bench `jag run`). WiFi is **not**
 part of this contract — node tools provision WiFi via their own flasher (e.g.

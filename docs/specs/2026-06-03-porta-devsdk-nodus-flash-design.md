@@ -163,8 +163,10 @@ consumer that proves the seam is language-neutral.
   (`internal/toolchain/{build,sdk,retain}.go` and `internal/portacli/{run,decode}.go`).
   *(The exec/narrate two-package split in an earlier draft is collapsed: Executor depends
   on Runner and they are one responsibility — "run external tools, narrated, injectable".)*
-- Add `devsdk/provision`: the stable `firmware.config["porta"]` contract
-  (`{"host":<str>,"port":<int>}`) + its render/parse — real, table-testable content.
+- Add `devsdk/provision`: the stable `firmware.config["porta"]` contract — the
+  nested dotted shape `{"gateway.host":<str>,"gateway.port":<int>}` matching the
+  nodus `gateway_config.toit` reader + tools-toit-design.md §7 — render/parse +
+  the `PortaConfigKey`/`GatewayHostKey`/`GatewayPortKey` constants. Table-testable.
 - Write `docs/DEVSDK.md` (the northbound contract: API envelope shape + the `devsdk`
   public surface + the `firmware.config["porta"]` shape).
 - **Deferred out of C1** (see §3.1): `devsdk/flash` (neutral interface — derive in C3 from
@@ -202,7 +204,8 @@ consumer that proves the seam is language-neutral.
   2. fetch + cache the matching envelope from `toitlang/envelopes` keyed by `(chip, sdk)`;
   3. assemble the nodus boot-container envelope (compile supervisor → `-m32` image →
      `toit tool firmware container install`);
-  4. inject `firmware.config`: WiFi creds + nested `porta.gateway` key (**injection
+  4. inject `firmware.config`: WiFi creds + the `porta` group
+     `{"gateway.host","gateway.port"}` (via `devsdk/provision`) (**injection
      mechanism = first-task spike**, see §7);
   5. flash over serial via wrapped `jag flash <envelope> --exclude-jaguar --port … [--wifi-*]`.
 - **nodus firmware companion (Toit):** replace the hardcoded `GATEWAY-HOST`
@@ -227,9 +230,10 @@ consumer that proves the seam is language-neutral.
   `firmware-<chip>.envelope` to fetch. All current ESP32 targets are 32-bit
   (`snapshot-to-image -m32`), confirmed empirically in `host/build-envelope.sh`.
 - **Provisioning channel:** WiFi + gateway address both ride `firmware.config`. WiFi may be
-  set via jag's existing `--wifi-ssid/--wifi-password`; the **nested `porta.gateway` key**
-  is the new bit and shares the same JSON config channel (the `--config` round-trip noted
-  in the bench-provision pivot).
+  set via jag's existing `--wifi-ssid/--wifi-password`; the **`porta` group
+  `{"gateway.host","gateway.port"}`** is the new bit and shares the same JSON config channel
+  (the `--config` round-trip noted in the bench-provision pivot). The exact key strings are
+  owned by `devsdk/provision` and must match the nodus `gateway_config.toit` reader.
 - **No identity seeding:** `nodus flash` makes **no** porta API call. Node identity
   (chip/sdk) appears when the node first boots and reports; `nodus run` correctly blocks on
   "unknown identity" until that first check-in (accepted bootstrap wait). This keeps flash
