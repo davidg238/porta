@@ -8,6 +8,7 @@ package apisrv
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 
@@ -29,7 +30,7 @@ func New(st *store.Store) *Handler {
 // Register mounts the API routes on mux. Routes use Go 1.22+ method patterns;
 // the shared mux's CIDR allowlist middleware (applied by httpsrv) covers them.
 func (h *Handler) Register(mux *http.ServeMux) {
-	// Routes are added by subsequent tasks.
+	mux.HandleFunc("POST /api/nodes/{sel}/commands", h.handleCommand)
 }
 
 // envelope is the uniform response shape, echoing jast-gw's Response.
@@ -54,6 +55,13 @@ func writeJSON(w http.ResponseWriter, status int, env envelope) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(env)
+}
+
+// readBody reads the full request body, swallowing the error (an empty/short
+// body simply fails JSON decode downstream with a clear message).
+func readBody(r *http.Request) []byte {
+	b, _ := io.ReadAll(r.Body)
+	return b
 }
 
 // resolveSel resolves a {sel} path value (node id or name) to a node id.
