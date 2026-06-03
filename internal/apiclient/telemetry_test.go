@@ -88,3 +88,23 @@ func TestQueryTelemetryServerError(t *testing.T) {
 		t.Fatalf("err = %v, want \"unknown node\"", err)
 	}
 }
+
+func TestQueryTelemetryPreservesLargeInt64(t *testing.T) {
+	// 2^53+1 is not exactly representable as a float64 — it must round-trip as
+	// int64 to survive, which is the whole point of the json.RawMessage path.
+	body := `{"ok":true,"data":{"rows":[
+		{"id":1,"ts":100,"seq":0,"kind":"metric","name":"big","value":9007199254740993,"text":"","value_type":"int"}
+	]},"error":""}`
+	c, _ := telemetryStub(t, body)
+	rows, err := c.QueryTelemetryWindow("dev", 0, 0, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	v, ok := rows[0].Value.(int64)
+	if !ok || v != 9007199254740993 {
+		t.Errorf("value = %#v, want int64 9007199254740993", rows[0].Value)
+	}
+}
