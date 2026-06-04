@@ -1,0 +1,32 @@
+# porta gateway — native systemd service (installed by the porta .deb).
+# Runs the Go binary directly; no container needed (porta's binary needs only
+# glibc >= 2.34, satisfied by any current Linux). Coexists with anything else on
+# the host — it owns only UDP/TFTP :6969 and HTTP :6970.
+[Unit]
+Description=porta — LAN node manager (UDP/TFTP :6969 + HTTP operator surface :6970)
+Documentation=https://github.com/davidg238/porta
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# DynamicUser + StateDirectory: systemd creates/owns a persistent /var/lib/porta
+# for the sqlite store under an ephemeral unprivileged user. Both ports are
+# unprivileged, so no capabilities are needed.
+DynamicUser=yes
+StateDirectory=porta
+ExecStart=/usr/bin/porta serve --db /var/lib/porta/porta.db
+Restart=on-failure
+RestartSec=3
+
+# Hardening — the service only needs to write its StateDirectory.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target

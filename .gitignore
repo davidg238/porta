@@ -29,3 +29,6 @@ nodus/host/firmware
 
 # Runtime / soak logs
 *.log
+
+# .deb build output
+/deploy/dist/

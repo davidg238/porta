@@ -1,0 +1,10 @@
+#!/bin/sh
+# Copyright (c) 2026 Ekorau LLC
+set -e
+if [ "$1" = "configure" ]; then
+    systemctl daemon-reload || true
+    systemctl enable porta.service || true
+    systemctl restart porta.service || true
+    echo "porta: serving on UDP/TFTP :6969 and HTTP :6970 (db at /var/lib/porta/porta.db)."
+    echo "porta: check with 'systemctl status porta' or 'porta scan'."
+fi

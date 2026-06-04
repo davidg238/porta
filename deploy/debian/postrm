@@ -1,0 +1,11 @@
+#!/bin/sh
+# Copyright (c) 2026 Ekorau LLC
+set -e
+case "$1" in
+    remove|purge)
+        systemctl disable porta.service || true
+        systemctl daemon-reload || true
+        ;;
+esac
+# Note: the durable store at /var/lib/porta (systemd StateDirectory) is left in
+# place on remove. Delete it by hand if you want a clean slate.

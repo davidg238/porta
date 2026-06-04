@@ -1,0 +1,13 @@
+Package: porta
+Version: __VERSION__
+Section: net
+Priority: optional
+Architecture: amd64
+Depends: libc6 (>= 2.34)
+Maintainer: Ekorau LLC <davidgirle@gmail.com>
+Homepage: https://github.com/davidg238/porta
+Description: porta - northbound LAN gateway / node manager
+ porta is a language-neutral, always-on LAN node manager. It owns the wire
+ protocol, queues commands, delivers container images over TFTP, and ingests
+ telemetry. UDP/TFTP listener on :6969; HTTP operator surface (control API +
+ htmx console + read-only MCP) on :6970. State persists in /var/lib/porta.
