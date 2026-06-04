@@ -64,6 +64,12 @@ except `"verb"` becomes an arg (`NodeCommand.decode`).
 Commands are **declarative and absolute**: applying one is idempotent, and a
 later command for the same target wins. This makes redelivery safe.
 
+One verb is the exception: `reboot` (§2.8) is **imperative** — a one-shot
+instruction, not a declarative target. It is redelivery-safe not because it is
+idempotent but because the queue delivers each command exactly once (a command
+is marked delivered on its TFTP transfer-complete and never re-served, §1), so a
+`reboot` fires once and never re-fires after the node returns.
+
 Verb constants (identical in `gateway/command.toit` and
 `nodus/src/node_command.toit`):
 
@@ -75,6 +81,7 @@ Verb constants (identical in `gateway/command.toit` and
 | `set-console` | `VERB-SET-CONSOLE` |
 | `set` | `VERB-SET` |
 | `set-power-mode` | `VERB-SET-POWER-MODE` |
+| `reboot` | `VERB-REBOOT` |
 
 ### 2.1 `run` — install/run an app
 
@@ -201,6 +208,42 @@ cannot be inferred, so it is declared:
 - `"run-loop"` (`LIFECYCLE-RUN-LOOP`): the container **never returns**
   (always-on). The supervisor starts it but must not block waiting for it to
   exit.
+
+### 2.8 `reboot` — restart the node
+
+| Key | Type | Required | Meaning |
+|-----|------|----------|---------|
+| `verb` | string | yes | `"reboot"` |
+
+```json
+{"verb": "reboot"}
+```
+
+Node-control verb carrying no args: the verb alone is the instruction. It does
+**not** change the goal/app set.
+
+**Imperative, not declarative.** Unlike every other verb, `reboot` is a one-shot
+action rather than a declarative target (see the §2 preamble). It is
+redelivery-safe only because the queue delivers each command exactly once — a
+`reboot` fires once and never re-fires after the node returns. Multiple
+`reboot`s drained in one poll collapse to a single reboot.
+
+**Timing.** The node applies the reboot at the **end of the current poll** —
+after draining the rest of the command batch and PUTting its report — so the
+operator still gets a final report and any same-batch commands take effect
+first.
+
+**No convergence.** There is no observed-state echo for a reboot, so the gateway
+treats it as **terminal on delivery**: the command lifecycle reaches
+`delivered` when the node pulls it and never advances to `converged` (only `set`
+reconciles against observed state). The operator infers success from the node
+re-appearing after its restart.
+
+**Reset reporting (node conformance).** A *commanded* reboot SHOULD surface in
+the node's next report as `health.reset: "software"` (§3.1) so the gateway can
+distinguish an operator-commanded restart from a duty-cycle deep-sleep wake.
+This requires the node to use a true software-reset primitive — **not**
+`esp32.deep-sleep`, which would report `deep-sleep`.
 
 ---
 
@@ -404,9 +447,11 @@ A conforming node MUST:
 - Identify itself with `?id=<12-hex-mac>` on every TFTP request.
 - Drain `commands?id=` by repeated RRQ until a zero-byte body, treating commands
   as absolute/idempotent (last write wins per target).
-- Honour the six verbs (`run`, `stop`, `set-poll-interval`, `set-console`,
-  `set`, `set-power-mode`) with the arg schemas and defaults in §2, including the
-  `lifecycle` declaration (default `run-once`) and `runlevel` (default `3`).
+- Honour the seven verbs (`run`, `stop`, `set-poll-interval`, `set-console`,
+  `set`, `set-power-mode`, `reboot`) with the arg schemas and defaults in §2,
+  including the `lifecycle` declaration (default `run-once`) and `runlevel`
+  (default `3`). `reboot` is applied at the end of the poll and SHOULD report
+  `health.reset: "software"` on the next check-in.
 - Download images via `payload?id=&name=&crc=` as **raw bytes** and verify
   length against the command's `size` and CRC32-IEEE (§5 parameters) against the
   command's `crc` before committing.

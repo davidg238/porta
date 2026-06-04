@@ -74,6 +74,14 @@ func Stop(name string) Command {
 	return Command{Verb: "stop", ArgsJSON: string(b)}
 }
 
+// Reboot builds a reboot command. It carries no args: the verb alone is the
+// instruction. Unlike the declarative verbs it is imperative (one-shot), made
+// redelivery-safe by the queue's deliver-once semantics rather than by being
+// idempotent — see PROTOCOL.md §2.8.
+func Reboot() Command {
+	return Command{Verb: "reboot", ArgsJSON: `{}`}
+}
+
 // SetPollInterval builds a set-poll-interval command.
 func SetPollInterval(intervalS int64) Command {
 	return Command{Verb: "set-poll-interval", ArgsJSON: fmt.Sprintf(`{"interval":%d}`, intervalS)}

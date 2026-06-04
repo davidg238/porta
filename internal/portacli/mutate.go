@@ -51,6 +51,17 @@ func runDeviceSetPowerMode(out io.Writer, c *apiclient.Client, sel, mode string)
 	return nil
 }
 
+// runDeviceReboot enqueues a reboot command (no args). The node reboots at the
+// end of its next poll; there is no observed-state convergence to confirm.
+func runDeviceReboot(out io.Writer, c *apiclient.Client, sel string) error {
+	cmdID, nodeID, err := c.Command(sel, "reboot", nil)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s: enqueued reboot (command #%d)\n", nodeID, cmdID)
+	return nil
+}
+
 // runSetPollInterval enqueues a set-poll-interval command. The duration string
 // is parsed server-side. Silent on success (parity with the pre-S2 CLI).
 func runSetPollInterval(c *apiclient.Client, sel, dur string) error {
@@ -223,6 +234,21 @@ func newDeviceSetPowerModeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := apiclient.New(serverURL())
 			return runDeviceSetPowerMode(cmd.OutOrStdout(), c, device, args[0])
+		},
+	}
+	deviceFlag(cmd, &device)
+	return cmd
+}
+
+func newDeviceRebootCmd() *cobra.Command {
+	var device string
+	cmd := &cobra.Command{
+		Use:   "reboot",
+		Short: "Reboot a node (applied at the end of its next poll)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c := apiclient.New(serverURL())
+			return runDeviceReboot(cmd.OutOrStdout(), c, device)
 		},
 	}
 	deviceFlag(cmd, &device)

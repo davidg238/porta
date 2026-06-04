@@ -116,6 +116,21 @@ func TestRunDeviceSetPowerMode(t *testing.T) {
 	}
 }
 
+func TestRunDeviceReboot(t *testing.T) {
+	c, st := newClientServer(t)
+	var out bytes.Buffer
+	if err := runDeviceReboot(&out, c, "aabbccddeeff"); err != nil {
+		t.Fatal(err)
+	}
+	cmd, _ := st.NextUndelivered("aabbccddeeff")
+	if cmd == nil || cmd.Verb != "reboot" {
+		t.Fatalf("queued=%+v", cmd)
+	}
+	if !strings.Contains(out.String(), "aabbccddeeff: enqueued reboot (command #") {
+		t.Errorf("output = %q", out.String())
+	}
+}
+
 func TestRunSetPollIntervalEnqueuesSilently(t *testing.T) {
 	c, st := newClientServer(t)
 	if err := runSetPollInterval(c, "aabbccddeeff", "45s"); err != nil {

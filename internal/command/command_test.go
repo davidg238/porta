@@ -168,6 +168,31 @@ func TestSetPowerModeRejectsBadMode(t *testing.T) {
 	}
 }
 
+func TestReboot(t *testing.T) {
+	c := Reboot()
+	if c.Verb != "reboot" {
+		t.Errorf("Verb=%q, want reboot", c.Verb)
+	}
+	if c.ArgsJSON != `{}` {
+		t.Errorf("ArgsJSON=%s, want {}", c.ArgsJSON)
+	}
+	// Wire form is the bare {"verb":"reboot"} — no args splice.
+	wire := EncodeWire(c.Verb, c.ArgsJSON)
+	if string(wire) != `{"verb":"reboot"}` {
+		t.Errorf("wire=%s, want {\"verb\":\"reboot\"}", wire)
+	}
+	verb, args, err := Decode(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verb != "reboot" {
+		t.Errorf("decoded verb=%q, want reboot", verb)
+	}
+	if len(args) != 0 {
+		t.Errorf("decoded args=%v, want empty", args)
+	}
+}
+
 func TestSetConsole(t *testing.T) {
 	on := SetConsole(true)
 	if on.Verb != "set-console" {

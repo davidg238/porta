@@ -18,7 +18,7 @@ type commandReq struct {
 	Args json.RawMessage `json:"args"`
 }
 
-// handleCommand dispatches one of the five image-less verbs to control.*.
+// handleCommand dispatches one of the image-less verbs to control.*.
 func (h *Handler) handleCommand(w http.ResponseWriter, r *http.Request) {
 	id, ok := h.resolveSel(w, r.PathValue("sel"))
 	if !ok {
@@ -113,6 +113,9 @@ func (h *Handler) dispatch(id string, req commandReq) (int64, error) {
 			return 0, fmt.Errorf("stop requires name")
 		}
 		return control.Uninstall(h.st, id, a.Name, "api", now)
+	case "reboot":
+		// No args. Imperative one-shot; the node reboots at end of poll.
+		return control.Reboot(h.st, id, "api", now)
 	default:
 		return 0, fmt.Errorf("unknown verb %q", req.Verb)
 	}
