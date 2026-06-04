@@ -1,11 +1,6 @@
-# Local-only reference symlink to the parent project (machine-specific absolute path)
-/st-zephyr
-
 # Go server build output
 /porta
 /cmd/porta/porta
-/st-devserver
-/cmd/st-devserver/st-devserver
 *.db
 *.db-shm
 *.db-wal

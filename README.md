@@ -9,7 +9,6 @@ designs and `docs/plans/` for the implementation plans.
 
 - `cmd/porta/` + `internal/` — Go gateway (mainline), module `github.com/davidg238/porta`
 - `docs/PROTOCOL.md` — the canonical wire protocol all node implementations conform to
-- `st-zephyr` — local symlink to the parent project (gitignored)
 
 Related repos, all extracted from here on 2026-06-04 and coupled only over the wire:
 a full Toit implementation of the gateway in **`gateway`** (`github.com/davidg238/gateway`);
