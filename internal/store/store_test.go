@@ -199,6 +199,32 @@ func TestUpdateNodeIdentity(t *testing.T) {
 	}
 }
 
+func TestUpdateNodeReset(t *testing.T) {
+	st := openTmp(t)
+	if err := st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000); err != nil {
+		t.Fatal(err)
+	}
+	code := int64(6)
+	if err := st.UpdateNodeReset("aabbccddeeff", "watchdog", &code); err != nil {
+		t.Fatal(err)
+	}
+	n, err := st.GetNode("aabbccddeeff")
+	if err != nil || n == nil {
+		t.Fatalf("GetNode: %v / %v", n, err)
+	}
+	if n.LastReset != "watchdog" || !n.LastResetCode.Valid || n.LastResetCode.Int64 != 6 {
+		t.Errorf("got reset=%q code=%v, want watchdog / 6", n.LastReset, n.LastResetCode)
+	}
+	// Empty category + nil code must not clobber a known value.
+	if err := st.UpdateNodeReset("aabbccddeeff", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = st.GetNode("aabbccddeeff")
+	if n.LastReset != "watchdog" || n.LastResetCode.Int64 != 6 {
+		t.Errorf("empty update clobbered reset: reset=%q code=%v", n.LastReset, n.LastResetCode)
+	}
+}
+
 func TestRecentCommandsForDevice(t *testing.T) {
 	st := openTmp(t)
 	for i := 0; i < 3; i++ {

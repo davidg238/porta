@@ -185,3 +185,16 @@ func TestDeviceGetCmdOverAPI(t *testing.T) {
 		t.Errorf("device get = %q", out)
 	}
 }
+
+func TestDeviceShowCmdLastReset(t *testing.T) {
+	st := seededStore(t)
+	code := int64(6)
+	if err := st.UpdateNodeReset("aabbccddeeff", "watchdog", &code); err != nil {
+		t.Fatal(err)
+	}
+	_, url := serveStore(t, st)
+	out := runReadCmd(t, url, "device", "show", "-d", "blinky")
+	if !strings.Contains(out, "last_reset:    watchdog (6)") {
+		t.Errorf("device show missing last_reset line; got:\n%s", out)
+	}
+}

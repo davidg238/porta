@@ -59,6 +59,8 @@ type nodeDetail struct {
 	Online        bool                `json:"online"`
 	Chip          string              `json:"chip"`
 	Sdk           string              `json:"sdk"`
+	Reset         string              `json:"reset"`
+	ResetCode     *int64              `json:"reset_code"`
 	PollIntervalS int64               `json:"poll_interval_s"`
 	MaxOfflineS   int64               `json:"max_offline_s"`
 	LastSeen      int64               `json:"last_seen"`
@@ -91,9 +93,15 @@ func (h *Handler) handleNodeDetail(w http.ResponseWriter, r *http.Request) {
 		cfg, _ = control.DesiredVsObserved(h.st, id, confApp)
 	}
 	un, _ := h.st.UndeliveredCommands(id)
+	var resetCode *int64
+	if n.LastResetCode.Valid {
+		c := n.LastResetCode.Int64
+		resetCode = &c
+	}
 	writeOK(w, nodeDetail{
 		ID: n.ID, Name: n.Name, Kind: n.Kind, IP: n.SourceAddr,
 		Online: n.Online(h.now()), Chip: n.Chip, Sdk: n.Sdk,
+		Reset: n.LastReset, ResetCode: resetCode,
 		PollIntervalS: n.PollIntervalS, MaxOfflineS: n.MaxOfflineS,
 		LastSeen: n.LastSeen.Int64, LastReportAt: n.LastReportAt.Int64,
 		Apps: apps, ConfigApp: confApp, Config: cfg,

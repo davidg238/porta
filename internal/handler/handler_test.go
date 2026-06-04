@@ -442,3 +442,112 @@ func TestAcceptWriteRejectsDataWithoutID(t *testing.T) {
 		t.Error("AcceptWrite(data?id=) (empty id) must error")
 	}
 }
+
+func TestWriteReportStoresReset(t *testing.T) {
+	h, st := newH(t)
+	body := `{"apps":{},"config":{},"health":{"uptime_us":1,"wakes":1,"reset":"power-on","reset_code":1}}`
+	if err := h.Write("report?id=dev", "1.2.3.4:5", []byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	n, _ := st.GetNode("dev")
+	if n.LastReset != "power-on" || n.LastResetCode.Int64 != 1 {
+		t.Fatalf("got reset=%q code=%v", n.LastReset, n.LastResetCode)
+	}
+	// power-on is not a fault → no data_log event.
+	rows, _ := st.RecentData("dev", 10)
+	for _, r := range rows {
+		if r.Kind == "reset" {
+			t.Errorf("unexpected reset event for non-fault category: %+v", r)
+		}
+	}
+}
+
+func TestWriteReportEmitsFaultEventOnce(t *testing.T) {
+	h, st := newH(t)
+	body := `{"apps":{},"config":{},"health":{"reset":"watchdog","reset_code":6}}`
+	for i := 0; i < 3; i++ {
+		if err := h.Write("report?id=dev", "1.2.3.4:5", []byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, _ := st.RecentData("dev", 10)
+	n := 0
+	for _, r := range rows {
+		if r.Kind == "reset" {
+			n++
+			if r.Name != "watchdog" || r.Value.(int64) != 6 || r.Text != "watchdog" || r.ValueType != "int" {
+				t.Errorf("bad reset row: %+v", r)
+			}
+		}
+	}
+	if n != 1 {
+		t.Errorf("got %d reset events across 3 identical reports, want 1", n)
+	}
+}
+
+func TestWriteReportFaultThenNormalThenFault(t *testing.T) {
+	h, st := newH(t)
+	fault := `{"apps":{},"config":{},"health":{"reset":"watchdog","reset_code":6}}`
+	normal := `{"apps":{},"config":{},"health":{"reset":"deep-sleep","reset_code":8}}`
+	for _, b := range []string{fault, normal, fault} {
+		if err := h.Write("report?id=dev", "1.2.3.4:5", []byte(b)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, _ := st.RecentData("dev", 10)
+	n := 0
+	for _, r := range rows {
+		if r.Kind == "reset" {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("got %d reset events for fault→normal→fault, want 2", n)
+	}
+}
+
+func TestWriteReportResetAbsentDoesNotClobber(t *testing.T) {
+	h, st := newH(t)
+	// First report sets a known fault reset (one event).
+	if err := h.Write("report?id=dev", "1.2.3.4:5", []byte(`{"apps":{},"config":{},"health":{"reset":"watchdog","reset_code":6}}`)); err != nil {
+		t.Fatal(err)
+	}
+	// A later report omits reset entirely → must not clobber the stored value, must not emit a new event.
+	if err := h.Write("report?id=dev", "1.2.3.4:5", []byte(`{"apps":{},"config":{},"health":{"uptime_us":5}}`)); err != nil {
+		t.Fatal(err)
+	}
+	n, _ := st.GetNode("dev")
+	if n.LastReset != "watchdog" || n.LastResetCode.Int64 != 6 {
+		t.Errorf("reset-absent report clobbered: reset=%q code=%v", n.LastReset, n.LastResetCode)
+	}
+	rows, _ := st.RecentData("dev", 10)
+	cnt := 0
+	for _, r := range rows {
+		if r.Kind == "reset" {
+			cnt++
+		}
+	}
+	if cnt != 1 {
+		t.Errorf("got %d reset events, want 1 (no new event on reset-absent report)", cnt)
+	}
+}
+
+func TestWriteReportFaultEventNoCode(t *testing.T) {
+	h, st := newH(t)
+	if err := h.Write("report?id=dev", "1.2.3.4:5", []byte(`{"apps":{},"config":{},"health":{"reset":"panic"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := st.RecentData("dev", 10)
+	found := false
+	for _, r := range rows {
+		if r.Kind == "reset" {
+			found = true
+			if r.Name != "panic" || r.Value != nil || r.Text != "panic" || r.ValueType != "string" {
+				t.Errorf("codeless fault row = %+v, want name/text=panic value=nil value_type=string", r)
+			}
+		}
+	}
+	if !found {
+		t.Error("no reset event emitted for codeless panic")
+	}
+}

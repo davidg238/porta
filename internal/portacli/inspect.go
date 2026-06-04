@@ -143,6 +143,7 @@ func newDeviceShowCmd() *cobra.Command {
 			fmt.Fprintf(out, "last_seen:     %s\n", lastSeen)
 			fmt.Fprintf(out, "poll_interval: %ds\n", n.PollIntervalS)
 			fmt.Fprintf(out, "max_offline:   %ds\n", n.MaxOfflineS)
+			fmt.Fprintf(out, "last_reset:    %s\n", control.RenderReset(n.Reset, n.ResetCode))
 			fmt.Fprintf(out, "observed:      %s\n", n.ObservedRaw)
 			fmt.Fprintf(out, "undelivered:   %d command(s)\n", n.Undelivered)
 			return nil

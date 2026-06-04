@@ -28,9 +28,10 @@ type detailVM struct {
 	IP       string
 	EUI      string
 	PollIntv string
-	Chip     string
-	Sdk      string
-	Gauge    CheckinState
+	Chip      string
+	Sdk       string
+	LastReset string
+	Gauge     CheckinState
 	Config   []control.ConfigRow
 	ConfApp  string
 	Recent   []recentRowVM
@@ -122,6 +123,11 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 		})
 	}
 	apps, _ := control.AppsFromObserved(n.ObservedState)
+	var resetCode *int64
+	if n.LastResetCode.Valid {
+		c := n.LastResetCode.Int64
+		resetCode = &c
+	}
 	var lastSeen int64
 	if n.LastSeen.Valid {
 		lastSeen = n.LastSeen.Int64
@@ -134,8 +140,9 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 		IP:       n.SourceAddr,
 		EUI:      n.ID,
 		PollIntv: humanizeDur(n.PollIntervalS),
-		Chip:     n.Chip,
-		Sdk:      n.Sdk,
+		Chip:      n.Chip,
+		Sdk:       n.Sdk,
+		LastReset: control.RenderReset(n.LastReset, resetCode),
 		Gauge:    Checkin(n.LastSeen.Valid, lastSeen, n.PollIntervalS, n.MaxOfflineS, now),
 		Config:   cfg,
 		ConfApp:  app,

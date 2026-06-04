@@ -29,7 +29,9 @@ CREATE TABLE IF NOT EXISTS nodes (
   last_report_at INTEGER,
   observed_state TEXT,
   chip TEXT,
-  sdk TEXT
+  sdk TEXT,
+  last_reset TEXT,
+  last_reset_code INTEGER
 );
 CREATE TABLE IF NOT EXISTS payloads (
   crc INTEGER PRIMARY KEY,
@@ -86,6 +88,8 @@ type Node struct {
 	ObservedState string
 	Chip          string
 	Sdk           string
+	LastReset     string
+	LastResetCode sql.NullInt64
 }
 
 // Online reports whether the node has been seen within its max_offline window.
@@ -126,6 +130,14 @@ func nullStr(v string) interface{} {
 	return v
 }
 
+// nullInt returns a driver value that is NULL when v is nil.
+func nullInt(v *int64) interface{} {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
 // TouchNode records contact: creates the node on first sight (with an
 // auto-assigned name), otherwise bumps last_seen and refreshes source_addr.
 // An empty source_addr is COALESCEd so it never clobbers a known address.
@@ -154,13 +166,14 @@ func (s *Store) EnsureNode(id string, now int64) error {
 
 const nodeCols = `id, COALESCE(name,''), COALESCE(source_addr,''), kind, first_seen, last_seen,
 	COALESCE(poll_interval_s,30), COALESCE(max_offline_s,300), last_report_at,
-	COALESCE(observed_state,''), COALESCE(chip,''), COALESCE(sdk,'')`
+	COALESCE(observed_state,''), COALESCE(chip,''), COALESCE(sdk,''),
+	COALESCE(last_reset,''), last_reset_code`
 
 func scanNode(row interface{ Scan(...interface{}) error }) (*Node, error) {
 	var n Node
 	err := row.Scan(&n.ID, &n.Name, &n.SourceAddr, &n.Kind, &n.FirstSeen,
 		&n.LastSeen, &n.PollIntervalS, &n.MaxOfflineS, &n.LastReportAt, &n.ObservedState,
-		&n.Chip, &n.Sdk)
+		&n.Chip, &n.Sdk, &n.LastReset, &n.LastResetCode)
 	if err != nil {
 		return nil, err
 	}
@@ -215,6 +228,17 @@ func (s *Store) UpdateNodeIdentity(id, chip, sdk string) error {
 	_, err := s.db.Exec(
 		`UPDATE nodes SET chip = COALESCE(?, chip), sdk = COALESCE(?, sdk) WHERE id = ?`,
 		nullStr(chip), nullStr(sdk), id)
+	return err
+}
+
+// UpdateNodeReset records the node's last reported reset category + optional
+// raw platform code. An empty category / nil code is COALESCEd so a report
+// missing the field never clobbers a previously-known value.
+func (s *Store) UpdateNodeReset(id, reset string, code *int64) error {
+	_, err := s.db.Exec(
+		`UPDATE nodes SET last_reset = COALESCE(?, last_reset),
+		 last_reset_code = COALESCE(?, last_reset_code) WHERE id = ?`,
+		nullStr(reset), nullInt(code), id)
 	return err
 }
 

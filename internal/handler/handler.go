@@ -19,6 +19,22 @@ import (
 	"github.com/davidg238/porta/internal/tftp"
 )
 
+// faultReset is porta's policy set of "noteworthy" reset categories — the ones
+// that trigger a data_log event. This is policy, not platform semantics: porta
+// owns which neutral categories matter, never how a node derived them.
+var faultReset = map[string]bool{"watchdog": true, "panic": true, "brownout": true}
+
+// parseResetHealth extracts the neutral reset category and optional raw code
+// from a report's health blob. Absent fields yield ("", nil).
+func parseResetHealth(health json.RawMessage) (string, *int64) {
+	var hb struct {
+		Reset     string `json:"reset"`
+		ResetCode *int64 `json:"reset_code"`
+	}
+	_ = json.Unmarshal(health, &hb) // best-effort; absent/garbled → zero value
+	return hb.Reset, hb.ResetCode
+}
+
 // Handler dispatches TFTP resources against the store.
 type Handler struct {
 	store *store.Store
@@ -174,6 +190,28 @@ func (h *Handler) writeReport(id, peer string, data []byte) error {
 	}
 	if err := h.store.UpdateNodeIdentity(id, strField("chip"), strField("sdk")); err != nil {
 		h.log("porta: identity update error for %s: %v", id, err)
+	}
+	// Reset reason: store the latest, and emit a data_log event the first time a
+	// fault category appears (change-detection dedup against the stored value).
+	reset, resetCode := parseResetHealth(field("health"))
+	if faultReset[reset] {
+		// On a GetNode error we treat it as "no prior" (prior == nil), erring toward
+		// emitting the diagnostic event rather than suppressing it.
+		prior, _ := h.store.GetNode(id)
+		if prior == nil || prior.LastReset != reset {
+			var v any
+			vtype := "string"
+			if resetCode != nil {
+				v = *resetCode
+				vtype = "int"
+			}
+			if err := h.store.InsertData(id, h.now(), 0, "reset", reset, v, reset, vtype); err != nil {
+				h.log("porta: reset event insert error for %s: %v", id, err)
+			}
+		}
+	}
+	if err := h.store.UpdateNodeReset(id, reset, resetCode); err != nil {
+		h.log("porta: reset update error for %s: %v", id, err)
 	}
 	h.reconcileAfterReport(id, field("config"))
 	return nil

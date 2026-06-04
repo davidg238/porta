@@ -224,7 +224,9 @@ Each wake, after reconciling, the node PUTs (WRQ) one JSON object to
   },
   "health": {
     "uptime_us": 1234567,
-    "wakes": 42
+    "wakes": 42,
+    "reset": "watchdog",
+    "reset_code": 6
   },
   "chip": "esp32",
   "sdk": "v2.0.0-alpha.192"
@@ -243,6 +245,8 @@ Fields:
 | `config` | object | Applied per-app config blob: `app → {key: value}`. May be empty `{}`. |
 | `health.uptime_us` | int | Monotonic uptime in microseconds. |
 | `health.wakes` | int | Cumulative wake count. |
+| `health.reset` | string (optional) | Neutral reset category — the node maps its platform reset code onto the vocabulary below. Absent on firmware predating reset reporting. |
+| `health.reset_code` | int (optional) | Raw platform reset code, for diagnostics only. The gateway never interprets it. |
 | `chip` | string (optional) | Node chip model, e.g. `"esp32"`, `"esp32c6"`, `"esp32s3"`. Used by a node-repo dev tool (e.g. `nodus run`) to pick the flash envelope. Absent on firmware predating identity reporting. |
 | `sdk` | string (optional) | Toit SDK version the node firmware was built with, e.g. `"v2.0.0-alpha.192"`. A node-repo dev tool (e.g. `nodus run`) refuses to deploy an image built with a different SDK (overridable with `--force`); absent → it blocks until the node reports it. |
 
@@ -254,6 +258,10 @@ Gateway ingest (`ReportWriter_` in `gateway/handler.toit`):
   reflashed); an absent or empty value never clobbers a previously-known identity.
 - The gateway stores `{"apps":…, "config":…}` as observed-state and `health`
   separately.
+- `health.reset` / `health.reset_code` are optional. The gateway records the latest
+  on the node row (an absent/empty value never clobbers the last known one — like
+  `chip`/`sdk`), surfaces it on node detail, and emits a `data_log` event (`kind:"reset"`)
+  the first time a **fault** category appears (`watchdog`, `panic`, `brownout`).
 - After committing the report, the gateway runs config **self-heal**: it diffs
   the desired config (projected from delivered `set` commands) against the
   reported `config` and re-enqueues any delivered-but-divergent `set` (tagged
@@ -263,6 +271,29 @@ Gateway ingest (`ReportWriter_` in `gateway/handler.toit`):
 There is no `goal` resource the node fetches: the node seeds its goal from its
 own persistent inventory and applies drained commands on top. The report is the
 node's only northbound state declaration.
+
+### 3.1 Reset categories
+
+`health.reset` carries a **neutral** reset category — never a raw platform enum.
+Each node maps its own platform reset code (e.g. an esp32 `RESET-*` value) onto
+this canonical set; the gateway stays implementation-agnostic. The only permitted
+values:
+
+| Category | Meaning |
+|----------|---------|
+| `power-on` | cold / power-on reset |
+| `deep-sleep` | wake from deep sleep (normal duty-cycle wake) |
+| `software` | software-requested reboot |
+| `external` | external / reset-pin |
+| `watchdog` | watchdog timeout (task or HW) |
+| `panic` | software panic / exception |
+| `brownout` | supply-voltage dip |
+| `unknown` | unmapped / unavailable |
+
+The optional `health.reset_code` carries the raw platform code alongside the
+category, for diagnostics only — the gateway records and displays it but never
+interprets it. `watchdog`, `panic`, and `brownout` are the **fault** categories the
+gateway treats as noteworthy (a `data_log` event on first appearance).
 
 ---
 

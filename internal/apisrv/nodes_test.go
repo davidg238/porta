@@ -132,6 +132,35 @@ func TestPatchNodeEchoesNodeID(t *testing.T) {
 	}
 }
 
+func TestGetNodeDetailIncludesReset(t *testing.T) {
+	h, st := newTestHandler(t)
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+	code := int64(6)
+	st.UpdateNodeReset("aabbccddeeff", "watchdog", &code)
+
+	mux := http.NewServeMux()
+	h.Register(mux)
+	req := httptest.NewRequest("GET", "/api/nodes/aabbccddeeff", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var env struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			Reset     string `json:"reset"`
+			ResetCode *int64 `json:"reset_code"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.Data.Reset != "watchdog" || env.Data.ResetCode == nil || *env.Data.ResetCode != 6 {
+		t.Errorf("reset=%q code=%v, want watchdog / 6", env.Data.Reset, env.Data.ResetCode)
+	}
+}
+
 func TestGetNodesList(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
