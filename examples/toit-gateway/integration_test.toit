@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 import expect show *
 import .store show Store encode-json_ decode-json_
 import .command show Command project

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // gateway/store.toit — the gateway's sqlite store: nodes, payloads,
 // command_queue, reports. Shared (in B2) by the daemon and the CLI.
 import sqlite

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package gateway ties the TFTP server to the SQLite store.
 // It handles the device poll cycle: extract EUI-64 from poll filename,
 // register the device, pop commands from the store's queue, and log results.

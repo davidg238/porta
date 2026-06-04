@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Ekorau LLC
 # Stage the porta gateway deploy kit: compile a fresh snapshot and gather the
 # toit-sqlite runtime so `docker build` (here or on the target) has everything.
 #

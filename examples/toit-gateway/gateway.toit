@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // gateway/gateway.toit — the Porta gateway CLI (pkg-cli). Every leaf command
 // opens the sqlite Store and reads/writes it. The TFTP daemon (`serve`) and the
 // store-backed request handler are B2 and are intentionally not here yet.

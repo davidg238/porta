@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // gateway/data_ingest_test.toit
 import expect show *
 import .handler show StoreBackedHandler

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package control is porta's headless operations layer: it orchestrates
 // command-queue writes and node resolution so the cobra CLI and the web UI
 // share one implementation. Presentation (printing, HTML) stays in the

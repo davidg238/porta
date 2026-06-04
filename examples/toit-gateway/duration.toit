@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // gateway/duration.toit — parse jag/artemis-style durations to whole seconds.
 
 /**

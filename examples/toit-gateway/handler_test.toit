@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 import expect show *
 import .handler show StoreBackedHandler parse-resource_
 import .store show Store decode-json_

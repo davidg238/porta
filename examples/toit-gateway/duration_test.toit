@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 import expect show *
 import .duration show parse-duration-s
 

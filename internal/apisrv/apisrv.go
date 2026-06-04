@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package apisrv exposes porta's control plane as an authenticated JSON HTTP
 // API on the shared operator listener, so a CLI (and future language tooling)
 // can drive the gateway over the network instead of opening the store directly.

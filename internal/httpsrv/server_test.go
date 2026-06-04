@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // internal/httpsrv/server_test.go
 package httpsrv
 

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Command porta is the northbound gateway server + operator CLI.
 package main
 

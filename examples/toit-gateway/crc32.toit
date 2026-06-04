@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // gateway/crc32.toit — CRC32-IEEE, byte-identical to the device-side image check.
 import crypto.crc
 

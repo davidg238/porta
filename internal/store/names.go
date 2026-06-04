@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 package store
 
 // Word lists copied verbatim from examples/toit-gateway/names.toit so the Go

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package provision renders the gateway-address provisioning that a node-repo
 // flash tool (e.g. nodus flash) injects into a device's firmware.config. The
 // neutral contract is the firmware.config["porta"] object, with dotted sub-keys

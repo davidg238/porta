@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package command defines the porta command vocabulary, its wire codec, and
 // payload helpers shared by the gateway control plane.
 package command

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package httpsrv is the porta gateway's operator HTTP listener — the
 // foundation that B4b (MCP) and B4c (htmx) register routes on. Provides
 // IP allowlist middleware, /health, and graceful shutdown. No app routes

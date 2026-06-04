@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // internal/portacli/monitor_test.go
 package portacli
 

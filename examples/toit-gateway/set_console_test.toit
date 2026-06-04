@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // gateway/set_console_test.toit
 import expect show *
 import .command show Command VERB-SET-CONSOLE

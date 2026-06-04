@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // gateway/data_log_test.toit
 import expect show *
 import .store show Store

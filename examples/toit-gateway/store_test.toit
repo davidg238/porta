@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 import expect show *
 import .store show Store DEFAULT-POLL-INTERVAL-S DEFAULT-MAX-OFFLINE-S encode-json_ decode-json_
 import .command show Command

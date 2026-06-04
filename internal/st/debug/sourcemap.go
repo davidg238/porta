@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package debug provides remote debugging support for Berry VM devices.
 package debug
 

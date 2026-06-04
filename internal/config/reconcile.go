@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 package config
 
 import "github.com/davidg238/porta/internal/store"

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package tftp implements a TFTP packet codec per RFC 1350 / RFC 2348.
 package tftp
 

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package portacli is the porta gateway's cobra command tree.
 package portacli
 
