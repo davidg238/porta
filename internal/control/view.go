@@ -131,3 +131,17 @@ func DesiredVsObserved(st *store.Store, id, app string) ([]ConfigRow, error) {
 	}
 	return out, nil
 }
+
+// RenderReset formats a node's last reset for display: "category (code)" when a
+// raw platform code is present, "category" when not, and "—" when no category
+// has been reported. porta never interprets the category or code — it displays
+// the neutral string the node sent.
+func RenderReset(cat string, code *int64) string {
+	if cat == "" {
+		return "—"
+	}
+	if code != nil {
+		return fmt.Sprintf("%s (%d)", cat, *code)
+	}
+	return cat
+}

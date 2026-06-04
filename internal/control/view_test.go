@@ -64,3 +64,22 @@ func TestAppsFromObservedSorted(t *testing.T) {
 		t.Fatalf("want sorted [alpha zeta], got %+v", apps)
 	}
 }
+
+func TestRenderReset(t *testing.T) {
+	code := int64(6)
+	cases := []struct {
+		cat  string
+		code *int64
+		want string
+	}{
+		{"watchdog", &code, "watchdog (6)"},
+		{"watchdog", nil, "watchdog"},
+		{"", nil, "—"},
+		{"", &code, "—"}, // no category → dash regardless of code
+	}
+	for _, c := range cases {
+		if got := RenderReset(c.cat, c.code); got != c.want {
+			t.Errorf("RenderReset(%q,%v) = %q, want %q", c.cat, c.code, got, c.want)
+		}
+	}
+}
