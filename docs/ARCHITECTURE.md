@@ -17,7 +17,7 @@ Where this document and the code/contracts disagree, the contracts
 ```
                        DEV MACHINE  (has source + jag + SDK + USB)
               ┌──────────────────────────────────────────────────────┐
-              │   nodus tool          nodus-st tool      (future)      │
+              │   nodus tool          nodus-st tool                    │
               │   run / flash /        run / flash / …                 │
               │   decode               (Smalltalk)                     │
               │        └──────────┬───────────┘                        │
@@ -35,18 +35,19 @@ Where this document and the code/contracts disagree, the contracts
                                │    · payloads · reports · data_log     │
                                │  • command audit + config self-heal    │
                                └──────────────────┬─────────────────────┘
-                                                  │  TFTP over UDP
+                                                  │  TFTP RRQ/WRQ over UDP
                                                   │  (node = client, gateway = server)
-            ┌─────────────────────────┬───────────┴───────────┬────────────────────┐
-            ▼                         ▼                         ▼                    ▼
-      ┌───────────┐            ┌───────────┐            ┌───────────┐        ┌───────────┐
-      │   nodus   │            │   nodus   │            │   nodus    │  ...   │ nodus-st  │
-      │   Toit    │            │   Toit    │            │   Toit     │        │ Smalltalk │
-      │  ESP32    │            │ ESP32-S3  │            │  ESP32-C6  │        │ (future)  │
-      │ deep-sleep│            │ always-on │            │ deep-sleep │        │           │
-      └───────────┘            └───────────┘            └───────────┘        └───────────┘
-            └─────────── heterogeneous fleet — coupled to porta ONLY over the wire ──────────┘
-                                  (every node conforms to docs/PROTOCOL.md)
+            ┌─────────────────────────┬───────────┴───────────┐ · · · · · · · · · · · · ·┐
+            ▼                          ▼                        ▼                          ▼
+      ┌───────────┐            ┌───────────┐            ┌───────────┐            ┌───────────┐
+      │   nodus   │            │   nodus   │            │   nodus    │   ...      │ nodus-st  │
+      │   Toit    │            │   Toit    │            │   Toit     │            │ Smalltalk │
+      │  ESP32    │            │ ESP32-S3  │            │  ESP32-C6  │            │ nRF52840  │
+      │ deep-sleep│            │ always-on │            │ deep-sleep │            │  Zephyr   │
+      └───────────┘            └───────────┘            └───────────┘            └───────────┘
+       └──── Toit nodes · WiFi · IPv4 (UDP) ───────────────────┘       Thread · IPv6 (proven) ┘
+            └────────── heterogeneous fleet — coupled to porta ONLY over the wire ───────────┘
+                  (every node conforms to docs/PROTOCOL.md — same RRQ/WRQ surface, any link)
 ```
 
 Three planes, three contracts:
@@ -61,9 +62,10 @@ Three planes, three contracts:
 
 ## 2. A heterogeneous fleet with one fixed point
 
-porta commands a fleet of **heterogeneous** nodes: different languages (Toit today,
-a Smalltalk node planned), different chips (classic ESP32, -S3, -C6), different
-power profiles, different jobs. They share **nothing** but the wire.
+porta commands a fleet of **heterogeneous** nodes: different languages (Toit, and
+Smalltalk via `nodus-st`), different chips (classic ESP32, -S3, -C6 on WiFi; nRF52840
+on Thread), different power profiles, different jobs. They share **nothing** but the
+wire.
 
 The one fixed point is `docs/PROTOCOL.md`. A node is "conforming" if it speaks that
 protocol — command vocabulary, report schema, TFTP resource surface, CRC32-IEEE
@@ -80,8 +82,8 @@ Consequences of "coupled only over the wire":
   exercise, not a gateway change. The gateway shows a node's `kind` as a label; it
   branches on no language.
 - The fleet can be genuinely mixed: a deep-sleep Toit air-quality sensor and an
-  always-on Toit keyboard and a future Smalltalk node all check in against the same
-  gateway, queue, and audit trail.
+  always-on Toit keyboard and a Smalltalk `nodus-st` node all check in against the
+  same gateway, queue, and audit trail.
 
 ---
 
@@ -126,10 +128,17 @@ RRQ/WRQ resource surface is a clean abstraction boundary.
 
 **The resource surface — not the link — is the contract.** A conforming node MAY
 implement any transport that presents the same RRQ/WRQ resources (`commands`,
-`payload`, `report`, `data`, each keyed by `?id=`). **ESP-NOW** and **BT-mesh** are
-planned behind exactly that interface, so a future low-power or meshed node can join
-the same fleet without any change to the command model, the store, or the audit
-trail. The gateway does not care how the bytes arrive.
+`payload`, `report`, `data`, each keyed by `?id=`). The Toit nodes in use today run
+over **WiFi (IPv4)**.
+
+This link-agnosticism is **not just theoretical: the RRQ/WRQ interface has been
+proven over Thread (6LoWPAN/IPv6) to Zephyr devices running `nodus-st`** — Smalltalk
+nodes on an **nRF52840**. Those nodes reach the gateway over **IPv6** rather than the
+Toit nodes' IPv4, but still as plain TFTP clients touching the same `?id=`-keyed
+resources, with no change to the command model, the store, or the audit trail. The
+gateway does not care how the bytes arrive, nor over which IP version. **ESP-NOW** and
+**BT-mesh** remain planned behind the same interface, so a future low-power or meshed
+node can join the same fleet on the same terms.
 
 ---
 
@@ -222,10 +231,30 @@ gateway. Use the *same* jag/SDK to flash a device and to build the image it runs
 **Relationship to Artemis.** porta is an **independent control plane** that operates
 at the container-image level, coexisting with the existing Toit tooling rather than
 consuming Artemis fleet artifacts. The shared substrate is the relocated image +
-jag CRC, so images flow from the same build toolchain. (Deeper Artemis-pod
-interop — e.g. ingesting `.pod` bundles — is **not implemented** and is a candidate
-direction, not a current capability. This section should be refined with the
-intended Artemis story.)
+jag CRC, so images flow from the same build toolchain.
+
+To work toward future compatibility with Artemis, porta's command vocabulary
+deliberately mirrors the **container triggers Artemis supports**, so a container's
+run conditions mean the same thing on either control plane (`PROTOCOL.md §4`):
+
+| Trigger | porta value | Meaning |
+|---------|-------------|---------|
+| `boot` | `1` | Run on (cold) boot. |
+| `install` | int | Run on the Nth install generation. |
+| `interval` | int (seconds) | Periodic wake. |
+| `gpio-high:<pin>` | `<pin>` (int) | Wake/run on GPIO `<pin>` high (ext1). |
+| `gpio-low:<pin>` | `<pin>` (int) | Wake/run on GPIO `<pin>` low. |
+| `gpio-touch:<pin>` | `<pin>` (int) | Wake/run on touch pin `<pin>`. |
+
+Where the two diverge today is the **unit of deployment**. Artemis synchronises a
+fleet against a `.pod` — a self-contained, versioned firmware *archive* that bundles
+the Toit SDK envelope, every container image, and the per-container trigger/runlevel
+config into one artifact flashed/OTA'd as a whole. porta does not consume `.pod`
+bundles: it delivers and runs **individual relocated container images** (`run`/`stop`,
+`PROTOCOL.md §2`) onto already-flashed firmware, with triggers/runlevel/lifecycle
+declared per-command rather than baked into a pod. Ingesting `.pod` bundles — reading
+their container set and trigger config to drive porta's command queue — is **not
+implemented** and is a candidate direction, not a current capability.
 
 **Where the toolchain physically lives.** Compile, relocate, flash, and panic-decode
 need source + jag + SDK + a USB cable, which a headless gateway does not have. They
@@ -246,7 +275,7 @@ point **one way** (node-side → porta), and porta imports nothing from any of t
 |------|------|----------------------|
 | **porta** (`github.com/davidg238/porta`) | the neutral Go gateway + the two contracts (`PROTOCOL.md`, `DEVSDK.md`) + the public `devsdk/` | — (owns the contracts) |
 | **nodus** (`github.com/davidg238/nodus`) | the Toit node — firmware (southbound, conforms to `PROTOCOL.md`) **and** its dev tool (northbound, imports `devsdk`) | wire + `devsdk` |
-| **nodus-st** (`github.com/davidg238/nodus-st`) | the planned Smalltalk node + tooling (same pattern) | wire + `devsdk` |
+| **nodus-st** (`github.com/davidg238/nodus-st`) | the Smalltalk node + tooling — Zephyr on nRF52840 over Thread (same pattern) | wire + `devsdk` |
 | **gateway** (`github.com/davidg238/gateway`) | a full **Toit** implementation of the gateway — an alternative to porta itself, conforming to the same `PROTOCOL.md` | implements the wire |
 
 Note `gateway` is a *gateway* (another implementation of porta's role), not a node;
