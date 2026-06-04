@@ -66,6 +66,11 @@ type nodeDetail struct {
 	Apps          []control.App       `json:"apps"`
 	ConfigApp     string              `json:"config_app"`
 	Config        []control.ConfigRow `json:"config"`
+	// ObservedRaw is the node's cached observed_state JSON blob verbatim, and
+	// Undelivered is the count of queued-but-not-delivered commands. Both back
+	// `porta device show`'s store-equivalent output over the API.
+	ObservedRaw string `json:"observed_raw"`
+	Undelivered int    `json:"undelivered"`
 }
 
 // handleNodeDetail returns one node's full detail.
@@ -85,12 +90,14 @@ func (h *Handler) handleNodeDetail(w http.ResponseWriter, r *http.Request) {
 	if confApp != "" {
 		cfg, _ = control.DesiredVsObserved(h.st, id, confApp)
 	}
+	un, _ := h.st.UndeliveredCommands(id)
 	writeOK(w, nodeDetail{
 		ID: n.ID, Name: n.Name, Kind: n.Kind, IP: n.SourceAddr,
 		Online: n.Online(h.now()), Chip: n.Chip, Sdk: n.Sdk,
 		PollIntervalS: n.PollIntervalS, MaxOfflineS: n.MaxOfflineS,
 		LastSeen: n.LastSeen.Int64, LastReportAt: n.LastReportAt.Int64,
 		Apps: apps, ConfigApp: confApp, Config: cfg,
+		ObservedRaw: n.ObservedState, Undelivered: len(un),
 	})
 }
 

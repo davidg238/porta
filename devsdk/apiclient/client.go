@@ -329,6 +329,148 @@ type identityResp struct {
 	Sdk  string `json:"sdk"`
 }
 
+// NodeListItem is one row of ListNodes (GET /api/nodes). LastSeen is 0 when the
+// node has never been heard from (matches the store's never-seen sentinel).
+type NodeListItem struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	IP       string `json:"ip"`
+	LastSeen int64  `json:"last_seen"`
+	Online   bool   `json:"online"`
+	Chip     string `json:"chip"`
+	Sdk      string `json:"sdk"`
+}
+
+// ListNodes fetches the fleet list (GET /api/nodes).
+func (c *Client) ListNodes() ([]NodeListItem, error) {
+	req, err := http.NewRequest("GET", c.baseURL+"/api/nodes", nil)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Nodes []NodeListItem `json:"nodes"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Nodes, nil
+}
+
+// NodeApp is one observed-apps entry in a node detail.
+type NodeApp struct {
+	Name     string `json:"Name"`
+	CRC      int64  `json:"CRC"`
+	Runlevel int64  `json:"Runlevel"`
+}
+
+// NodeDetailResp is the full node detail (GET /api/nodes/{sel}). Online and the
+// relative-age inputs (LastSeen) come from the server; ObservedRaw + Undelivered
+// back `porta device show`.
+type NodeDetailResp struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Kind          string    `json:"kind"`
+	IP            string    `json:"ip"`
+	Online        bool      `json:"online"`
+	Chip          string    `json:"chip"`
+	Sdk           string    `json:"sdk"`
+	PollIntervalS int64     `json:"poll_interval_s"`
+	MaxOfflineS   int64     `json:"max_offline_s"`
+	LastSeen      int64     `json:"last_seen"`
+	LastReportAt  int64     `json:"last_report_at"`
+	Apps          []NodeApp `json:"apps"`
+	ObservedRaw   string    `json:"observed_raw"`
+	Undelivered   int       `json:"undelivered"`
+}
+
+// NodeDetail fetches one node's full detail (GET /api/nodes/{sel}).
+func (c *Client) NodeDetail(sel string) (*NodeDetailResp, error) {
+	req, err := http.NewRequest("GET", c.baseURL+"/api/nodes/"+url.PathEscape(sel), nil)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	var r NodeDetailResp
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// CommandLogItem is one row of NodeCommands (GET /api/nodes/{sel}/commands).
+// Delivered says whether the command has been picked up by the node.
+type CommandLogItem struct {
+	ID        int64  `json:"id"`
+	Verb      string `json:"verb"`
+	Args      string `json:"args"`
+	IssuedAt  int64  `json:"issued_at"`
+	IssuedBy  string `json:"issued_by"`
+	Delivered bool   `json:"delivered"`
+}
+
+// NodeCommands fetches the recent command log for sel (GET /api/nodes/{sel}/commands).
+// The server returns newest-first (capped); callers that need oldest-first must
+// reverse.
+func (c *Client) NodeCommands(sel string) ([]CommandLogItem, error) {
+	req, err := http.NewRequest("GET", c.baseURL+"/api/nodes/"+url.PathEscape(sel)+"/commands", nil)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Commands []CommandLogItem `json:"commands"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Commands, nil
+}
+
+// ConfigRow is one desired-vs-observed config row (GET /api/nodes/{sel}/config).
+// It mirrors control.ConfigRow's exported fields; the *Present flags say whether
+// each side carried the key.
+type ConfigRow struct {
+	Key             string `json:"key"`
+	Desired         any    `json:"desired"`
+	Observed        any    `json:"observed"`
+	DesiredPresent  bool   `json:"desired_present"`
+	ObservedPresent bool   `json:"observed_present"`
+	Marker          string `json:"marker"`
+	ReissueCount    int    `json:"reissue_count"`
+}
+
+// Config fetches the desired-vs-observed config rows for app on sel
+// (GET /api/nodes/{sel}/config?app=<app>), backing `porta device get`.
+func (c *Client) Config(sel, app string) ([]ConfigRow, error) {
+	u := c.baseURL + "/api/nodes/" + url.PathEscape(sel) + "/config?app=" + url.QueryEscape(app)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Config []ConfigRow `json:"config"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Config, nil
+}
+
 // NodeIdentity fetches the node's reported chip/sdk (GET /api/nodes/{sel}), for
 // `porta run`'s SDK guard. The full node-detail read stays deferred (S2). A node
 // that exists but hasn't reported yet returns ("", "", nil); an unknown node

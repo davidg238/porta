@@ -7,8 +7,8 @@ import (
 	"io"
 	"text/tabwriter"
 
+	"github.com/davidg238/porta/devsdk/apiclient"
 	"github.com/davidg238/porta/internal/control"
-	"github.com/davidg238/porta/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -28,29 +28,22 @@ func newScanCmd() *cobra.Command {
 		Use:   "scan",
 		Short: "List nodes (online/offline)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			st, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			nodes, err := st.ListNodes()
+			c := apiclient.New(serverURL())
+			nodes, err := c.ListNodes()
 			if err != nil {
 				return err
 			}
 			now := nowSec()
 			for _, n := range nodes {
-				if !n.LastSeen.Valid && !includeNeverSeen {
+				if n.LastSeen == 0 && !includeNeverSeen {
 					continue
 				}
 				status := "offline"
-				if n.Online(now) {
+				if n.Online {
 					status = "online"
 				}
-				seen := control.RelativeAge(0, now)
-				if n.LastSeen.Valid {
-					seen = control.RelativeAge(n.LastSeen.Int64, now)
-				}
-				fmt.Printf("%-12s  %-16s  %-12s  %s\n", n.ID, n.Name, seen, status)
+				seen := control.RelativeAge(n.LastSeen, now)
+				fmt.Fprintf(cmd.OutOrStdout(), "%-12s  %-16s  %-12s  %s\n", n.ID, n.Name, seen, status)
 			}
 			return nil
 		},
@@ -65,23 +58,15 @@ func newPingCmd() *cobra.Command {
 		Use:   "ping",
 		Short: "Report whether a node is online",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			st, err := openStore()
+			c := apiclient.New(serverURL())
+			n, err := c.NodeDetail(device)
 			if err != nil {
 				return err
 			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
-			n, err := st.GetNode(id)
-			if err != nil || n == nil {
-				return fmt.Errorf("node %s not found", id)
-			}
-			if n.Online(nowSec()) {
-				fmt.Printf("%s (%s): online\n", n.Name, id)
+			if n.Online {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s (%s): online\n", n.Name, n.ID)
 			} else {
-				fmt.Printf("%s (%s): offline\n", n.Name, id)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s (%s): offline\n", n.Name, n.ID)
 			}
 			return nil
 		},
@@ -96,25 +81,20 @@ func newLogCmd() *cobra.Command {
 		Use:   "log",
 		Short: "Command audit history",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			st, err := openStore()
+			c := apiclient.New(serverURL())
+			cmds, err := c.NodeCommands(device)
 			if err != nil {
 				return err
 			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
-			cmds, err := st.CommandLog(id)
-			if err != nil {
-				return err
-			}
-			for _, c := range cmds {
+			// The API returns newest-first; the store-backed log printed
+			// oldest-first (ORDER BY id). Reverse to preserve that order.
+			for i := len(cmds) - 1; i >= 0; i-- {
+				lc := cmds[i]
 				delivered := "pending"
-				if c.DeliveredAt.Valid {
+				if lc.Delivered {
 					delivered = "yes"
 				}
-				fmt.Printf("#%-4d %-18s delivered=%-7s %s\n", c.ID, c.Verb, delivered, c.Args)
+				fmt.Fprintf(cmd.OutOrStdout(), "#%-4d %-18s delivered=%-7s %s\n", lc.ID, lc.Verb, delivered, lc.Args)
 			}
 			return nil
 		},
@@ -145,34 +125,26 @@ func newDeviceShowCmd() *cobra.Command {
 		Use:   "show",
 		Short: "Show node details",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			st, err := openStore()
+			c := apiclient.New(serverURL())
+			n, err := c.NodeDetail(device)
 			if err != nil {
 				return err
 			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
-			n, err := st.GetNode(id)
-			if err != nil || n == nil {
-				return fmt.Errorf("node %s not found", id)
-			}
+			out := cmd.OutOrStdout()
 			now := nowSec()
-			fmt.Printf("id:            %s\n", n.ID)
-			fmt.Printf("name:          %s\n", n.Name)
-			fmt.Printf("kind:          %s\n", n.Kind)
-			fmt.Printf("source_addr:   %s\n", n.SourceAddr)
+			fmt.Fprintf(out, "id:            %s\n", n.ID)
+			fmt.Fprintf(out, "name:          %s\n", n.Name)
+			fmt.Fprintf(out, "kind:          %s\n", n.Kind)
+			fmt.Fprintf(out, "source_addr:   %s\n", n.IP)
 			lastSeen := "never"
-			if n.LastSeen.Valid {
-				lastSeen = control.RelativeAge(n.LastSeen.Int64, now)
+			if n.LastSeen != 0 {
+				lastSeen = control.RelativeAge(n.LastSeen, now)
 			}
-			fmt.Printf("last_seen:     %s\n", lastSeen)
-			fmt.Printf("poll_interval: %ds\n", n.PollIntervalS)
-			fmt.Printf("max_offline:   %ds\n", n.MaxOfflineS)
-			fmt.Printf("observed:      %s\n", n.ObservedState)
-			un, _ := st.UndeliveredCommands(id)
-			fmt.Printf("undelivered:   %d command(s)\n", len(un))
+			fmt.Fprintf(out, "last_seen:     %s\n", lastSeen)
+			fmt.Fprintf(out, "poll_interval: %ds\n", n.PollIntervalS)
+			fmt.Fprintf(out, "max_offline:   %ds\n", n.MaxOfflineS)
+			fmt.Fprintf(out, "observed:      %s\n", n.ObservedRaw)
+			fmt.Fprintf(out, "undelivered:   %d command(s)\n", n.Undelivered)
 			return nil
 		},
 	}
@@ -197,25 +169,13 @@ func newContainerListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List apps from the latest observed report",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			st, err := openStore()
+			c := apiclient.New(serverURL())
+			n, err := c.NodeDetail(device)
 			if err != nil {
 				return err
 			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
-			n, err := st.GetNode(id)
-			if err != nil || n == nil {
-				return fmt.Errorf("node %s not found", id)
-			}
-			apps, err := control.AppsFromObserved(n.ObservedState)
-			if err != nil {
-				return err
-			}
-			for _, a := range apps {
-				fmt.Printf("%-16s crc=%-12d runlevel=%d\n", a.Name, a.CRC, a.Runlevel)
+			for _, a := range n.Apps {
+				fmt.Fprintf(cmd.OutOrStdout(), "%-16s crc=%-12d runlevel=%d\n", a.Name, a.CRC, a.Runlevel)
 			}
 			return nil
 		},
@@ -233,20 +193,23 @@ func renderScalar(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// runDeviceGet is the testable core of `porta device get`. If key is empty,
-// it renders a table over the union of desired ∪ observed keys for app;
-// otherwise it renders the single-key one-liner. Either form prints a ≥2×
-// self-heal warning footer for each still-divergent key.
-func runDeviceGet(out io.Writer, st *store.Store, id, app, key string) error {
-	n, err := st.GetNode(id)
-	if err != nil || n == nil {
-		return fmt.Errorf("node %s not found", id)
-	}
-	rows, err := control.DesiredVsObserved(st, id, app)
+// runDeviceGet is the testable core of `porta device get`. It sources the
+// desired-vs-observed rows from the control-plane API (the server resolves the
+// selector and echoes id). If key is empty, it renders a table over the union
+// of desired ∪ observed keys for app; otherwise it renders the single-key
+// one-liner. Either form prints a ≥2× self-heal warning footer for each
+// still-divergent key.
+func runDeviceGet(out io.Writer, c *apiclient.Client, sel, app, key string) error {
+	n, err := c.NodeDetail(sel)
 	if err != nil {
 		return err
 	}
-	render := func(r control.ConfigRow) (string, string) {
+	id := n.ID
+	rows, err := c.Config(sel, app)
+	if err != nil {
+		return err
+	}
+	render := func(r apiclient.ConfigRow) (string, string) {
 		ds, os := "--", "--"
 		if r.DesiredPresent {
 			ds = renderScalar(r.Desired)
@@ -301,20 +264,12 @@ func newDeviceGetCmd() *cobra.Command {
 		Short: "Show desired vs observed config for an app (or one key)",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			id, err := resolveNodeID(st, device)
-			if err != nil {
-				return err
-			}
+			c := apiclient.New(serverURL())
 			key := ""
 			if len(args) == 2 {
 				key = args[1]
 			}
-			return runDeviceGet(cmd.OutOrStdout(), st, id, args[0], key)
+			return runDeviceGet(cmd.OutOrStdout(), c, device, args[0], key)
 		},
 	}
 	deviceFlag(cmd, &device)
