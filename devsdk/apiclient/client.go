@@ -379,6 +379,8 @@ type NodeDetailResp struct {
 	Online        bool      `json:"online"`
 	Chip          string    `json:"chip"`
 	Sdk           string    `json:"sdk"`
+	Reset         string    `json:"reset"`
+	ResetCode     *int64    `json:"reset_code"`
 	PollIntervalS int64     `json:"poll_interval_s"`
 	MaxOfflineS   int64     `json:"max_offline_s"`
 	LastSeen      int64     `json:"last_seen"`
