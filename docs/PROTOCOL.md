@@ -384,7 +384,8 @@ A conforming node MUST:
   applied `config` blob.
 - (If it forwards telemetry) ship JSONL to `data?id=` per §6.
 - (If it forwards telemetry) report uncaught payload exceptions as `kind:"panic"`
-  entries per [`PANIC-REPORTING.md`](PANIC-REPORTING.md).
+  entries per §6 (the base64 trace blob in `text`); decoding is node-defined and
+  lives in the node repo's tooling.
 
 A conforming node MAY omit `config` from its report (it defaults to empty),
 omit optional command args (defaults apply), and implement any transport that

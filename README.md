@@ -4,11 +4,14 @@ The **porta** gateway — split from `st-zephyr`. porta is the northbound contro
 authority for a fleet of heterogeneous nodes: it owns the wire protocol, queues
 commands, delivers container images over TFTP, and ingests telemetry.
 
-Start with **`CLAUDE.md`** for orientation, then `docs/specs/` for the approved
-designs and `docs/plans/` for the implementation plans.
+Start with **`docs/ARCHITECTURE.md`** for the system picture and **`CLAUDE.md`** for
+orientation, then `docs/specs/` for the approved designs and `docs/plans/` for the
+implementation plans.
 
 - `cmd/porta/` + `internal/` — Go gateway (mainline), module `github.com/davidg238/porta`
+- `docs/ARCHITECTURE.md` — the canonical system-architecture doc (the whole-system picture)
 - `docs/PROTOCOL.md` — the canonical wire protocol all node implementations conform to
+- `docs/DEVSDK.md` — the northbound dev-SDK contract for node-repo tooling
 
 Related repos, all extracted from here on 2026-06-04 and coupled only over the wire:
 a full Toit implementation of the gateway in **`gateway`** (`github.com/davidg238/gateway`);
