@@ -31,6 +31,7 @@ func TestPostCommandVerbs(t *testing.T) {
 		{"poll", `{"verb":"set-poll-interval","args":{"interval":"30s"}}`, "set-poll-interval"},
 		{"power", `{"verb":"set-power-mode","args":{"mode":"always-on"}}`, "set-power-mode"},
 		{"stop", `{"verb":"stop","args":{"name":"blink"}}`, "stop"},
+		{"reboot", `{"verb":"reboot"}`, "reboot"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

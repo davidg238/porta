@@ -47,6 +47,13 @@ func SetPowerMode(st *store.Store, id, mode, issuedBy string, now int64) (int64,
 	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
 }
 
+// Reboot enqueues a reboot command. Imperative one-shot (no observed-state
+// convergence); the node applies it at the end of its next poll.
+func Reboot(st *store.Store, id, issuedBy string, now int64) (int64, error) {
+	c := command.Reboot()
+	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
+}
+
 // SetPollInterval caches the poll interval and enqueues the command.
 func SetPollInterval(st *store.Store, id string, secs int64, issuedBy string, now int64) (int64, error) {
 	if err := st.SetPollInterval(id, secs); err != nil {
