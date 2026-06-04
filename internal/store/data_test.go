@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // internal/store/data_test.go
 package store
 

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // gateway/serve.toit — the gateway daemon. Opens the sqlite store, wraps it in
 // the StoreBackedHandler, and runs a TFTPServer over UDP. Replaces host/serve.toit.
 import cli

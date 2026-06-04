@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // gateway/names.toit — deterministic jag-style auto-names keyed by MAC.
 
 ADJECTIVES_ ::= [

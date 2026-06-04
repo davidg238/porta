@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // internal/store/data.go
 package store
 

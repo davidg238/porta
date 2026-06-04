@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package cli implements a TCP/JSON-lines protocol listener for the jast CLI.
 // Each connection sends one JSON object per line and receives one JSON response
 // per line. This is how the jast2 Python CLI talks to the gateway over Tailscale.

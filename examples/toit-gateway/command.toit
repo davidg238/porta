@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // gateway/command.toit — the operator command model, its wire codec, and the
 // goal projection used to reason about idempotency.
 import encoding.json

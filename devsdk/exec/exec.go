@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package exec is porta's injectable, narrating runner for external dev tools
 // ("trainer wheels"): Runner abstracts the shell-out (tests inject a fake);
 // Executor narrates each command (apt-style summary, or full transcript when

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // gateway/monitor_test.toit
 import expect show *
 import .gateway show monitor-line_

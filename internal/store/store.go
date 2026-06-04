@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package store is the porta gateway's sqlite data layer: node inventory,
 // payload blobs, the command queue, and the append-only report log.
 package store

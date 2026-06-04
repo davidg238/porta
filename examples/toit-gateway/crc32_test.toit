@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 import expect show *
 import .crc32 show crc32
 

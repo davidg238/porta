@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // gateway/handler.toit — the store-backed TFTP request handler. Implements the
 // tftp package's Storage (as evolved by Spec A): it parses the "?id=<mac>&…"
 // query the node sends, serves the oldest-undelivered command and payload BLOBs

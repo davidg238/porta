@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package mcpserver exposes jast-gw device operations as MCP tools.
 package mcpserver
 

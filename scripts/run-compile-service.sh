@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Ekorau LLC
 # Start the ST compile service that jast-gw calls over HTTP.
 # Builds the tree-sitter parser first (idempotent), then runs the service.
 # Run from anywhere; paths are resolved relative to the repo.

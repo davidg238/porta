@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package web serves porta's htmx operator console on the shared HTTP mux.
 // It reads through internal/store and writes through internal/control; it
 // holds no node state and pushes nothing — every dynamic region is polled.

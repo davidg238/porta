@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package debugui serves a browser-based debug viewer.
 package debugui
 

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package handler implements the porta TFTP resource surface as a
 // tftp.Dispatcher backed by the store.
 package handler

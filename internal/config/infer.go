@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package config implements the porta gateway's per-app config plane:
 // scalar inference, desired-vs-observed projection, and the self-heal
 // reconcile algorithm. It is pure logic — no I/O, no globals.

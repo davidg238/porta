@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package mcpsrv exposes porta's read surface as read-only MCP tools over
 // Streamable HTTP. It is a thin adapter over internal/control + internal/store;
 // it owns no query logic and performs no writes.

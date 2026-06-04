@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package apiclient is the HTTP client for the porta control-plane API
 // (internal/apisrv). It is cobra-free and store-free: the CLI's mutating
 // commands use it to POST/PATCH the server instead of opening the store, which

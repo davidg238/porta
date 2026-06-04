@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // internal/telemetry/format_test.go
 package telemetry
 

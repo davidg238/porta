@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Ekorau LLC
 # Run the Toit gateway host test suite with the custom toit-sqlite runtime
 # (the sqlite dep links an external C lib, so the stock `toit` runtime can't RUN it;
 # stock `toit` still resolves packages fine). Override with TOIT_SQLITE=/path/to/bin.

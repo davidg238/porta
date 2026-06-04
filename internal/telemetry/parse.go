@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Ekorau LLC
+
 // Package telemetry implements the porta gateway's telemetry plane:
 // JSONL line parsing with type-faithful value_type inference, and the
 // monitor row formatter. Pure logic — no I/O, no globals.
