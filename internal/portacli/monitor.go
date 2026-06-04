@@ -37,7 +37,7 @@ func toStoreRow(r apiclient.DataRow) store.DataRow {
 // follow — it polls every pollInterval for rows with id past the highest id
 // seen, advancing an exact id cursor (no timestamp-tie boundary case). It
 // returns nil on ctx cancellation (Ctrl-C).
-func runMonitor(ctx context.Context, out io.Writer, c telemetryReader, dec panicDecoder,
+func runMonitor(ctx context.Context, out io.Writer, c telemetryReader,
 	sel string, sinceS int64, kind string, follow bool,
 	now func() int64, pollInterval time.Duration,
 ) error {
@@ -48,7 +48,7 @@ func runMonitor(ctx context.Context, out io.Writer, c telemetryReader, dec panic
 	}
 	var cursor int64
 	for _, r := range rows {
-		printMonitorRow(out, r, dec)
+		printMonitorRow(out, r)
 		if r.ID > cursor {
 			cursor = r.ID
 		}
@@ -71,7 +71,7 @@ func runMonitor(ctx context.Context, out io.Writer, c telemetryReader, dec panic
 				return err
 			}
 			for _, r := range rows {
-				printMonitorRow(out, r, dec)
+				printMonitorRow(out, r)
 				if r.ID > cursor {
 					cursor = r.ID
 				}
@@ -83,7 +83,6 @@ func runMonitor(ctx context.Context, out io.Writer, c telemetryReader, dec panic
 func newMonitorCmd() *cobra.Command {
 	var device, since, kind string
 	var follow bool
-	var noDecode bool
 	cmd := &cobra.Command{
 		Use:   "monitor",
 		Short: "Print a node's telemetry over the API; --follow tails new rows",
@@ -97,27 +96,19 @@ func newMonitorCmd() *cobra.Command {
 				sinceS = s
 			}
 			c := apiclient.New(serverURL())
-			var dec panicDecoder
-			if !noDecode {
-				dec = newJagDecoder()
-			}
-			return runMonitor(cmd.Context(), cmd.OutOrStdout(), c, dec, device, sinceS, kind, follow, nowSec, 2*time.Second)
+			return runMonitor(cmd.Context(), cmd.OutOrStdout(), c, device, sinceS, kind, follow, nowSec, 2*time.Second)
 		},
 	}
 	deviceFlag(cmd, &device)
 	cmd.Flags().StringVar(&since, "since", "", "look-back window, e.g. 30m, 1h (default 1h)")
 	cmd.Flags().StringVar(&kind, "kind", "", "filter to 'log', 'metric', or 'panic'")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "poll the server and tail new rows")
-	cmd.Flags().BoolVar(&noDecode, "no-decode", false, "print raw panic blobs instead of running jag decode")
 	return cmd
 }
 
-// printMonitorRow renders one telemetry row: kind:"panic" rows are decoded via
-// renderPanic; everything else uses the unchanged telemetry.FormatLine output.
-func printMonitorRow(out io.Writer, r apiclient.DataRow, dec panicDecoder) {
-	if r.Kind == "panic" {
-		renderPanic(out, r, dec)
-		return
-	}
+// printMonitorRow renders one telemetry row via telemetry.FormatLine. kind:"panic"
+// rows print raw (their base64 trace blob) — decoding/symbolication is a node-repo
+// dev-tool concern (e.g. `nodus panic`), not the neutral gateway's.
+func printMonitorRow(out io.Writer, r apiclient.DataRow) {
 	fmt.Fprintln(out, telemetry.FormatLine(toStoreRow(r)))
 }

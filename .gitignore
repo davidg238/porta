@@ -7,6 +7,8 @@
 /st-devserver
 /cmd/st-devserver/st-devserver
 *.db
+*.db-shm
+*.db-wal
 
 # Build artifacts / caches
 build/
