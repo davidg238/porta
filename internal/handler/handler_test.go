@@ -442,3 +442,66 @@ func TestAcceptWriteRejectsDataWithoutID(t *testing.T) {
 		t.Error("AcceptWrite(data?id=) (empty id) must error")
 	}
 }
+
+func TestWriteReportStoresReset(t *testing.T) {
+	h, st := newH(t)
+	body := `{"apps":{},"config":{},"health":{"uptime_us":1,"wakes":1,"reset":"power-on","reset_code":1}}`
+	if err := h.Write("report?id=dev", "1.2.3.4:5", []byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	n, _ := st.GetNode("dev")
+	if n.LastReset != "power-on" || n.LastResetCode.Int64 != 1 {
+		t.Fatalf("got reset=%q code=%v", n.LastReset, n.LastResetCode)
+	}
+	// power-on is not a fault → no data_log event.
+	rows, _ := st.RecentData("dev", 10)
+	for _, r := range rows {
+		if r.Kind == "reset" {
+			t.Errorf("unexpected reset event for non-fault category: %+v", r)
+		}
+	}
+}
+
+func TestWriteReportEmitsFaultEventOnce(t *testing.T) {
+	h, st := newH(t)
+	body := `{"apps":{},"config":{},"health":{"reset":"watchdog","reset_code":6}}`
+	for i := 0; i < 3; i++ {
+		if err := h.Write("report?id=dev", "1.2.3.4:5", []byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, _ := st.RecentData("dev", 10)
+	n := 0
+	for _, r := range rows {
+		if r.Kind == "reset" {
+			n++
+			if r.Name != "watchdog" || r.Value.(int64) != 6 || r.Text != "watchdog" || r.ValueType != "int" {
+				t.Errorf("bad reset row: %+v", r)
+			}
+		}
+	}
+	if n != 1 {
+		t.Errorf("got %d reset events across 3 identical reports, want 1", n)
+	}
+}
+
+func TestWriteReportFaultThenNormalThenFault(t *testing.T) {
+	h, st := newH(t)
+	fault := `{"apps":{},"config":{},"health":{"reset":"watchdog","reset_code":6}}`
+	normal := `{"apps":{},"config":{},"health":{"reset":"deep-sleep","reset_code":8}}`
+	for _, b := range []string{fault, normal, fault} {
+		if err := h.Write("report?id=dev", "1.2.3.4:5", []byte(b)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, _ := st.RecentData("dev", 10)
+	n := 0
+	for _, r := range rows {
+		if r.Kind == "reset" {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("got %d reset events for fault→normal→fault, want 2", n)
+	}
+}
