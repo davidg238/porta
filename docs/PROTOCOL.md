@@ -243,8 +243,8 @@ Fields:
 | `config` | object | Applied per-app config blob: `app → {key: value}`. May be empty `{}`. |
 | `health.uptime_us` | int | Monotonic uptime in microseconds. |
 | `health.wakes` | int | Cumulative wake count. |
-| `chip` | string (optional) | Node chip model, e.g. `"esp32"`, `"esp32c6"`, `"esp32s3"`. Used by the gateway's `porta run` to pick the flash envelope (Phase 2). Absent on firmware predating identity reporting. |
-| `sdk` | string (optional) | Toit SDK version the node firmware was built with, e.g. `"v2.0.0-alpha.192"`. `porta run` refuses to deploy an image built with a different SDK (overridable with `--force`); absent → `porta run` blocks until the node reports it. |
+| `chip` | string (optional) | Node chip model, e.g. `"esp32"`, `"esp32c6"`, `"esp32s3"`. Used by a node-repo dev tool (e.g. `nodus run`) to pick the flash envelope. Absent on firmware predating identity reporting. |
+| `sdk` | string (optional) | Toit SDK version the node firmware was built with, e.g. `"v2.0.0-alpha.192"`. A node-repo dev tool (e.g. `nodus run`) refuses to deploy an image built with a different SDK (overridable with `--force`); absent → it blocks until the node reports it. |
 
 Gateway ingest (`ReportWriter_` in `gateway/handler.toit`):
 - `apps`, `config`, `health` each default to `{}` if absent (a node that does
@@ -351,10 +351,10 @@ Entries the node emits in practice:
 ```
 
 The `"panic"` kind reports an uncaught payload exception: `text` is the base64 of
-the node's raw Toit trace ("system message"), which the gateway operator decodes
-with `jag decode`. The full normative contract and node-implementer guidance live
-in **[`PANIC-REPORTING.md`](PANIC-REPORTING.md)**. `kind` is free-form: the
-gateway stores any value verbatim, so the panic kind is additive (no schema or
+the node's raw trace ("system message"). Decoding/symbolication is **node-defined**
+and lives in the node's dev tooling (e.g. `nodus panic`, which wraps `jag decode`);
+the normative panic-reporting contract lives in the node repo. `kind` is free-form:
+the gateway stores any value verbatim, so the panic kind is additive (no schema or
 ingest change).
 
 Gateway ingest (`DataWriter_` in `gateway/handler.toit`) decodes each line and
@@ -391,7 +391,7 @@ omit optional command args (defaults apply), and implement any transport that
 presents the same TFTP RRQ/WRQ resource surface (WiFi is the only transport
 today; ESP-NOW / BT-mesh are planned behind the same interface).
 
-A conforming node SHOULD report its `chip` / `sdk` identity (§3) so the gateway's
-`porta run` can verify payload/SDK compatibility before deploying; a node that
-omits them still conforms, but `porta run` blocks against it until identity is
+A conforming node SHOULD report its `chip` / `sdk` identity (§3) so a node-repo dev
+tool (e.g. `nodus run`) can verify payload/SDK compatibility before deploying; a node
+that omits them still conforms, but such a tool blocks against it until identity is
 known.
