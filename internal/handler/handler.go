@@ -195,10 +195,12 @@ func (h *Handler) writeReport(id, peer string, data []byte) error {
 	// fault category appears (change-detection dedup against the stored value).
 	reset, resetCode := parseResetHealth(field("health"))
 	if faultReset[reset] {
+		// On a GetNode error we treat it as "no prior" (prior == nil), erring toward
+		// emitting the diagnostic event rather than suppressing it.
 		prior, _ := h.store.GetNode(id)
 		if prior == nil || prior.LastReset != reset {
 			var v any
-			vtype := ""
+			vtype := "string"
 			if resetCode != nil {
 				v = *resetCode
 				vtype = "int"
