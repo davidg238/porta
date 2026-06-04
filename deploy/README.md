@@ -37,8 +37,8 @@ at `/var/lib/porta/porta.db` under an unprivileged ephemeral user.
 ```bash
 ssh david@gw85224-01
 systemctl status porta            # active (running)
-porta scan                        # talks to the local API on :6970
-curl -s localhost:6970/healthz    # or open http://<gw-ip>:6970/ for the htmx console
+porta scan                        # talks to the local API on :6970 (empty fleet → no rows, exit 0)
+curl -s localhost:6970/api/nodes  # {"ok":true,"data":{"nodes":[]},...}; or open http://<gw-ip>:6970/ for the htmx console
 ```
 
 Point a node at the gateway's LAN IP on `:6969` and confirm a report lands
