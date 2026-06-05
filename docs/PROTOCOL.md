@@ -269,7 +269,8 @@ Each wake, after reconciling, the node PUTs (WRQ) one JSON object to
     "uptime_us": 1234567,
     "wakes": 42,
     "reset": "watchdog",
-    "reset_code": 6
+    "reset_code": 6,
+    "report_interval": 60
   },
   "chip": "esp32",
   "sdk": "v2.0.0-alpha.192"
@@ -290,6 +291,7 @@ Fields:
 | `health.wakes` | int | Cumulative wake count. |
 | `health.reset` | string (optional) | Neutral reset category — the node maps its platform reset code onto the vocabulary below. Absent on firmware predating reset reporting. |
 | `health.reset_code` | int (optional) | Raw platform reset code, for diagnostics only. The gateway never interprets it. |
+| `health.report_interval` | int (optional) | Effective check-in cadence in **seconds** — how often the node actually reports. An always-on node sets this to its report loop period; a deep-sleep node sets it to its poll-interval. The gateway uses it to calibrate the next-check-in gauge (else it falls back to the configured poll-interval). Absent on firmware predating cadence reporting. |
 | `chip` | string (optional) | Node chip model, e.g. `"esp32"`, `"esp32c6"`, `"esp32s3"`. Used by a node-repo dev tool (e.g. `nodus run`) to pick the flash envelope. Absent on firmware predating identity reporting. |
 | `sdk` | string (optional) | Toit SDK version the node firmware was built with, e.g. `"v2.0.0-alpha.192"`. A node-repo dev tool (e.g. `nodus run`) refuses to deploy an image built with a different SDK (overridable with `--force`); absent → it blocks until the node reports it. |
 
@@ -305,6 +307,11 @@ Gateway ingest (`ReportWriter_` in `gateway/handler.toit`):
   on the node row (an absent/empty value never clobbers the last known one — like
   `chip`/`sdk`), surfaces it on node detail, and emits a `data_log` event (`kind:"reset"`)
   the first time a **fault** category appears (`watchdog`, `panic`, `brownout`).
+- `health.report_interval` is optional. The gateway records the latest on the node
+  row (an absent value never clobbers the last known one — like `chip`/`sdk`) and
+  uses it to calibrate the next-check-in gauge so an always-on node reporting on
+  its own clock is not mis-flagged "overdue". Absent → the gauge falls back to the
+  configured poll-interval.
 - After committing the report, the gateway runs config **self-heal**: it diffs
   the desired config (projected from delivered `set` commands) against the
   reported `config` and re-enqueues any delivered-but-divergent `set` (tagged

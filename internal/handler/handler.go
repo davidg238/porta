@@ -35,6 +35,16 @@ func parseResetHealth(health json.RawMessage) (string, *int64) {
 	return hb.Reset, hb.ResetCode
 }
 
+// parseReportInterval extracts the node's optional effective check-in cadence
+// (seconds) from a report's health blob. Absent/garbled → nil.
+func parseReportInterval(health json.RawMessage) *int64 {
+	var hb struct {
+		ReportInterval *int64 `json:"report_interval"`
+	}
+	_ = json.Unmarshal(health, &hb)
+	return hb.ReportInterval
+}
+
 // Handler dispatches TFTP resources against the store.
 type Handler struct {
 	store *store.Store
@@ -212,6 +222,11 @@ func (h *Handler) writeReport(id, peer string, data []byte) error {
 	}
 	if err := h.store.UpdateNodeReset(id, reset, resetCode); err != nil {
 		h.log("porta: reset update error for %s: %v", id, err)
+	}
+	// Effective check-in cadence: lets the gauge calibrate to the node's real
+	// report rate instead of guessing from poll-interval (absent → unchanged).
+	if err := h.store.UpdateNodeReportInterval(id, parseReportInterval(field("health"))); err != nil {
+		h.log("porta: report-interval update error for %s: %v", id, err)
 	}
 	h.reconcileAfterReport(id, field("config"))
 	return nil

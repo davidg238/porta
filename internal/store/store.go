@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS nodes (
   chip TEXT,
   sdk TEXT,
   last_reset TEXT,
-  last_reset_code INTEGER
+  last_reset_code INTEGER,
+  report_interval_s INTEGER
 );
 CREATE TABLE IF NOT EXISTS payloads (
   crc INTEGER PRIMARY KEY,
@@ -90,6 +91,10 @@ type Node struct {
 	Sdk           string
 	LastReset     string
 	LastResetCode sql.NullInt64
+	// ReportIntervalS is the node's self-reported effective check-in cadence in
+	// seconds (REPORT-INTERVAL-S for always-on, poll-interval for deep-sleep).
+	// 0 means the node has not reported it → callers fall back to poll_interval_s.
+	ReportIntervalS int64
 }
 
 // Online reports whether the node has been seen within its max_offline window.
@@ -167,13 +172,13 @@ func (s *Store) EnsureNode(id string, now int64) error {
 const nodeCols = `id, COALESCE(name,''), COALESCE(source_addr,''), kind, first_seen, last_seen,
 	COALESCE(poll_interval_s,30), COALESCE(max_offline_s,300), last_report_at,
 	COALESCE(observed_state,''), COALESCE(chip,''), COALESCE(sdk,''),
-	COALESCE(last_reset,''), last_reset_code`
+	COALESCE(last_reset,''), last_reset_code, COALESCE(report_interval_s,0)`
 
 func scanNode(row interface{ Scan(...interface{}) error }) (*Node, error) {
 	var n Node
 	err := row.Scan(&n.ID, &n.Name, &n.SourceAddr, &n.Kind, &n.FirstSeen,
 		&n.LastSeen, &n.PollIntervalS, &n.MaxOfflineS, &n.LastReportAt, &n.ObservedState,
-		&n.Chip, &n.Sdk, &n.LastReset, &n.LastResetCode)
+		&n.Chip, &n.Sdk, &n.LastReset, &n.LastResetCode, &n.ReportIntervalS)
 	if err != nil {
 		return nil, err
 	}
@@ -239,6 +244,16 @@ func (s *Store) UpdateNodeReset(id, reset string, code *int64) error {
 		`UPDATE nodes SET last_reset = COALESCE(?, last_reset),
 		 last_reset_code = COALESCE(?, last_reset_code) WHERE id = ?`,
 		nullStr(reset), nullInt(code), id)
+	return err
+}
+
+// UpdateNodeReportInterval records the node's self-reported effective check-in
+// cadence (seconds). A nil value (absent in the report) is COALESCEd so it never
+// clobbers a previously-known cadence — same self-healing pattern as chip/sdk.
+func (s *Store) UpdateNodeReportInterval(id string, secs *int64) error {
+	_, err := s.db.Exec(
+		`UPDATE nodes SET report_interval_s = COALESCE(?, report_interval_s) WHERE id = ?`,
+		nullInt(secs), id)
 	return err
 }
 

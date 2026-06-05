@@ -135,7 +135,7 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 		Chip:      n.Chip,
 		Sdk:       n.Sdk,
 		LastReset: control.RenderReset(n.LastReset, resetCode),
-		Gauge:     Checkin(n.LastSeen.Valid, lastSeen, n.PollIntervalS, n.MaxOfflineS, now),
+		Gauge:     Checkin(n.LastSeen.Valid, lastSeen, n.PollIntervalS, n.ReportIntervalS, n.MaxOfflineS, now),
 		Config:    cfg,
 		ConfApp:   app,
 		Recent:    recent,
