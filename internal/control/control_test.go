@@ -93,3 +93,12 @@ func TestResolveNodeID(t *testing.T) {
 		t.Fatal("want error for unknown name")
 	}
 }
+
+func TestIsMAC(t *testing.T) {
+	if !IsMAC("30aea41a6208") {
+		t.Error("12 lowercase hex should be a MAC")
+	}
+	if IsMAC("jolly-pine") || IsMAC("AABBCCDDEEFF") || IsMAC("30aea41a620") {
+		t.Error("non-12-lowercase-hex should not be a MAC")
+	}
+}
