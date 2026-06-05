@@ -21,21 +21,21 @@ type recentRowVM struct {
 // detailVM is the view model for the per-node detail page. Every polled
 // section re-emits its own wrapper element so an outerHTML swap is idempotent.
 type detailVM struct {
-	Title    string
-	ID       string
-	Name     string
-	Kind     string
-	IP       string
-	EUI      string
-	PollIntv string
+	Title     string
+	ID        string
+	Name      string
+	Kind      string
+	IP        string
+	EUI       string
+	PollIntv  string
 	Chip      string
 	Sdk       string
 	LastReset string
 	Gauge     CheckinState
-	Config   []control.ConfigRow
-	ConfApp  string
-	Recent   []recentRowVM
-	Apps     []control.App
+	Config    []control.ConfigRow
+	ConfApp   string
+	Recent    []recentRowVM
+	Apps      []control.App
 }
 
 // handleNode serves /n/<id> (full page) and /n/<id>/<section> (polled partial).
@@ -64,8 +64,8 @@ func (h *Handler) handleNode(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "node", h.detailVM(n))
 }
 
-// handleNodeSub dispatches the polled detail partials. Tasks 6-8 extend this
-// switch with POST actions (set / install / trigger).
+// handleNodeSub dispatches the polled read-only detail partials, plus the two
+// surviving gateway-setting POSTs (max-offline / rename).
 func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store.Node, sub string) {
 	vm := h.detailVM(n)
 	switch sub {
@@ -77,29 +77,21 @@ func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store
 		h.render(w, "node-recent", vm)
 	case "containers":
 		h.render(w, "node-containers", vm)
-	case "set", "console", "poll-interval", "max-offline", "rename", "containers/install", "containers/uninstall":
-		// Write actions mutate state (enqueue commands / update the node row),
-		// so they must never be reachable by a GET — r.FormValue also reads the
-		// query string, so a GET with ?value=… would otherwise enqueue.
+	case "max-offline", "rename":
+		// The only surviving writes are the gateway-side node settings (friendly
+		// name, offline threshold). They mutate state, so they must never be
+		// reachable by a GET — r.FormValue also reads the query string, so a GET
+		// with ?name=… would otherwise apply. Node-command writes were removed:
+		// the web console is read-only; commands go through the CLI / nodus.
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		switch sub {
-		case "set":
-			h.postSet(w, r, n)
-		case "console":
-			h.postConsole(w, r, n)
-		case "poll-interval":
-			h.postPollInterval(w, r, n)
 		case "max-offline":
 			h.postMaxOffline(w, r, n)
 		case "rename":
 			h.postRename(w, r, n)
-		case "containers/install":
-			h.postInstall(w, r, n)
-		case "containers/uninstall":
-			h.postUninstall(w, r, n)
 		}
 	default:
 		http.NotFound(w, r)
@@ -133,21 +125,21 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 		lastSeen = n.LastSeen.Int64
 	}
 	return detailVM{
-		Title:    n.Name,
-		ID:       n.ID,
-		Name:     n.Name,
-		Kind:     n.Kind,
-		IP:       n.SourceAddr,
-		EUI:      n.ID,
-		PollIntv: humanizeDur(n.PollIntervalS),
+		Title:     n.Name,
+		ID:        n.ID,
+		Name:      n.Name,
+		Kind:      n.Kind,
+		IP:        n.SourceAddr,
+		EUI:       n.ID,
+		PollIntv:  humanizeDur(n.PollIntervalS),
 		Chip:      n.Chip,
 		Sdk:       n.Sdk,
 		LastReset: control.RenderReset(n.LastReset, resetCode),
-		Gauge:    Checkin(n.LastSeen.Valid, lastSeen, n.PollIntervalS, n.MaxOfflineS, now),
-		Config:   cfg,
-		ConfApp:  app,
-		Recent:   recent,
-		Apps:     apps,
+		Gauge:     Checkin(n.LastSeen.Valid, lastSeen, n.PollIntervalS, n.MaxOfflineS, now),
+		Config:    cfg,
+		ConfApp:   app,
+		Recent:    recent,
+		Apps:      apps,
 	}
 }
 

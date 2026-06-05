@@ -9,6 +9,14 @@ h1 { font-size: 1.3rem; margin:.2rem 0 .6rem; }
 table { width:100%; border-collapse:collapse; }
 th { text-align:left; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:#888; border-bottom:1px solid #999; padding:.3rem .4rem; }
 td { padding:.35rem .4rem; border-bottom:1px solid var(--line); }
+/* Compact tables (node detail: containers, recent commands) size columns to
+   content instead of stretching them across the page. */
+table.compact { width:auto; }
+table.compact td { padding-right:1.4rem; white-space:nowrap; }
+/* Recent commands stays full-width so the trailing .json column absorbs the
+   slack and the full command args run out to the right. */
+#recent table.compact { width:100%; }
+#recent td.json { width:100%; padding-right:.4rem; white-space:normal; word-break:break-all; }
 tr.node-row:hover { background:#f0f0f0; cursor:pointer; }
 .dot-green { color:var(--green); } .dot-red { color:var(--red); } .dot-amber { color:var(--amber); }
 .gauge { position:relative; background:#eee; border-radius:3px; height:16px; min-width:120px; overflow:hidden; }
