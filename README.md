@@ -1,12 +1,11 @@
 # porta
 
-The **porta** gateway — split from `st-zephyr`. porta is the northbound controller and
-authority for a fleet of heterogeneous nodes: it owns the wire protocol, queues
-commands, delivers container images over TFTP, and ingests telemetry.
+porta is the northbound controller and authority for a fleet of heterogeneous
+nodes: it owns the wire protocol, queues commands, delivers container images
+over TFTP, and ingests telemetry.
 
-Start with **`docs/ARCHITECTURE.md`** for the system picture and **`CLAUDE.md`** for
-orientation, then `docs/specs/` for the approved designs and `docs/plans/` for the
-implementation plans.
+Start with **`docs/ARCHITECTURE.md`** for the system picture, then `docs/specs/`
+for the approved designs and `docs/plans/` for the implementation plans.
 
 - `cmd/porta/` + `internal/` — Go gateway (mainline), module `github.com/davidg238/porta`
 - `docs/ARCHITECTURE.md` — the canonical system-architecture doc (the whole-system picture)
