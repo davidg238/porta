@@ -13,30 +13,40 @@ type CheckinState struct {
 	Label   string
 }
 
-// Checkin derives the gauge from last-seen + poll interval + max-offline.
-func Checkin(seenValid bool, lastSeen, pollIntervalS, maxOfflineS, now int64) CheckinState {
+// Checkin derives the gauge from last-seen + check-in interval + max-offline.
+//
+// The expected cadence is the node's self-reported reportIntervalS when present
+// (>0) — an always-on node reports on its own clock, not the poll-interval — and
+// falls back to pollIntervalS otherwise. Without this the gauge mis-flags
+// always-on nodes "overdue" for the half of every window past poll-interval
+// (issue #14).
+func Checkin(seenValid bool, lastSeen, pollIntervalS, reportIntervalS, maxOfflineS, now int64) CheckinState {
 	if !seenValid {
 		return CheckinState{Online: false, Color: "red", FillPct: 0, Label: "never seen"}
+	}
+	intervalS := pollIntervalS
+	if reportIntervalS > 0 {
+		intervalS = reportIntervalS
 	}
 	elapsed := now - lastSeen
 	if elapsed < 0 {
 		elapsed = 0
 	}
 	switch {
-	case elapsed <= pollIntervalS:
+	case elapsed <= intervalS:
 		pct := 0
-		if pollIntervalS > 0 {
-			pct = int(elapsed * 100 / pollIntervalS)
+		if intervalS > 0 {
+			pct = int(elapsed * 100 / intervalS)
 		}
-		remain := pollIntervalS - elapsed
+		remain := intervalS - elapsed
 		return CheckinState{
 			Online: true, Color: "green", FillPct: pct,
-			Label: fmt.Sprintf("every %s · next ~%s", humanizeDur(pollIntervalS), humanizeDur(remain)),
+			Label: fmt.Sprintf("every %s · next ~%s", humanizeDur(intervalS), humanizeDur(remain)),
 		}
 	case elapsed <= maxOfflineS:
 		return CheckinState{
 			Online: true, Color: "amber", FillPct: 100,
-			Label: fmt.Sprintf("overdue %s", humanizeDur(elapsed-pollIntervalS)),
+			Label: fmt.Sprintf("overdue %s", humanizeDur(elapsed-intervalS)),
 		}
 	default:
 		return CheckinState{

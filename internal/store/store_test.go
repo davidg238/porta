@@ -199,6 +199,37 @@ func TestUpdateNodeIdentity(t *testing.T) {
 	}
 }
 
+func TestUpdateNodeReportInterval(t *testing.T) {
+	st := openTmp(t)
+	if err := st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000); err != nil {
+		t.Fatal(err)
+	}
+	// Default (never reported) is 0 → callers fall back to poll-interval.
+	n, _ := st.GetNode("aabbccddeeff")
+	if n.ReportIntervalS != 0 {
+		t.Errorf("fresh node report_interval_s = %d, want 0", n.ReportIntervalS)
+	}
+	secs := int64(60)
+	if err := st.UpdateNodeReportInterval("aabbccddeeff", &secs); err != nil {
+		t.Fatal(err)
+	}
+	n, err := st.GetNode("aabbccddeeff")
+	if err != nil || n == nil {
+		t.Fatalf("GetNode: %v / %v", n, err)
+	}
+	if n.ReportIntervalS != 60 {
+		t.Errorf("got report_interval_s=%d, want 60", n.ReportIntervalS)
+	}
+	// A nil value (absent in report) must not clobber a known cadence.
+	if err := st.UpdateNodeReportInterval("aabbccddeeff", nil); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = st.GetNode("aabbccddeeff")
+	if n.ReportIntervalS != 60 {
+		t.Errorf("nil update clobbered report_interval_s: %d", n.ReportIntervalS)
+	}
+}
+
 func TestUpdateNodeReset(t *testing.T) {
 	st := openTmp(t)
 	if err := st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000); err != nil {
