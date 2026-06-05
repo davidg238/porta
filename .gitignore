@@ -32,3 +32,6 @@ nodus/host/firmware
 
 # .deb build output
 /deploy/dist/
+
+# Internal AI/dev context — not published
+/CLAUDE.md
