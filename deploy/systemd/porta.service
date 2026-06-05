@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Ekorau LLC
 # porta gateway — native systemd service (installed by the porta .deb).
 # Runs the Go binary directly; no container needed (porta's binary needs only
 # glibc >= 2.34, satisfied by any current Linux). Coexists with anything else on

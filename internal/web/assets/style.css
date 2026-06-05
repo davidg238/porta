@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Ekorau LLC */
 :root { --green:#2a8a2a; --amber:#d08000; --red:#c33; --bg:#fafafa; --line:#ddd; }
 * { box-sizing: border-box; }
 body { font: 14px/1.5 system-ui, sans-serif; margin: 0; background: var(--bg); color: #222; }
