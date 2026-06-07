@@ -52,6 +52,10 @@ code { background:#f0f0f0; padding:0 .2rem; border-radius:3px; }
 .console { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
   white-space: pre; overflow: auto; max-height: 16em; background: #111; color: #ddd;
   padding: 8px; border-radius: 4px; margin: 0; }
+/* Links inside the dark console (e.g. the panic [decode] link) need a light
+   color — the default dark blue is unreadable on the near-black background. */
+.console a { color: #5db3ff; }
+.console a:hover { color: #8fcbff; }
 
 /* Node detail two-column layout: left = existing surfaces with Prints growing to
    fill the remainder, right = Logs spanning the full column height. The columns
