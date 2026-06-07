@@ -24,6 +24,7 @@ type DataRow struct {
 	Value     any
 	Text      string
 	ValueType string
+	Level     string // log stream only ("trace".."fatal"); "" otherwise
 }
 
 // LoggedData is a data_log row tagged with its device id, for the global
@@ -36,12 +37,12 @@ type LoggedData struct {
 // InsertData appends one telemetry entry. value's runtime type drives the
 // SQL binding: int64 → INTEGER, float64 → REAL, nil → NULL. Empty strings
 // for name / text / valueType are bound as NULL.
-func (s *Store) InsertData(deviceID string, ts, seq int64, kind, name string, value any, text, valueType string) error {
+func (s *Store) InsertData(deviceID string, ts, seq int64, kind, name string, value any, text, valueType, level string) error {
 	_, err := s.db.Exec(
-		`INSERT INTO data_log (device_id, ts, seq, kind, name, value, text, value_type)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO data_log (device_id, ts, seq, kind, name, value, text, value_type, level)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		deviceID, ts, seq, kind,
-		nullStr(name), value, nullStr(text), nullStr(valueType),
+		nullStr(name), value, nullStr(text), nullStr(valueType), nullStr(level),
 	)
 	return err
 }
@@ -65,7 +66,7 @@ func (s *Store) QueryData(deviceID string, since, until int64, kind string) ([]D
 // since the order is ts,seq ascending) instead of loading the whole window
 // into memory to truncate in Go; limit <= 0 means no cap.
 func (s *Store) QueryDataLimited(deviceID string, since, until int64, kind string, limit int) ([]DataRow, error) {
-	q := `SELECT id, ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,'')
+	q := `SELECT id, ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,''), COALESCE(level,'')
 		  FROM data_log WHERE device_id = ? AND ts >= ?`
 	args := []any{deviceID, since}
 	if until > 0 {
@@ -90,7 +91,7 @@ func (s *Store) QueryDataLimited(deviceID string, since, until int64, kind strin
 	for rows.Next() {
 		var r DataRow
 		var v any
-		if err := rows.Scan(&r.ID, &r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType); err != nil {
+		if err := rows.Scan(&r.ID, &r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType, &r.Level); err != nil {
 			return nil, err
 		}
 		r.Value = normalizeNumeric(v)
@@ -105,7 +106,7 @@ func (s *Store) QueryDataLimited(deviceID string, since, until int64, kind strin
 // poll with no timestamp-tie boundary case. kind restricts to that kind when
 // non-empty; limit caps the row count in SQL when > 0.
 func (s *Store) QueryDataAfter(deviceID string, after int64, kind string, limit int) ([]DataRow, error) {
-	q := `SELECT id, ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,'')
+	q := `SELECT id, ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,''), COALESCE(level,'')
 		  FROM data_log WHERE device_id = ? AND id > ?`
 	args := []any{deviceID, after}
 	if kind != "" {
@@ -126,7 +127,7 @@ func (s *Store) QueryDataAfter(deviceID string, after int64, kind string, limit 
 	for rows.Next() {
 		var r DataRow
 		var v any
-		if err := rows.Scan(&r.ID, &r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType); err != nil {
+		if err := rows.Scan(&r.ID, &r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType, &r.Level); err != nil {
 			return nil, err
 		}
 		r.Value = normalizeNumeric(v)
@@ -169,7 +170,7 @@ func normalizeNumeric(v any) any {
 // RecentData returns the device's newest <= limit rows, newest first.
 func (s *Store) RecentData(deviceID string, limit int) ([]DataRow, error) {
 	rows, err := s.db.Query(
-		`SELECT ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,'')
+		`SELECT ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,''), COALESCE(level,'')
 		 FROM data_log WHERE device_id = ? ORDER BY ts DESC, seq DESC LIMIT ?`, deviceID, limit)
 	if err != nil {
 		return nil, err
@@ -179,7 +180,7 @@ func (s *Store) RecentData(deviceID string, limit int) ([]DataRow, error) {
 	for rows.Next() {
 		var r DataRow
 		var v any
-		if err := rows.Scan(&r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType); err != nil {
+		if err := rows.Scan(&r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType, &r.Level); err != nil {
 			return nil, err
 		}
 		r.Value = normalizeNumeric(v)
@@ -199,7 +200,7 @@ func (s *Store) PruneData(cutoff int64) error {
 // kind='metric' filter excludes the per-report log rows (empty name/value),
 // so the telemetry table shows no blank lines.
 func (s *Store) RecentMetrics(deviceID string, limit int) ([]LoggedData, error) {
-	q := `SELECT device_id, ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,'')
+	q := `SELECT device_id, ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,''), COALESCE(level,'')
 		  FROM data_log WHERE kind = 'metric'`
 	args := []any{}
 	if deviceID != "" {
@@ -217,7 +218,7 @@ func (s *Store) RecentMetrics(deviceID string, limit int) ([]LoggedData, error) 
 	for rows.Next() {
 		var r LoggedData
 		var v any
-		if err := rows.Scan(&r.DeviceID, &r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType); err != nil {
+		if err := rows.Scan(&r.DeviceID, &r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType, &r.Level); err != nil {
 			return nil, err
 		}
 		r.Value = normalizeNumeric(v)

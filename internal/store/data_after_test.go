@@ -8,19 +8,19 @@ func seedAfter(t *testing.T) *Store {
 	t.Helper()
 	st := openTestStore(t)
 	// ids 1..4 in insertion order (AUTOINCREMENT).
-	if err := st.InsertData("dev", 100, 0, "metric", "pm", int64(13), "", "int"); err != nil {
+	if err := st.InsertData("dev", 100, 0, "metric", "pm", int64(13), "", "int", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.InsertData("dev", 101, 1, "metric", "t", float64(20.5), "", "float"); err != nil {
+	if err := st.InsertData("dev", 101, 1, "metric", "t", float64(20.5), "", "float", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.InsertData("dev", 102, 2, "log", "", nil, "hello", ""); err != nil {
+	if err := st.InsertData("dev", 102, 2, "log", "", nil, "hello", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.InsertData("dev", 103, 3, "metric", "pm", int64(14), "", "int"); err != nil {
+	if err := st.InsertData("dev", 103, 3, "metric", "pm", int64(14), "", "int", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.InsertData("other", 104, 0, "metric", "pm", int64(99), "", "int"); err != nil {
+	if err := st.InsertData("other", 104, 0, "metric", "pm", int64(99), "", "int", ""); err != nil {
 		t.Fatal(err)
 	}
 	return st

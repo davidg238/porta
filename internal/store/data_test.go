@@ -21,23 +21,23 @@ func TestInsertAndQueryDataAllScalarTypes(t *testing.T) {
 	st := openTestStore(t)
 	dev := "aabbccddeeff"
 	// Int.
-	if err := st.InsertData(dev, 100, 0, "metric", "pm", int64(13), "", "int"); err != nil {
+	if err := st.InsertData(dev, 100, 0, "metric", "pm", int64(13), "", "int", ""); err != nil {
 		t.Fatal(err)
 	}
 	// Float.
-	if err := st.InsertData(dev, 101, 1, "metric", "t", float64(20.5), "", "float"); err != nil {
+	if err := st.InsertData(dev, 101, 1, "metric", "t", float64(20.5), "", "float", ""); err != nil {
 		t.Fatal(err)
 	}
 	// Bool (stored as 0/1 in value, type tag "bool").
-	if err := st.InsertData(dev, 102, 2, "metric", "door", int64(1), "", "bool"); err != nil {
+	if err := st.InsertData(dev, 102, 2, "metric", "door", int64(1), "", "bool", ""); err != nil {
 		t.Fatal(err)
 	}
 	// String (value=nil, text holds payload).
-	if err := st.InsertData(dev, 103, 3, "metric", "mode", nil, "auto", "string"); err != nil {
+	if err := st.InsertData(dev, 103, 3, "metric", "mode", nil, "auto", "string", ""); err != nil {
 		t.Fatal(err)
 	}
 	// Log (value=nil, text holds payload, value_type "").
-	if err := st.InsertData(dev, 104, 4, "log", "", nil, "started blink", ""); err != nil {
+	if err := st.InsertData(dev, 104, 4, "log", "", nil, "started blink", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := st.QueryData(dev, 0, 200, "")
@@ -123,9 +123,9 @@ func TestNormalizeNumericByteSlice(t *testing.T) {
 func TestQueryDataKindFilter(t *testing.T) {
 	st := openTestStore(t)
 	dev := "ffeeddccbbaa"
-	st.InsertData(dev, 100, 0, "metric", "x", int64(1), "", "int")
-	st.InsertData(dev, 101, 1, "log", "", nil, "hi", "")
-	st.InsertData(dev, 102, 2, "metric", "y", int64(2), "", "int")
+	st.InsertData(dev, 100, 0, "metric", "x", int64(1), "", "int", "")
+	st.InsertData(dev, 101, 1, "log", "", nil, "hi", "", "")
+	st.InsertData(dev, 102, 2, "metric", "y", int64(2), "", "int", "")
 	if rows, _ := st.QueryData(dev, 0, 200, "metric"); len(rows) != 2 {
 		t.Errorf("metric filter: got %d rows, want 2", len(rows))
 	}
@@ -137,9 +137,9 @@ func TestQueryDataKindFilter(t *testing.T) {
 func TestQueryDataTimeWindow(t *testing.T) {
 	st := openTestStore(t)
 	dev := "112233445566"
-	st.InsertData(dev, 100, 0, "metric", "x", int64(1), "", "int")
-	st.InsertData(dev, 200, 1, "metric", "x", int64(2), "", "int")
-	st.InsertData(dev, 300, 2, "metric", "x", int64(3), "", "int")
+	st.InsertData(dev, 100, 0, "metric", "x", int64(1), "", "int", "")
+	st.InsertData(dev, 200, 1, "metric", "x", int64(2), "", "int", "")
+	st.InsertData(dev, 300, 2, "metric", "x", int64(3), "", "int", "")
 	if rows, _ := st.QueryData(dev, 150, 250, ""); len(rows) != 1 {
 		t.Errorf("window 150..250: got %d rows, want 1", len(rows))
 	}
@@ -154,9 +154,9 @@ func TestQueryDataTimeWindow(t *testing.T) {
 func TestQueryDataUntilZeroUnbounded(t *testing.T) {
 	st := openTestStore(t)
 	dev := "aa00bb11cc22"
-	st.InsertData(dev, 100, 0, "metric", "x", int64(1), "", "int")
-	st.InsertData(dev, 200, 1, "metric", "x", int64(2), "", "int")
-	st.InsertData(dev, 300, 2, "metric", "x", int64(3), "", "int")
+	st.InsertData(dev, 100, 0, "metric", "x", int64(1), "", "int", "")
+	st.InsertData(dev, 200, 1, "metric", "x", int64(2), "", "int", "")
+	st.InsertData(dev, 300, 2, "metric", "x", int64(3), "", "int", "")
 	// since=150, until=0 → rows with ts>=150 (200, 300).
 	rows, err := st.QueryData(dev, 150, 0, "")
 	if err != nil {
@@ -182,7 +182,7 @@ func TestQueryDataLimitedCapsInSQL(t *testing.T) {
 	st := openTestStore(t)
 	dev := "ee11ff22aa33"
 	for i := int64(0); i < 5; i++ {
-		st.InsertData(dev, 100+i, i, "metric", "x", int64(i), "", "int")
+		st.InsertData(dev, 100+i, i, "metric", "x", int64(i), "", "int", "")
 	}
 	rows, err := st.QueryDataLimited(dev, 0, 0, "", 2)
 	if err != nil {
@@ -206,9 +206,9 @@ func TestQueryDataLimitedCapsInSQL(t *testing.T) {
 func TestPruneData(t *testing.T) {
 	st := openTestStore(t)
 	dev := "778899aabbcc"
-	st.InsertData(dev, 100, 0, "metric", "x", int64(1), "", "int")
-	st.InsertData(dev, 200, 1, "metric", "x", int64(2), "", "int")
-	st.InsertData(dev, 300, 2, "metric", "x", int64(3), "", "int")
+	st.InsertData(dev, 100, 0, "metric", "x", int64(1), "", "int", "")
+	st.InsertData(dev, 200, 1, "metric", "x", int64(2), "", "int", "")
+	st.InsertData(dev, 300, 2, "metric", "x", int64(3), "", "int", "")
 	if err := st.PruneData(200); err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestRecentDataReturnsNewestFirstLimited(t *testing.T) {
 	st := openTestStore(t)
 	dev := "n1"
 	for i := int64(1); i <= 5; i++ {
-		if err := st.InsertData(dev, 100+i, i, "metric", "pm25", int64(i), "", "int"); err != nil {
+		if err := st.InsertData(dev, 100+i, i, "metric", "pm25", int64(i), "", "int", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -247,7 +247,7 @@ func TestRecentDataReturnsNewestFirstLimited(t *testing.T) {
 func TestNumericAffinityWholeNumberFloat(t *testing.T) {
 	st := openTestStore(t)
 	dev := "ddccbbaa9988"
-	if err := st.InsertData(dev, 10, 0, "metric", "w", float64(13.0), "", "float"); err != nil {
+	if err := st.InsertData(dev, 10, 0, "metric", "w", float64(13.0), "", "float", ""); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ := st.QueryData(dev, 0, 100, "")
@@ -262,12 +262,29 @@ func TestNumericAffinityWholeNumberFloat(t *testing.T) {
 	}
 }
 
+func TestInsertDataPersistsLevel(t *testing.T) {
+	st := openTestStore(t)
+	if err := st.InsertData("aabbccddeeff", 100, 0, "log", "", nil, "pump stalled", "", "warn"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := st.QueryDataLimited("aabbccddeeff", 0, 0, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want 1 row, got %d", len(rows))
+	}
+	if rows[0].Level != "warn" {
+		t.Fatalf("want level=warn, got %q", rows[0].Level)
+	}
+}
+
 func TestRecentMetricsFiltersAndOrders(t *testing.T) {
 	st := openTestStore(t)
 	// Two metric rows + one log row, two devices.
-	st.InsertData("devA", 100, 1, "metric", "pm25", int64(7), "", "int")
-	st.InsertData("devA", 100, 0, "log", "", nil, "vin: pm25=7", "")
-	st.InsertData("devB", 200, 1, "metric", "temp", int64(21), "", "int")
+	st.InsertData("devA", 100, 1, "metric", "pm25", int64(7), "", "int", "")
+	st.InsertData("devA", 100, 0, "log", "", nil, "vin: pm25=7", "", "")
+	st.InsertData("devB", 200, 1, "metric", "temp", int64(21), "", "int", "")
 
 	all, err := st.RecentMetrics("", 10)
 	if err != nil {

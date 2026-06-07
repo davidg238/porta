@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS data_log (
   name TEXT,
   value NUMERIC,
   text TEXT,
-  value_type TEXT
+  value_type TEXT,
+  level TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_data_device_ts ON data_log(device_id, ts);
 `
