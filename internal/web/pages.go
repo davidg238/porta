@@ -77,6 +77,13 @@ func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store
 		h.render(w, "node-recent", vm)
 	case "containers":
 		h.render(w, "node-containers", vm)
+	// telemetry (optional): per-node console panels — see node_console.go
+	case "prints":
+		h.renderNodeConsole(w, n, "node-prints", "Prints",
+			"no prints — forwarding may be off (set-forward --print on)", []string{"print"})
+	case "logs":
+		h.renderNodeConsole(w, n, "node-logs", "Logs",
+			"no logs — forwarding may be off (set-forward --log on)", []string{"log", "panic"})
 	case "max-offline", "rename":
 		// The only surviving writes are the gateway-side node settings (friendly
 		// name, offline threshold). They mutate state, so they must never be
