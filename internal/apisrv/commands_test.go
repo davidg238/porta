@@ -4,6 +4,7 @@ package apisrv
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,7 +28,7 @@ func TestPostCommandVerbs(t *testing.T) {
 		name, body, wantVerb string
 	}{
 		{"set", `{"verb":"set","args":{"app":"sampler","key":"interval","value":30}}`, "set"},
-		{"console", `{"verb":"set-console","args":{"state":"on"}}`, "set-console"},
+		{"forward", `{"verb":"set-forward","args":{"print":{"on":false},"log":{"on":true,"level":"warn"},"telemetry":{"on":true}}}`, "set-forward"},
 		{"poll", `{"verb":"set-poll-interval","args":{"interval":"30s"}}`, "set-poll-interval"},
 		{"power", `{"verb":"set-power-mode","args":{"mode":"always-on"}}`, "set-power-mode"},
 		{"stop", `{"verb":"stop","args":{"name":"blink"}}`, "stop"},
@@ -148,7 +149,7 @@ func TestCoerceScalar(t *testing.T) {
 //
 // set-power-mode validates the mode value at enqueue time via command.SetPowerMode
 // (rejects anything other than "deep-sleep" or "always-on"), making it the ideal
-// probe. The other verbs — set, set-console, set-poll-interval, stop — validate
+// probe. The other verbs — set, set-forward, set-poll-interval, stop — validate
 // their own structural args before reaching control but do not have a mode enum
 // that control rejects; their validation is inline in dispatch().
 func TestPostCommandValidationError(t *testing.T) {
@@ -184,7 +185,7 @@ func TestPostCommandUnknownVerb(t *testing.T) {
 
 func TestPostCommandUnknownNode(t *testing.T) {
 	h, _ := newTestHandler(t)
-	rec := postCmd(t, h, "ghost", `{"verb":"set-console","args":{"state":"on"}}`)
+	rec := postCmd(t, h, "ghost", `{"verb":"set-forward","args":{"telemetry":{"on":true}}}`)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status=%d", rec.Code)
 	}
@@ -196,7 +197,7 @@ func TestPostCommandUnknownNode(t *testing.T) {
 func TestPostCommandEnsuresNode(t *testing.T) {
 	h, st := newTestHandler(t)
 	// "aabbccddeeff" is never touched — no node row exists.
-	rec := postCmd(t, h, "aabbccddeeff", `{"verb":"set-console","args":{"state":"on"}}`)
+	rec := postCmd(t, h, "aabbccddeeff", `{"verb":"set-forward","args":{"telemetry":{"on":true}}}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -208,7 +209,7 @@ func TestPostCommandEnsuresNode(t *testing.T) {
 		t.Fatal("EnsureNode-on-write should have created the node row")
 	}
 	cmd, _ := st.NextUndelivered("aabbccddeeff")
-	if cmd == nil || cmd.Verb != "set-console" {
+	if cmd == nil || cmd.Verb != "set-forward" {
 		t.Fatalf("queued=%+v", cmd)
 	}
 }
@@ -219,7 +220,7 @@ func TestPostCommandEchoesNodeID(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
 	st.SetNodeName("aabbccddeeff", "blinky")
-	rec := postCmd(t, h, "blinky", `{"verb":"set-console","args":{"state":"on"}}`)
+	rec := postCmd(t, h, "blinky", `{"verb":"set-forward","args":{"telemetry":{"on":true}}}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -231,5 +232,30 @@ func TestPostCommandEchoesNodeID(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&resp)
 	if resp.Data.NodeID != "aabbccddeeff" {
 		t.Errorf("node_id=%q, want aabbccddeeff", resp.Data.NodeID)
+	}
+}
+
+// TestDispatchSetForward verifies that set-forward is dispatched, queued with
+// the correct verb, and that an invalid log level produces a 400.
+func TestDispatchSetForward(t *testing.T) {
+	h, st := newTestHandler(t)
+	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
+
+	body := `{"verb":"set-forward","args":{"print":{"on":false},"log":{"on":true,"level":"warn"},"telemetry":{"on":true}}}`
+	rec := postCmd(t, h, "aabbccddeeff", body)
+	if rec.Code != http.StatusOK {
+		b, _ := io.ReadAll(rec.Body)
+		t.Fatalf("status %d: %s", rec.Code, b)
+	}
+	cmd, err := st.NextUndelivered("aabbccddeeff")
+	if err != nil || cmd == nil || cmd.Verb != "set-forward" {
+		t.Fatalf("queued=%+v err=%v, want verb set-forward", cmd, err)
+	}
+
+	// Invalid log level → 400.
+	bad := `{"verb":"set-forward","args":{"log":{"on":true,"level":"loud"}}}`
+	r2 := postCmd(t, h, "aabbccddeeff", bad)
+	if r2.Code != http.StatusBadRequest {
+		t.Fatalf("invalid level: want 400, got %d", r2.Code)
 	}
 }

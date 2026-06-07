@@ -71,17 +71,12 @@ func (h *Handler) dispatch(id string, req commandReq) (int64, error) {
 			return 0, err
 		}
 		return control.Set(h.st, id, a.App, a.Key, val, "api", now)
-	case "set-console":
-		var a struct {
-			State string `json:"state"`
-		}
-		if err := decodeArgs(req.Args, &a); err != nil {
+	case "set-forward":
+		var p command.ForwardPolicy
+		if err := decodeArgs(req.Args, &p); err != nil {
 			return 0, err
 		}
-		if a.State != "on" && a.State != "off" {
-			return 0, fmt.Errorf("set-console state must be on or off")
-		}
-		return control.SetConsole(h.st, id, a.State == "on", "api", now)
+		return control.SetForward(h.st, id, p, "api", now)
 	case "set-poll-interval":
 		var a struct {
 			Interval string `json:"interval"`
