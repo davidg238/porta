@@ -231,7 +231,7 @@ func TestQueryTelemetryRecentAndLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := int64(0); i < 5; i++ {
-		if err := st.InsertData("aabbccddeeff", 3000+i, i, "metric", "pm25", float64(i), "", "float"); err != nil {
+		if err := st.InsertData("aabbccddeeff", 3000+i, i, "metric", "pm25", float64(i), "", "float", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -262,7 +262,7 @@ func TestQueryTelemetryWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := int64(0); i < 5; i++ {
-		if err := st.InsertData("aabbccddeeff", 3000+i, i, "metric", "pm25", float64(i), "", "float"); err != nil {
+		if err := st.InsertData("aabbccddeeff", 3000+i, i, "metric", "pm25", float64(i), "", "float", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -287,7 +287,7 @@ func TestQueryTelemetrySinceOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := int64(0); i < 5; i++ {
-		if err := st.InsertData("aabbccddeeff", 3000+i, i, "metric", "pm25", float64(i), "", "float"); err != nil {
+		if err := st.InsertData("aabbccddeeff", 3000+i, i, "metric", "pm25", float64(i), "", "float", ""); err != nil {
 			t.Fatal(err)
 		}
 	}

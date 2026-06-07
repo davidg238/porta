@@ -215,7 +215,7 @@ func (h *Handler) writeReport(id, peer string, data []byte) error {
 				v = *resetCode
 				vtype = "int"
 			}
-			if err := h.store.InsertData(id, h.now(), 0, "reset", reset, v, reset, vtype); err != nil {
+			if err := h.store.InsertData(id, h.now(), 0, "reset", reset, v, reset, vtype, ""); err != nil {
 				h.log("porta: reset event insert error for %s: %v", id, err)
 			}
 		}
@@ -262,7 +262,7 @@ func (h *Handler) writeData(id, peer string, data []byte) error {
 		if kind == "" {
 			kind = "log"
 		}
-		if err := h.store.InsertData(id, ts, seq, kind, e.Name, e.Value, e.Text, e.ValueType); err != nil {
+		if err := h.store.InsertData(id, ts, seq, kind, e.Name, e.Value, e.Text, e.ValueType, e.Level); err != nil {
 			h.log("porta: data ingest insert error for %s seq=%d: %v", id, seq, err)
 			continue
 		}

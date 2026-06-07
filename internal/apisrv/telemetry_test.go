@@ -19,9 +19,9 @@ func telemetryHarness(t *testing.T) (*httptest.Server, *store.Store) {
 	}
 	t.Cleanup(func() { st.Close() })
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
-	st.InsertData("aabbccddeeff", 100, 0, "metric", "pm", int64(13), "", "int")
-	st.InsertData("aabbccddeeff", 101, 1, "metric", "t", float64(20.5), "", "float")
-	st.InsertData("aabbccddeeff", 102, 2, "log", "", nil, "hello", "")
+	st.InsertData("aabbccddeeff", 100, 0, "metric", "pm", int64(13), "", "int", "")
+	st.InsertData("aabbccddeeff", 101, 1, "metric", "t", float64(20.5), "", "float", "")
+	st.InsertData("aabbccddeeff", 102, 2, "log", "", nil, "hello", "", "")
 	mux := http.NewServeMux()
 	New(st).Register(mux)
 	srv := httptest.NewServer(mux)

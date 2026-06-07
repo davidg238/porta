@@ -305,8 +305,8 @@ func TestNodeHeaderIdentityFallback(t *testing.T) {
 func TestTelemetryPageMetricsOnly(t *testing.T) {
 	st := testStore(t)
 	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
-	st.InsertData("aabbccddeeff", 1001, 1, "metric", "pm25", int64(7), "", "int")
-	st.InsertData("aabbccddeeff", 1001, 0, "log", "", nil, "vin: pm25=7 (olympic)", "")
+	st.InsertData("aabbccddeeff", 1001, 1, "metric", "pm25", int64(7), "", "int", "")
+	st.InsertData("aabbccddeeff", 1001, 0, "log", "", nil, "vin: pm25=7 (olympic)", "", "")
 	srv := serve(t, st)
 
 	body := readBody(t, mustGet(t, srv.URL+"/telemetry"))
