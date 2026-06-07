@@ -87,12 +87,44 @@ func SetPollInterval(intervalS int64) Command {
 	return Command{Verb: "set-poll-interval", ArgsJSON: fmt.Sprintf(`{"interval":%d}`, intervalS)}
 }
 
-// SetConsole builds the telemetry-forwarding toggle command.
-func SetConsole(on bool) Command {
-	if on {
-		return Command{Verb: "set-console", ArgsJSON: `{"on":true}`}
+// StreamPolicy is one northbound stream's forwarding policy. On is always
+// emitted (explicit on/off). Level applies to the log stream only. EveryS is
+// the reserved always-on per-stream cadence (no CLI surface yet — omitted when 0).
+type StreamPolicy struct {
+	On     bool   `json:"on"`
+	Level  string `json:"level,omitempty"`
+	EveryS int64  `json:"every_s,omitempty"`
+}
+
+// ForwardPolicy is the complete per-stream forwarding policy carried by
+// set-forward. Absent streams are omitted from the wire; the node resolves an
+// omitted stream to its default (off) — set-forward is absolute, not a patch.
+type ForwardPolicy struct {
+	Print     *StreamPolicy `json:"print,omitempty"`
+	Log       *StreamPolicy `json:"log,omitempty"`
+	Telemetry *StreamPolicy `json:"telemetry,omitempty"`
+}
+
+func validLogLevel(l string) bool {
+	switch l {
+	case "trace", "debug", "info", "warn", "error", "fatal":
+		return true
 	}
-	return Command{Verb: "set-console", ArgsJSON: `{"on":false}`}
+	return false
+}
+
+// SetForward builds a set-forward command from a complete forwarding policy.
+// The optional log level is validated against the 6-term vocab; nested policy
+// objects are spliced verbatim by EncodeWire so they reach the node intact.
+func SetForward(p ForwardPolicy) (Command, error) {
+	if p.Log != nil && p.Log.Level != "" && !validLogLevel(p.Log.Level) {
+		return Command{}, fmt.Errorf("invalid log level %q (expected trace|debug|info|warn|error|fatal)", p.Log.Level)
+	}
+	b, err := json.Marshal(p)
+	if err != nil {
+		return Command{}, err
+	}
+	return Command{Verb: "set-forward", ArgsJSON: string(b)}, nil
 }
 
 // validPowerMode reports whether mode is one the node honours
