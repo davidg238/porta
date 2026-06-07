@@ -3,10 +3,12 @@
 package web
 
 import (
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -403,5 +405,53 @@ func TestTelemetryNodeFilterSelect(t *testing.T) {
 	one := readBody(t, mustGet(t, srv.URL+"/telemetry?node=aabbccddeeff"))
 	if !strings.Contains(one, `value="aabbccddeeff" selected`) {
 		t.Errorf("selected option not marked: %s", one)
+	}
+}
+
+func TestNodeLogsPanicDecodeLink(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	// A plain log row (no link) and a panic row (gets a decode link). The blob
+	// contains +, /, = on purpose so we exercise URL-encoding round-trip.
+	_ = st.InsertData("aabbccddeeff", 1002, 0, "log", "", nil, "plain log", "", "")
+	_ = st.InsertData("aabbccddeeff", 1003, 0, "panic", "", nil, "a+b/c=d", "", "")
+	srv := serve(t, st)
+
+	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff/logs"))
+	// html/template escapes text nodes (+ -> &#43;, = -> &#61;, & -> &amp;).
+	// Unescape once so the visibility/order/href checks compare logical chars;
+	// the href's blob param is *additionally* percent-encoded, which
+	// url.ParseQuery undoes below.
+	logs := html.UnescapeString(body)
+
+	// Exactly one decode link: the panic row gets it, the log row does not.
+	if n := strings.Count(logs, "[decode"); n != 1 {
+		t.Fatalf("want exactly one decode link, got %d: %s", n, logs)
+	}
+	// html/template must NOT have neutralized the nodus:// scheme.
+	if strings.Contains(logs, "ZgotmplZ") {
+		t.Fatalf("nodus:// href was sanitized to ZgotmplZ: %s", logs)
+	}
+	// Link sits between the panic column and the raw blob, which stays visible.
+	iPanic := strings.Index(logs, "panic")
+	iLink := strings.Index(logs, "[decode")
+	iBlob := strings.Index(logs, "a+b/c=d")
+	if iBlob < 0 || !(iPanic < iLink && iLink < iBlob) {
+		t.Fatalf("want order panic<[decode]<blob, got %d/%d/%d: %s", iPanic, iLink, iBlob, logs)
+	}
+	// The href round-trips: node + blob parse back to the originals.
+	m := regexp.MustCompile(`href="(nodus://decode\?[^"]*)"`).FindStringSubmatch(logs)
+	if m == nil {
+		t.Fatalf("no nodus decode href found: %s", logs)
+	}
+	q, err := url.ParseQuery(strings.TrimPrefix(m[1], "nodus://decode?"))
+	if err != nil {
+		t.Fatalf("href query parse: %v (%q)", err, m[1])
+	}
+	if got := q.Get("node"); got != "aabbccddeeff" {
+		t.Errorf("node param = %q, want aabbccddeeff", got)
+	}
+	if got := q.Get("blob"); got != "a+b/c=d" {
+		t.Errorf("blob param = %q, want a+b/c=d", got)
 	}
 }

@@ -8,6 +8,6 @@
 
 {{define "node-logs"}}<section id="logs" hx-get="/n/{{.ID}}/logs" hx-trigger="every 3s" hx-swap="outerHTML">
 <h2>{{.Title}}</h2>
-{{if .Lines}}<pre class="console">{{range .Lines}}{{.}}
+{{if .Lines}}<pre class="console">{{range .Lines}}{{if .DecodeHref}}{{.Pre}}<a href="{{.DecodeHref}}">[decode ↗]</a>  {{.Blob}}{{else}}{{.Text}}{{end}}
 {{end}}</pre>{{else}}<p class="subtitle">{{.Empty}}</p>{{end}}
 </section>{{end}}
