@@ -14,6 +14,7 @@ import (
 
 	"github.com/davidg238/porta/internal/control"
 	"github.com/davidg238/porta/internal/store"
+	"github.com/davidg238/porta/internal/telemetry"
 )
 
 func testStore(t *testing.T) *store.Store {
@@ -438,6 +439,13 @@ func TestNodeLogsPanicDecodeLink(t *testing.T) {
 	iBlob := strings.Index(logs, "a+b/c=d")
 	if iBlob < 0 || !(iPanic < iLink && iLink < iBlob) {
 		t.Fatalf("want order panic<[decode]<blob, got %d/%d/%d: %s", iPanic, iLink, iBlob, logs)
+	}
+	// The panic line's prefix must stay column-aligned with FormatLine (which
+	// owns the "ts  col  text" layout). renderNodeLogs rebuilds that prefix
+	// by hand, so guard against silent drift if FormatLine's spacing changes.
+	prefix := strings.TrimSuffix(telemetry.FormatLine(store.DataRow{TS: 1003, Kind: "panic", Text: "a+b/c=d"}), "a+b/c=d")
+	if !strings.Contains(logs, prefix+`<a href="nodus://`) {
+		t.Errorf("panic prefix not aligned with FormatLine: want %q before the decode link, in: %s", prefix, logs)
 	}
 	// The href round-trips: node + blob parse back to the originals.
 	m := regexp.MustCompile(`href="(nodus://decode\?[^"]*)"`).FindStringSubmatch(logs)
