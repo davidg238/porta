@@ -17,10 +17,16 @@ type telemRowVM struct {
 	Time, Node, Name, Value, Type string
 }
 
+type nodeOpt struct {
+	ID, Name string
+	Selected bool
+}
+
 type telemVM struct {
 	Title  string
-	Node   string // friendly name when filtered, else ""
-	NodeID string // node id when filtered, else ""
+	Node   string    // friendly name when filtered, else ""
+	NodeID string    // node id when filtered, else ""
+	Nodes  []nodeOpt // filter dropdown options (ListNodes order)
 	Rows   []telemRowVM
 }
 
@@ -57,6 +63,13 @@ func (h *Handler) telemVM(nodeID string, now int64) (telemVM, error) {
 	vm := telemVM{Title: "Telemetry", NodeID: nodeID}
 	if nodeID != "" {
 		vm.Node = names[nodeID]
+	}
+	nodes, err := h.st.ListNodes()
+	if err != nil {
+		return telemVM{}, err
+	}
+	for _, n := range nodes {
+		vm.Nodes = append(vm.Nodes, nodeOpt{ID: n.ID, Name: n.Name, Selected: n.ID == nodeID})
 	}
 	for _, r := range rows {
 		vm.Rows = append(vm.Rows, telemRowVM{

@@ -382,3 +382,26 @@ func TestTelemetryPageMetricsOnly(t *testing.T) {
 		t.Errorf("telemetry partial missing wrapper/metric: %s", p)
 	}
 }
+
+func TestTelemetryNodeFilterSelect(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	_ = st.SetNodeName("aabbccddeeff", "fwkb")
+	st.TouchNode("ccddeeff0011", "192.168.1.10", 1000)
+	_ = st.SetNodeName("ccddeeff0011", "vin")
+	srv := serve(t, st)
+
+	// unfiltered: All nodes selected, both options present
+	all := readBody(t, mustGet(t, srv.URL+"/telemetry"))
+	if !strings.Contains(all, `name="node"`) ||
+		!strings.Contains(all, ">All nodes<") ||
+		!strings.Contains(all, ">fwkb<") || !strings.Contains(all, ">vin<") {
+		t.Errorf("telemetry select missing options: %s", all)
+	}
+
+	// filtered: the chosen node's option is marked selected
+	one := readBody(t, mustGet(t, srv.URL+"/telemetry?node=aabbccddeeff"))
+	if !strings.Contains(one, `value="aabbccddeeff" selected`) {
+		t.Errorf("selected option not marked: %s", one)
+	}
+}
