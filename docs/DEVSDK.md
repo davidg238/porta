@@ -48,6 +48,25 @@ part of this contract — node tools provision WiFi via their own flasher (e.g.
 jag's `--wifi-ssid/--wifi-password`). The *injection mechanism* is the node
 tool's concern; `devsdk` fixes only the shape.
 
+## `nodus://decode` URL scheme (panic decode link)
+
+porta's web Logs panel renders a `[decode ↗]` link on each `panic` telemetry row.
+The link is the porta→nodus tooling contract:
+
+    nodus://decode?node=<node-id>&blob=<url-encoded base64 panic message>
+
+- `node` — the porta node id (hex EUI), for labelling/fallback lookups.
+- `blob` — the raw base64 panic message from the `data_log` row, URL-encoded
+  (base64's `+ / =` are percent-encoded).
+
+porta only **emits** this link. The node-repo dev tool registers an OS handler for
+the `nodus` scheme (Linux: a `.desktop` file with
+`MimeType=x-scheme-handler/nodus;` and `Exec=nodus decode %u`, then
+`xdg-mime default …`) and implements `nodus decode <url>`: parse `blob`, run
+`jag decode` against the local snapshot cache (jag resolves the snapshot by the
+program uuid embedded in the message), and show the decoded trace locally
+(e.g. a popup with copy-to-clipboard). Nothing is written back to porta.
+
 ## Neutrality
 
 The porta gateway implements **zero** language- or hardware-specific function.

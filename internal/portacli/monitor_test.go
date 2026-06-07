@@ -15,6 +15,7 @@ import (
 	"github.com/davidg238/porta/devsdk/apiclient"
 	"github.com/davidg238/porta/internal/apisrv"
 	"github.com/davidg238/porta/internal/store"
+	"github.com/davidg238/porta/internal/telemetry"
 )
 
 // fakeReader is an in-memory telemetryReader. Window returns `window`; each
@@ -59,11 +60,11 @@ func TestRunMonitorWindowPrintsAllScalars(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"100  metric  pm=13",
-		"101  metric  t=20.5",
-		"102  metric  door=true",
-		"103  metric  mode=auto",
-		"104  log     started blink",
+		telemetry.FormatTS(100) + "  metric  pm=13",
+		telemetry.FormatTS(101) + "  metric  t=20.5",
+		telemetry.FormatTS(102) + "  metric  door=true",
+		telemetry.FormatTS(103) + "  metric  mode=auto",
+		telemetry.FormatTS(104) + "  log     started blink",
 	}
 	got := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
 	if len(got) != len(want) {

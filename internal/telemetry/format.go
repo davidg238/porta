@@ -7,21 +7,32 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/davidg238/porta/internal/store"
 )
+
+// tsLayout is the timestamp column: "mon-DD HH:MM:SS" (e.g. "jun-07 10:52:03"),
+// 24-hour (military) clock, to the second, in the gateway's local time. Lower-
+// cased for a compact, calm look; fixed-width.
+const tsLayout = "Jan-02 15:04:05"
+
+// FormatTS renders a Unix-epoch (seconds) data_log timestamp as tsLayout.
+func FormatTS(ts int64) string { return strings.ToLower(time.Unix(ts, 0).Format(tsLayout)) }
 
 // FormatLine renders one data_log row for `porta monitor`. metric rows render
 // "<name>=<value>"; print rows render under a "print" column; log (and other
 // text-bearing kinds: panic, reset, "") render under the kind's column with an
 // optional "[level]" prefix on the text. Old rows (no level, kind "" → log)
-// render exactly as before.
+// render exactly as before. The leading column is the dense local timestamp.
 func FormatLine(r store.DataRow) string {
+	ts := FormatTS(r.TS)
 	switch r.Kind {
 	case "metric":
-		return fmt.Sprintf("%d  metric  %s=%s", r.TS, r.Name, renderMetric(r))
+		return fmt.Sprintf("%s  metric  %s=%s", ts, r.Name, renderMetric(r))
 	case "print":
-		return fmt.Sprintf("%d  print   %s", r.TS, r.Text)
+		return fmt.Sprintf("%s  print   %s", ts, r.Text)
 	default: // "log", "panic", "reset", "" — text-bearing
 		col := r.Kind
 		if col == "" {
@@ -31,7 +42,7 @@ func FormatLine(r store.DataRow) string {
 		if r.Level != "" {
 			text = "[" + r.Level + "] " + text
 		}
-		return fmt.Sprintf("%d  %-7s %s", r.TS, col, text)
+		return fmt.Sprintf("%s  %-7s %s", ts, col, text)
 	}
 }
 
