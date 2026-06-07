@@ -4,8 +4,10 @@ package apisrv
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/davidg238/porta/internal/store"
@@ -116,5 +118,19 @@ func TestTelemetryUnknownSelector404(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("status %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestTelemetryRowCarriesLevel(t *testing.T) {
+	srv, st := telemetryHarness(t)
+	_ = st.InsertData("aabbccddeeff", 10, 0, "log", "", nil, "stall", "", "warn")
+	resp, err := http.Get(srv.URL + "/api/nodes/aabbccddeeff/telemetry?since=0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), `"level":"warn"`) {
+		t.Fatalf("response missing level: %s", body)
 	}
 }
