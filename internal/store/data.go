@@ -3,7 +3,10 @@
 // internal/store/data.go
 package store
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 // DataRow is one row from data_log. Value's runtime type matches the
 // declared ValueType:
@@ -172,6 +175,41 @@ func (s *Store) RecentData(deviceID string, limit int) ([]DataRow, error) {
 	rows, err := s.db.Query(
 		`SELECT ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,''), COALESCE(level,'')
 		 FROM data_log WHERE device_id = ? ORDER BY ts DESC, seq DESC LIMIT ?`, deviceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DataRow
+	for rows.Next() {
+		var r DataRow
+		var v any
+		if err := rows.Scan(&r.TS, &r.Seq, &r.Kind, &r.Name, &v, &r.Text, &r.ValueType, &r.Level); err != nil {
+			return nil, err
+		}
+		r.Value = normalizeNumeric(v)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// RecentByKinds returns the device's newest <= limit rows whose kind is in
+// kinds, newest first. Backs the per-node console panels (prints / logs).
+// Empty kinds returns no rows (never emits an `IN ()`).
+func (s *Store) RecentByKinds(deviceID string, kinds []string, limit int) ([]DataRow, error) {
+	if len(kinds) == 0 {
+		return nil, nil
+	}
+	ph := strings.TrimSuffix(strings.Repeat("?,", len(kinds)), ",")
+	q := `SELECT ts, seq, COALESCE(kind,''), COALESCE(name,''), value, COALESCE(text,''), COALESCE(value_type,''), COALESCE(level,'')
+		  FROM data_log WHERE device_id = ? AND kind IN (` + ph + `)
+		  ORDER BY ts DESC, seq DESC LIMIT ?`
+	args := make([]any, 0, len(kinds)+2)
+	args = append(args, deviceID)
+	for _, k := range kinds {
+		args = append(args, k)
+	}
+	args = append(args, limit)
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}

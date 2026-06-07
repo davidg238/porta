@@ -305,3 +305,47 @@ func TestRecentMetricsFiltersAndOrders(t *testing.T) {
 		t.Errorf("device filter wrong: %+v", just)
 	}
 }
+
+func TestRecentByKinds(t *testing.T) {
+	st := openTestStore(t)
+	// node A: a metric, a log (with level), a print, a panic
+	_ = st.InsertData("aaaaaaaaaaaa", 100, 0, "metric", "pm", int64(7), "", "int", "")
+	_ = st.InsertData("aaaaaaaaaaaa", 101, 0, "log", "", nil, "stall", "", "warn")
+	_ = st.InsertData("aaaaaaaaaaaa", 102, 0, "print", "", nil, "hello", "", "")
+	_ = st.InsertData("aaaaaaaaaaaa", 103, 0, "panic", "", nil, "blob", "", "")
+	// node B: a log that must NOT appear in node A's results
+	_ = st.InsertData("bbbbbbbbbbbb", 104, 0, "log", "", nil, "other", "", "error")
+
+	// logs + panic for node A, newest first
+	rows, err := st.RecentByKinds("aaaaaaaaaaaa", []string{"log", "panic"}, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("want 2 rows (log+panic), got %d: %+v", len(rows), rows)
+	}
+	if rows[0].Kind != "panic" || rows[1].Kind != "log" {
+		t.Fatalf("want newest-first panic then log, got %q,%q", rows[0].Kind, rows[1].Kind)
+	}
+	if rows[1].Level != "warn" {
+		t.Fatalf("want log level warn, got %q", rows[1].Level)
+	}
+
+	// prints only
+	prints, _ := st.RecentByKinds("aaaaaaaaaaaa", []string{"print"}, 50)
+	if len(prints) != 1 || prints[0].Text != "hello" {
+		t.Fatalf("want 1 print 'hello', got %+v", prints)
+	}
+
+	// limit honored
+	lim, _ := st.RecentByKinds("aaaaaaaaaaaa", []string{"log", "panic", "print"}, 1)
+	if len(lim) != 1 {
+		t.Fatalf("limit=1 want 1 row, got %d", len(lim))
+	}
+
+	// empty kinds → no rows, no error (never emit IN ())
+	none, err := st.RecentByKinds("aaaaaaaaaaaa", nil, 50)
+	if err != nil || len(none) != 0 {
+		t.Fatalf("empty kinds want (0,nil), got (%d,%v)", len(none), err)
+	}
+}

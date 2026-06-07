@@ -1,0 +1,13 @@
+<!-- Copyright (c) 2026 Ekorau LLC -->
+<!-- OPTIONAL telemetry surface: per-node Prints/Logs console panels. -->
+{{define "node-prints"}}<section id="prints" hx-get="/n/{{.ID}}/prints" hx-trigger="every 3s" hx-swap="outerHTML">
+<h2>{{.Title}}</h2>
+{{if .Lines}}<pre class="console">{{range .Lines}}{{.}}
+{{end}}</pre>{{else}}<p class="subtitle">{{.Empty}}</p>{{end}}
+</section>{{end}}
+
+{{define "node-logs"}}<section id="logs" hx-get="/n/{{.ID}}/logs" hx-trigger="every 3s" hx-swap="outerHTML">
+<h2>{{.Title}}</h2>
+{{if .Lines}}<pre class="console">{{range .Lines}}{{.}}
+{{end}}</pre>{{else}}<p class="subtitle">{{.Empty}}</p>{{end}}
+</section>{{end}}

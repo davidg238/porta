@@ -302,6 +302,66 @@ func TestNodeHeaderIdentityFallback(t *testing.T) {
 	}
 }
 
+func TestNodeConsolePanels(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	_ = st.InsertData("aabbccddeeff", 1001, 0, "print", "", nil, "hello world", "", "")
+	_ = st.InsertData("aabbccddeeff", 1002, 0, "log", "", nil, "pump stalled", "", "warn")
+	_ = st.InsertData("aabbccddeeff", 1003, 0, "panic", "", nil, "traceblob", "", "")
+	srv := serve(t, st)
+
+	prints := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff/prints"))
+	if !strings.Contains(prints, `id="prints"`) || !strings.Contains(prints, "hello world") {
+		t.Errorf("prints panel missing content: %s", prints)
+	}
+	if strings.Contains(prints, "pump stalled") {
+		t.Errorf("prints panel must not contain log lines: %s", prints)
+	}
+
+	logs := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff/logs"))
+	if !strings.Contains(logs, `id="logs"`) || !strings.Contains(logs, "[warn] pump stalled") {
+		t.Errorf("logs panel missing leveled log: %s", logs)
+	}
+	if !strings.Contains(logs, "traceblob") {
+		t.Errorf("logs panel should include panic rows: %s", logs)
+	}
+	if strings.Contains(logs, "hello world") {
+		t.Errorf("logs panel must not contain prints: %s", logs)
+	}
+}
+
+func TestNodeConsoleEmptyHint(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+	prints := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff/prints"))
+	if !strings.Contains(prints, "no prints") {
+		t.Errorf("want empty hint, got: %s", prints)
+	}
+}
+
+func TestNodeConsoleEscapesText(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	_ = st.InsertData("aabbccddeeff", 1001, 0, "print", "", nil, "<script>x</script>", "", "")
+	srv := serve(t, st)
+	prints := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff/prints"))
+	if strings.Contains(prints, "<script>x</script>") {
+		t.Errorf("console text must be HTML-escaped: %s", prints)
+	}
+}
+
+func TestNodePageEmbedsConsolePlaceholders(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
+	if !strings.Contains(body, `hx-get="/n/aabbccddeeff/prints"`) ||
+		!strings.Contains(body, `hx-get="/n/aabbccddeeff/logs"`) {
+		t.Errorf("node page missing console placeholders: %s", body)
+	}
+}
+
 func TestTelemetryPageMetricsOnly(t *testing.T) {
 	st := testStore(t)
 	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
@@ -320,5 +380,28 @@ func TestTelemetryPageMetricsOnly(t *testing.T) {
 	p := readBody(t, mustGet(t, srv.URL+"/partials/telemetry?node=aabbccddeeff"))
 	if !strings.Contains(p, `id="telem"`) || !strings.Contains(p, "pm25") {
 		t.Errorf("telemetry partial missing wrapper/metric: %s", p)
+	}
+}
+
+func TestTelemetryNodeFilterSelect(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	_ = st.SetNodeName("aabbccddeeff", "fwkb")
+	st.TouchNode("ccddeeff0011", "192.168.1.10", 1000)
+	_ = st.SetNodeName("ccddeeff0011", "vin")
+	srv := serve(t, st)
+
+	// unfiltered: All nodes selected, both options present
+	all := readBody(t, mustGet(t, srv.URL+"/telemetry"))
+	if !strings.Contains(all, `name="node"`) ||
+		!strings.Contains(all, ">All nodes<") ||
+		!strings.Contains(all, ">fwkb<") || !strings.Contains(all, ">vin<") {
+		t.Errorf("telemetry select missing options: %s", all)
+	}
+
+	// filtered: the chosen node's option is marked selected
+	one := readBody(t, mustGet(t, srv.URL+"/telemetry?node=aabbccddeeff"))
+	if !strings.Contains(one, `value="aabbccddeeff" selected`) {
+		t.Errorf("selected option not marked: %s", one)
 	}
 }
