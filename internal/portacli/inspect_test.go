@@ -82,7 +82,7 @@ func seededStore(t *testing.T) *store.Store {
 	st.EnqueueCommand("aabbccddeeff", "set", `{"app":"sampler","key":"interval","value":30}`, "cli", now)
 	un, _ := st.NextUndelivered("aabbccddeeff")
 	st.MarkDelivered(un.ID, now)
-	st.EnqueueCommand("aabbccddeeff", "set-console", `{"state":"on"}`, "cli", now)
+	st.EnqueueCommand("aabbccddeeff", "set-forward", `{"telemetry":{"on":true}}`, "cli", now)
 	st.InsertReport("aabbccddeeff",
 		`{"apps":{"blink":{"crc":7,"runlevel":3}},"config":{"sampler":{"interval":30}}}`, `{}`, now)
 	return st
@@ -140,11 +140,11 @@ func TestLogCmdOverAPIOrderAndFormat(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("want 2 log lines, got %d: %q", len(lines), out)
 	}
-	// Oldest-first: the delivered set then the pending set-console.
+	// Oldest-first: the delivered set then the pending set-forward.
 	if !strings.HasPrefix(lines[0], "#1   ") || !strings.Contains(lines[0], "set ") || !strings.Contains(lines[0], "delivered=yes") {
 		t.Errorf("line0 = %q", lines[0])
 	}
-	if !strings.HasPrefix(lines[1], "#2   ") || !strings.Contains(lines[1], "set-console") || !strings.Contains(lines[1], "delivered=pending") {
+	if !strings.HasPrefix(lines[1], "#2   ") || !strings.Contains(lines[1], "set-forward") || !strings.Contains(lines[1], "delivered=pending") {
 		t.Errorf("line1 = %q", lines[1])
 	}
 }

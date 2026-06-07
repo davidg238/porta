@@ -77,27 +77,28 @@ func TestRunDeviceSetTypeInference(t *testing.T) {
 	}
 }
 
-func TestRunDeviceSetConsole(t *testing.T) {
+func TestRunDeviceSetForward(t *testing.T) {
 	c, st := newClientServer(t)
 	var out bytes.Buffer
-	if err := runDeviceSetConsole(&out, c, "aabbccddeeff", "on"); err != nil {
+	if err := runDeviceSetForward(&out, c, "aabbccddeeff", false, true, true, "warn"); err != nil {
 		t.Fatal(err)
 	}
 	cmd, _ := st.NextUndelivered("aabbccddeeff")
-	if cmd == nil || cmd.Verb != "set-console" {
+	if cmd == nil || cmd.Verb != "set-forward" {
 		t.Fatalf("queued=%+v", cmd)
 	}
-	if !strings.Contains(out.String(), "aabbccddeeff: enqueued set-console on (command #") {
-		t.Errorf("output = %q", out.String())
+	s := out.String()
+	if !strings.Contains(s, "enqueued set-forward") {
+		t.Errorf("output missing 'enqueued set-forward': %q", s)
 	}
-}
-
-func TestRunDeviceSetConsoleBadStateIsServerError(t *testing.T) {
-	c, _ := newClientServer(t)
-	var out bytes.Buffer
-	err := runDeviceSetConsole(&out, c, "aabbccddeeff", "maybe")
-	if err == nil || !strings.Contains(err.Error(), "on or off") {
-		t.Fatalf("want server validation error, got %v", err)
+	if !strings.Contains(s, "print:off") {
+		t.Errorf("output missing 'print:off': %q", s)
+	}
+	if !strings.Contains(s, "log:on[warn]") {
+		t.Errorf("output missing 'log:on[warn]': %q", s)
+	}
+	if !strings.Contains(s, "telemetry:on") {
+		t.Errorf("output missing 'telemetry:on': %q", s)
 	}
 }
 

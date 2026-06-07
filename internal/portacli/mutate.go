@@ -29,14 +29,49 @@ func runDeviceSet(out io.Writer, c *apiclient.Client, sel, app, key, valueStr st
 	return nil
 }
 
-// runDeviceSetConsole enqueues a set-console command. The on/off token is
-// validated server-side.
-func runDeviceSetConsole(out io.Writer, c *apiclient.Client, sel, state string) error {
-	cmdID, nodeID, err := c.Command(sel, "set-console", map[string]any{"state": state})
+// onOffStr converts a bool to "on" or "off".
+func onOffStr(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
+}
+
+// parseOnOff accepts "on" or "off" and returns the corresponding bool.
+func parseOnOff(s string) (bool, error) {
+	switch s {
+	case "on":
+		return true, nil
+	case "off":
+		return false, nil
+	}
+	return false, fmt.Errorf("expected on or off, got %q", s)
+}
+
+// runDeviceSetForward enqueues a set-forward command carrying the complete
+// per-stream policy. set-forward is absolute, so the CLI requires all three
+// stream states explicitly (no silent off). The log level defaults to warn
+// on the node when omitted.
+func runDeviceSetForward(out io.Writer, c *apiclient.Client, sel string, print, log, telemetry bool, logLevel string) error {
+	logPolicy := map[string]any{"on": log}
+	if logLevel != "" {
+		logPolicy["level"] = logLevel
+	}
+	args := map[string]any{
+		"print":     map[string]any{"on": print},
+		"log":       logPolicy,
+		"telemetry": map[string]any{"on": telemetry},
+	}
+	cmdID, nodeID, err := c.Command(sel, "set-forward", args)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%s: enqueued set-console %s (command #%d)\n", nodeID, state, cmdID)
+	lvl := logLevel
+	if lvl == "" {
+		lvl = "warn"
+	}
+	fmt.Fprintf(out, "%s: enqueued set-forward (command #%d)\n  → print:%s  log:%s[%s]  telemetry:%s\n",
+		nodeID, cmdID, onOffStr(print), onOffStr(log), lvl, onOffStr(telemetry))
 	return nil
 }
 
@@ -255,17 +290,39 @@ func newDeviceRebootCmd() *cobra.Command {
 	return cmd
 }
 
-func newDeviceSetConsoleCmd() *cobra.Command {
-	var device string
+func newDeviceSetForwardCmd() *cobra.Command {
+	var device, printS, logS, telemetryS, logLevel string
 	cmd := &cobra.Command{
-		Use:   "set-console <on|off>",
-		Short: "Toggle a node's console/telemetry forwarding",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Use:   "set-forward",
+		Short: "Set a node's per-stream forwarding policy (absolute — all streams required)",
+		Long: "Set the complete per-stream forwarding policy. set-forward is absolute: " +
+			"every stream you do not enable is turned OFF, so --print, --log and --telemetry " +
+			"are all required.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			print, err := parseOnOff(printS)
+			if err != nil {
+				return fmt.Errorf("--print: %w", err)
+			}
+			log, err := parseOnOff(logS)
+			if err != nil {
+				return fmt.Errorf("--log: %w", err)
+			}
+			telemetry, err := parseOnOff(telemetryS)
+			if err != nil {
+				return fmt.Errorf("--telemetry: %w", err)
+			}
 			c := apiclient.New(serverURL())
-			return runDeviceSetConsole(cmd.OutOrStdout(), c, device, args[0])
+			return runDeviceSetForward(cmd.OutOrStdout(), c, device, print, log, telemetry, logLevel)
 		},
 	}
 	deviceFlag(cmd, &device)
+	cmd.Flags().StringVar(&printS, "print", "", "forward print stream (on|off)")
+	cmd.Flags().StringVar(&logS, "log", "", "forward log stream (on|off)")
+	cmd.Flags().StringVar(&telemetryS, "telemetry", "", "forward telemetry/metric stream (on|off)")
+	cmd.Flags().StringVar(&logLevel, "log-level", "", "minimum log level (trace|debug|info|warn|error|fatal; node default warn)")
+	_ = cmd.MarkFlagRequired("print")
+	_ = cmd.MarkFlagRequired("log")
+	_ = cmd.MarkFlagRequired("telemetry")
 	return cmd
 }
