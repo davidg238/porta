@@ -146,7 +146,7 @@ func TestMonitorCmdE2EOverAPI(t *testing.T) {
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
 	// Use a current-ish timestamp so the default 1h look-back window includes it.
 	ts := nowSec() - 30
-	st.InsertData("aabbccddeeff", ts, 0, "metric", "pm", int64(42), "", "int")
+	st.InsertData("aabbccddeeff", ts, 0, "metric", "pm", int64(42), "", "int", "")
 
 	root := NewRootCmd()
 	var out bytes.Buffer

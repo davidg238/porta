@@ -24,6 +24,7 @@ type Entry struct {
 	Value     any    // int64 / float64 / nil (the bound DB value)
 	Text      string
 	ValueType string // "int" | "float" | "bool" | "string" | ""
+	Level     string // log stream only; "" when absent
 }
 
 // ParseLine decodes one JSONL line into an Entry. Returns ok=false for:
@@ -73,6 +74,9 @@ func ParseLine(line []byte) (Entry, bool) {
 	}
 	if v, ok := raw["text"].(string); ok {
 		e.Text = v
+	}
+	if v, ok := raw["level"].(string); ok {
+		e.Level = v
 	}
 	classifyValue(&e, raw["value"])
 	return e, true

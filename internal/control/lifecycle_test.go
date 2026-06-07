@@ -52,7 +52,7 @@ func TestLifecycleOf(t *testing.T) {
 		},
 		{
 			name: "delivered terminal: non-set verb never converges",
-			cmd:  store.Command{Verb: "set-console", Args: `{"on":true}`, IssuedAt: now - 100, DeliveredAt: delivered(now - 50)},
+			cmd:  store.Command{Verb: "reboot", Args: `{}`, IssuedAt: now - 100, DeliveredAt: delivered(now - 50)},
 			obs:  observed(t, `{"config":{"vin":{"gain":5}}}`),
 			want: LifecycleDelivered,
 		},

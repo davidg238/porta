@@ -4,6 +4,7 @@ package command
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -193,28 +194,27 @@ func TestReboot(t *testing.T) {
 	}
 }
 
-func TestSetConsole(t *testing.T) {
-	on := SetConsole(true)
-	if on.Verb != "set-console" {
-		t.Errorf("Verb=%q, want set-console", on.Verb)
+func TestSetForward(t *testing.T) {
+	p := ForwardPolicy{
+		Print:     &StreamPolicy{On: false},
+		Log:       &StreamPolicy{On: true, Level: "warn"},
+		Telemetry: &StreamPolicy{On: true},
 	}
-	if on.ArgsJSON != `{"on":true}` {
-		t.Errorf("ArgsJSON=%s, want {\"on\":true}", on.ArgsJSON)
-	}
-	off := SetConsole(false)
-	if off.ArgsJSON != `{"on":false}` {
-		t.Errorf("ArgsJSON=%s, want {\"on\":false}", off.ArgsJSON)
-	}
-	// Wire round-trip: verb + args spliced in flat form.
-	wire := EncodeWire(on.Verb, on.ArgsJSON)
-	verb, args, err := Decode(wire)
+	c, err := SetForward(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if verb != "set-console" {
-		t.Errorf("decoded verb=%q, want set-console", verb)
+	if c.Verb != "set-forward" {
+		t.Fatalf("verb = %q", c.Verb)
 	}
-	if v, ok := args["on"].(bool); !ok || !v {
-		t.Errorf("decoded on=%v (%T), want bool true", args["on"], args["on"])
+	if c.ArgsJSON != `{"print":{"on":false},"log":{"on":true,"level":"warn"},"telemetry":{"on":true}}` {
+		t.Fatalf("args = %s", c.ArgsJSON)
+	}
+	if _, err := SetForward(ForwardPolicy{Log: &StreamPolicy{On: true, Level: "loud"}}); err == nil {
+		t.Fatal("expected error for invalid level")
+	}
+	wire := EncodeWire(c.Verb, c.ArgsJSON)
+	if !strings.Contains(string(wire), `"verb":"set-forward"`) || !strings.Contains(string(wire), `"telemetry":{"on":true}`) {
+		t.Fatalf("wire = %s", wire)
 	}
 }

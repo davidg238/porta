@@ -160,3 +160,14 @@ func TestParseLineBlankSkipped(t *testing.T) {
 		t.Error("whitespace ok=true, want false")
 	}
 }
+
+func TestParseLineLevelAndPrint(t *testing.T) {
+	e, ok := ParseLine([]byte(`{"kind":"log","level":"warn","text":"pump stalled"}`))
+	if !ok || e.Kind != "log" || e.Level != "warn" || e.Text != "pump stalled" {
+		t.Fatalf("log entry: ok=%v %+v", ok, e)
+	}
+	p, ok := ParseLine([]byte(`{"kind":"print","text":"raw"}`))
+	if !ok || p.Kind != "print" || p.Text != "raw" || p.Level != "" {
+		t.Fatalf("print entry: ok=%v %+v", ok, p)
+	}
+}

@@ -29,6 +29,7 @@ func toStoreRow(r apiclient.DataRow) store.DataRow {
 	return store.DataRow{
 		TS: r.TS, Seq: r.Seq, Kind: r.Kind, Name: r.Name,
 		Value: r.Value, Text: r.Text, ValueType: r.ValueType,
+		Level: r.Level,
 	}
 }
 

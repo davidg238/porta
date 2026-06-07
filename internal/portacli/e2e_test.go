@@ -63,7 +63,7 @@ func TestServerDownIsFriendly(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"device", "set-console", "on", "-d", "aabbccddeeff", "--server", url})
+	root.SetArgs([]string{"device", "set-forward", "--print", "off", "--log", "on", "--telemetry", "on", "-d", "aabbccddeeff", "--server", url})
 	err := root.Execute()
 	if err == nil || !strings.Contains(err.Error(), "porta serve") {
 		t.Fatalf("want friendly 'porta serve' error, got %v", err)

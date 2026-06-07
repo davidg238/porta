@@ -219,6 +219,7 @@ type DataRow struct {
 	Value     any
 	Text      string
 	ValueType string
+	Level     string
 }
 
 // wireRow is the on-the-wire shape; Value stays raw so typedValue can coerce it
@@ -232,6 +233,7 @@ type wireRow struct {
 	Value     json.RawMessage `json:"value"`
 	Text      string          `json:"text"`
 	ValueType string          `json:"value_type"`
+	Level     string          `json:"level"`
 }
 
 // typedValue coerces a raw JSON value to the Go type FormatLine expects for the
@@ -318,6 +320,7 @@ func (c *Client) getTelemetry(sel string, q url.Values) ([]DataRow, error) {
 		out = append(out, DataRow{
 			ID: w.ID, TS: w.TS, Seq: w.Seq, Kind: w.Kind, Name: w.Name,
 			Value: typedValue(w.ValueType, w.Value), Text: w.Text, ValueType: w.ValueType,
+			Level: w.Level,
 		})
 	}
 	return out, nil

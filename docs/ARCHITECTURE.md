@@ -180,7 +180,7 @@ Wake/run conditions are expressed as **triggers** (`boot`, `interval`,
 **Declarative and absolute.** Every command is a single JSON object with a `verb`
 and flattened args. Applying one is idempotent, and a later command for the same
 target wins — so redelivery is always safe. The six verbs (`run`, `stop`,
-`set-poll-interval`, `set-console`, `set`, `set-power-mode`) and their schemas are
+`set-poll-interval`, `set-forward`, `set`, `set-power-mode`) and their schemas are
 in `PROTOCOL.md §2`.
 
 **The queue + delivery accounting.** Commands sit in `command_queue` per node. A

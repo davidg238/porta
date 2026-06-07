@@ -11,15 +11,28 @@ import (
 	"github.com/davidg238/porta/internal/store"
 )
 
-// FormatLine renders one data_log row for `porta monitor`, with two
-// fixed-width kind columns ("log    " / "metric "). Parity with
-// examples/toit-gateway/gateway.toit:215-225.
+// FormatLine renders one data_log row for `porta monitor`. metric rows render
+// "<name>=<value>"; print rows render under a "print" column; log (and other
+// text-bearing kinds: panic, reset, "") render under the kind's column with an
+// optional "[level]" prefix on the text. Old rows (no level, kind "" → log)
+// render exactly as before.
 func FormatLine(r store.DataRow) string {
-	if r.Kind != "metric" {
-		return fmt.Sprintf("%d  log     %s", r.TS, r.Text)
+	switch r.Kind {
+	case "metric":
+		return fmt.Sprintf("%d  metric  %s=%s", r.TS, r.Name, renderMetric(r))
+	case "print":
+		return fmt.Sprintf("%d  print   %s", r.TS, r.Text)
+	default: // "log", "panic", "reset", "" — text-bearing
+		col := r.Kind
+		if col == "" {
+			col = "log"
+		}
+		text := r.Text
+		if r.Level != "" {
+			text = "[" + r.Level + "] " + text
+		}
+		return fmt.Sprintf("%d  %-7s %s", r.TS, col, text)
 	}
-	rendered := renderMetric(r)
-	return fmt.Sprintf("%d  metric  %s=%s", r.TS, r.Name, rendered)
 }
 
 func renderMetric(r store.DataRow) string {

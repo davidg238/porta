@@ -32,9 +32,13 @@ func Set(st *store.Store, id, app, key string, value any, issuedBy string, now i
 	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
 }
 
-// SetConsole enqueues a set-console command.
-func SetConsole(st *store.Store, id string, on bool, issuedBy string, now int64) (int64, error) {
-	c := command.SetConsole(on)
+// SetForward enqueues a set-forward command carrying the node's complete
+// per-stream forwarding policy.
+func SetForward(st *store.Store, id string, p command.ForwardPolicy, issuedBy string, now int64) (int64, error) {
+	c, err := command.SetForward(p)
+	if err != nil {
+		return 0, err
+	}
 	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
 }
 

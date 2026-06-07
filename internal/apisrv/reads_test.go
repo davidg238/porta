@@ -25,7 +25,7 @@ func TestGetNodeCommands(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
 	// Queue one command via the API so the log has a row.
-	postCmd(t, h, "aabbccddeeff", `{"verb":"set-console","args":{"state":"on"}}`)
+	postCmd(t, h, "aabbccddeeff", `{"verb":"set-forward","args":{"telemetry":{"on":true}}}`)
 
 	mux := http.NewServeMux()
 	h.Register(mux)
@@ -47,7 +47,7 @@ func TestGetNodeCommands(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 		t.Fatal(err)
 	}
-	if len(env.Data.Commands) != 1 || env.Data.Commands[0].Verb != "set-console" || env.Data.Commands[0].IssuedBy != "api" {
+	if len(env.Data.Commands) != 1 || env.Data.Commands[0].Verb != "set-forward" || env.Data.Commands[0].IssuedBy != "api" {
 		t.Fatalf("commands=%+v", env.Data.Commands)
 	}
 }

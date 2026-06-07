@@ -78,7 +78,7 @@ Verb constants (identical in `gateway/command.toit` and
 | `run` | `VERB-RUN` |
 | `stop` | `VERB-STOP` |
 | `set-poll-interval` | `VERB-SET-POLL-INTERVAL` |
-| `set-console` | `VERB-SET-CONSOLE` |
+| `set-forward` | `VERB-SET-FORWARD` |
 | `set` | `VERB-SET` |
 | `set-power-mode` | `VERB-SET-POWER-MODE` |
 | `reboot` | `VERB-REBOOT` |
@@ -146,18 +146,30 @@ The node removes `name` from its goal; reconcile then uninstalls the image.
 
 The node persists this and uses it as its deep-sleep / re-poll cadence.
 
-### 2.4 `set-console` — telemetry forwarding toggle
+### 2.4 `set-forward` — per-stream forwarding policy
+
+A single **declarative, absolute** command carrying the node's complete northbound
+forwarding policy. Each stream is an optional nested object; an omitted stream
+resolves to its default (off) on the node — the command is the whole policy, not a patch.
 
 | Key | Type | Required | Meaning |
 |-----|------|----------|---------|
-| `verb` | string | yes | `"set-console"` |
-| `on` | bool | yes | Enable/disable console/telemetry forwarding. |
+| `verb` | string | yes | `"set-forward"` |
+| `print` | object | no | `{"on": bool, "every_s"?: int}` |
+| `log` | object | no | `{"on": bool, "level"?: string, "every_s"?: int}` |
+| `telemetry` | object | no | `{"on": bool, "every_s"?: int}` |
+
+- `level` (log only) ∈ `trace|debug|info|warn|error|fatal`. Absent ⇒ node keeps `warn`.
+- `every_s` (optional, all streams): the always-on per-stream forward interval.
+  Ignored by deep-sleep nodes (cadence there is `set-poll-interval`). Absent ⇒ node
+  coalesces with its report window. (Reserved; porta carries it but exposes no CLI flag yet.)
 
 ```json
-{"verb": "set-console", "on": true}
+{"verb": "set-forward", "print": {"on": false}, "log": {"on": true, "level": "warn"}, "telemetry": {"on": true}}
 ```
 
-The node persists the flag (defaults to `false` if absent at read time).
+The node persists the resolved policy in its flash config (so it survives reboot).
+FATAL-level logs and panics are delivered regardless of the gates.
 
 ### 2.5 `set` — per-app config key
 
@@ -409,7 +421,7 @@ This is the same CRC used by `jag` for its `X-Jaguar-CRC32` and by the gateway.
 
 ## 6. Telemetry data (node → gateway)
 
-When console/telemetry forwarding is enabled (§2.4) and the node buffered
+When forwarding is enabled for a stream (§2.4) and the node buffered
 entries this wake, it PUTs (WRQ) a **JSONL** body (one JSON object per line) to
 `data?id=<mac>` (`build-data-body` in `nodus/src/telemetry_codec.toit`).
 
@@ -417,7 +429,8 @@ Each line is one entry:
 
 | Key | Type | Required | Default at gateway | Meaning |
 |-----|------|----------|--------------------|---------|
-| `kind` | string | no | `"log"` | Entry kind, e.g. `"log"`, `"metric"`, or `"panic"`. |
+| `kind` | string | no | `"log"` | Entry kind: `"print"`, `"log"`, `"metric"`, `"panic"`, or `"reset"`. |
+| `level` | string | no | `null` | Log-stream severity (`trace`..`fatal`). Present on `"log"` entries only. |
 | `name` | string | no | `null` | Metric/series name. |
 | `value` | scalar | no | `null` | int / float / bool — typed scalar value. |
 | `text` | string | no | `null` | Log text, string-valued reading, or (for `"panic"`) the base64 trace blob. |
@@ -426,10 +439,13 @@ Each line is one entry:
 
 Entries the node emits in practice:
 ```json
-{"kind": "log", "text": "hello from node"}
+{"kind": "print", "text": "raw print output"}
+{"kind": "log", "level": "warn", "text": "pump stalled"}
 {"kind": "metric", "name": "pm2_5", "value": 12}
 {"kind": "panic", "text": "<base64 trace blob>"}
 ```
+
+FATAL-level logs and `panic` entries are part of the must-deliver subset — the node ships them even when the corresponding gate is off.
 
 The `"panic"` kind reports an uncaught payload exception: `text` is the base64 of
 the node's raw trace ("system message"). Decoding/symbolication is **node-defined**
@@ -454,7 +470,7 @@ A conforming node MUST:
 - Identify itself with `?id=<12-hex-mac>` on every TFTP request.
 - Drain `commands?id=` by repeated RRQ until a zero-byte body, treating commands
   as absolute/idempotent (last write wins per target).
-- Honour the seven verbs (`run`, `stop`, `set-poll-interval`, `set-console`,
+- Honour the seven verbs (`run`, `stop`, `set-poll-interval`, `set-forward`,
   `set`, `set-power-mode`, `reboot`) with the arg schemas and defaults in §2,
   including the `lifecycle` declaration (default `run-once`) and `runlevel`
   (default `3`). `reboot` is applied at the end of the poll and SHOULD report
@@ -466,6 +482,7 @@ A conforming node MUST:
   shape in §3, echoing per-app `crc`/`runlevel`/`lifecycle`/`triggers` and the
   applied `config` blob.
 - (If it forwards telemetry) ship JSONL to `data?id=` per §6.
+- (If it forwards telemetry) forward print/log/telemetry per the resolved `set-forward` policy, tagging log entries with `level`, and deliver FATAL logs + `kind:"panic"` entries even when the relevant gate is off.
 - (If it forwards telemetry) report uncaught payload exceptions as `kind:"panic"`
   entries per §6 (the base64 trace blob in `text`); decoding is node-defined and
   lives in the node repo's tooling.

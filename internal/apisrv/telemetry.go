@@ -22,6 +22,7 @@ type telemetryRow struct {
 	Value     any    `json:"value"`
 	Text      string `json:"text"`
 	ValueType string `json:"value_type"`
+	Level     string `json:"level"`
 }
 
 // parseOptInt parses an optional integer query param: "" → (def, true); a valid
@@ -87,6 +88,7 @@ func (h *Handler) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 		out = append(out, telemetryRow{
 			ID: dr.ID, TS: dr.TS, Seq: dr.Seq, Kind: dr.Kind,
 			Name: dr.Name, Value: dr.Value, Text: dr.Text, ValueType: dr.ValueType,
+			Level: dr.Level,
 		})
 	}
 	writeOK(w, map[string]any{"rows": out})

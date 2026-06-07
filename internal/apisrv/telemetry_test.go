@@ -4,8 +4,10 @@ package apisrv
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/davidg238/porta/internal/store"
@@ -19,9 +21,9 @@ func telemetryHarness(t *testing.T) (*httptest.Server, *store.Store) {
 	}
 	t.Cleanup(func() { st.Close() })
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
-	st.InsertData("aabbccddeeff", 100, 0, "metric", "pm", int64(13), "", "int")
-	st.InsertData("aabbccddeeff", 101, 1, "metric", "t", float64(20.5), "", "float")
-	st.InsertData("aabbccddeeff", 102, 2, "log", "", nil, "hello", "")
+	st.InsertData("aabbccddeeff", 100, 0, "metric", "pm", int64(13), "", "int", "")
+	st.InsertData("aabbccddeeff", 101, 1, "metric", "t", float64(20.5), "", "float", "")
+	st.InsertData("aabbccddeeff", 102, 2, "log", "", nil, "hello", "", "")
 	mux := http.NewServeMux()
 	New(st).Register(mux)
 	srv := httptest.NewServer(mux)
@@ -116,5 +118,19 @@ func TestTelemetryUnknownSelector404(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("status %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestTelemetryRowCarriesLevel(t *testing.T) {
+	srv, st := telemetryHarness(t)
+	_ = st.InsertData("aabbccddeeff", 10, 0, "log", "", nil, "stall", "", "warn")
+	resp, err := http.Get(srv.URL + "/api/nodes/aabbccddeeff/telemetry?since=0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), `"level":"warn"`) {
+		t.Fatalf("response missing level: %s", body)
 	}
 }

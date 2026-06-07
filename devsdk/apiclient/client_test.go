@@ -84,7 +84,7 @@ func TestCommandTransportErrorWrap(t *testing.T) {
 	url := srv.URL
 	srv.Close()
 	c := New(url)
-	_, _, err := c.Command("n", "set-console", map[string]any{"state": "on"})
+	_, _, err := c.Command("n", "reboot", map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "porta serve") {
 		t.Fatalf("want friendly 'porta serve' wrap, got %v", err)
 	}
