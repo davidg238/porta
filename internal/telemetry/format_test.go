@@ -87,3 +87,19 @@ func TestFormatLineDegradedRendersNull(t *testing.T) {
 		t.Errorf("got %q, want %q", got, "107  metric  x=null")
 	}
 }
+
+func TestFormatLinePrintAndLevel(t *testing.T) {
+	cases := []struct {
+		row  store.DataRow
+		want string
+	}{
+		{store.DataRow{TS: 5, Kind: "print", Text: "raw"}, "5  print   raw"},
+		{store.DataRow{TS: 5, Kind: "log", Level: "warn", Text: "stall"}, "5  log     [warn] stall"},
+		{store.DataRow{TS: 5, Kind: "log", Text: "plain"}, "5  log     plain"},
+	}
+	for _, c := range cases {
+		if got := FormatLine(c.row); got != c.want {
+			t.Errorf("FormatLine(%+v) = %q, want %q", c.row, got, c.want)
+		}
+	}
+}
