@@ -1,19 +1,27 @@
 <!-- Copyright (c) 2026 Ekorau LLC -->
 {{define "node"}}{{template "head" .}}
 <a href="/">← all nodes</a>
-{{/* Each partial emits its own polling wrapper (id + hx-*); embed them
-     directly so the initial render matches what the outerHTML swap replaces. */}}
-{{template "node-header" .}}
-{{template "node-gwsettings" .}}
-{{template "node-config" .}}
-{{template "node-recent" .}}
-{{template "node-containers" .}}
-{{/* telemetry:node-console begin (optional; see node_console.go) */}}
-<section id="prints" hx-get="/n/{{.ID}}/prints" hx-trigger="load, every 3s" hx-swap="outerHTML">
-  <h2>Prints</h2><p class="subtitle">loading…</p></section>
-<section id="logs" hx-get="/n/{{.ID}}/logs" hx-trigger="load, every 3s" hx-swap="outerHTML">
-  <h2>Logs</h2><p class="subtitle">loading…</p></section>
-{{/* telemetry:node-console end */}}
+{{/* Two-column node page: left holds the existing surfaces (header → containers)
+     with Prints last, growing to fill the column; right is Logs full-height.
+     Each partial emits its own polling wrapper (id + hx-*); embed them directly
+     so the initial render matches what the outerHTML swap replaces. */}}
+<div class="node-cols">
+  <div class="node-left">
+    {{template "node-header" .}}
+    {{template "node-gwsettings" .}}
+    {{template "node-config" .}}
+    {{template "node-recent" .}}
+    {{template "node-containers" .}}
+    {{/* telemetry:node-console begin (optional; see node_console.go) */}}
+    <section id="prints" hx-get="/n/{{.ID}}/prints" hx-trigger="load, every 3s" hx-swap="outerHTML">
+      <h2>Prints</h2><p class="subtitle">loading…</p></section>
+  </div>
+  <div class="node-right">
+    <section id="logs" hx-get="/n/{{.ID}}/logs" hx-trigger="load, every 3s" hx-swap="outerHTML">
+      <h2>Logs</h2><p class="subtitle">loading…</p></section>
+  </div>
+  {{/* telemetry:node-console end */}}
+</div>
 {{template "foot" .}}{{end}}
 
 {{define "node-header"}}<div id="hdr" hx-get="/n/{{.ID}}/header" hx-trigger="every 2s" hx-swap="outerHTML">
