@@ -391,6 +391,10 @@ type NodeDetailResp struct {
 	Apps          []NodeApp `json:"apps"`
 	ObservedRaw   string    `json:"observed_raw"`
 	Undelivered   int       `json:"undelivered"`
+	// NodeConfig is the node's last echoed effective-config block (mode + cadence
+	// knobs + name), or nil if it has never echoed one. nodus-cli's convergence
+	// poll reads this to confirm a set-mode/set-name applied.
+	NodeConfig map[string]any `json:"node_config"`
 }
 
 // NodeDetail fetches one node's full detail (GET /api/nodes/{sel}).

@@ -231,6 +231,22 @@ func TestNodeIdentity(t *testing.T) {
 	}
 }
 
+func TestNodeDetailDecodesNodeConfig(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true,"data":{"id":"aabbccddeeff","name":"door","node_config":{"mode":"deep-sleep","max_asleep_s":300,"name":"door"}}}`)
+	}))
+	defer srv.Close()
+
+	d, err := New(srv.URL).NodeDetail("aabbccddeeff")
+	if err != nil {
+		t.Fatalf("NodeDetail: %v", err)
+	}
+	if d.NodeConfig["mode"] != "deep-sleep" || d.NodeConfig["max_asleep_s"] != float64(300) {
+		t.Errorf("node_config=%+v", d.NodeConfig)
+	}
+}
+
 func TestNodeIdentityServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)

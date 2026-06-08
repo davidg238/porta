@@ -73,6 +73,23 @@ type nodeDetail struct {
 	// `porta device show`'s store-equivalent output over the API.
 	ObservedRaw string `json:"observed_raw"`
 	Undelivered int    `json:"undelivered"`
+	// NodeConfig is the node's last echoed effective-config block, decoded from
+	// the cached blob (nil until the node first echoes). nodus-cli polls this to
+	// confirm a config command converged.
+	NodeConfig map[string]any `json:"node_config"`
+}
+
+// decodeNodeConfig parses a cached node_config blob into a map, or nil when the
+// node has never echoed one (or the blob is unparseable).
+func decodeNodeConfig(raw string) map[string]any {
+	if raw == "" {
+		return nil
+	}
+	var m map[string]any
+	if json.Unmarshal([]byte(raw), &m) != nil {
+		return nil
+	}
+	return m
 }
 
 // handleNodeDetail returns one node's full detail.
@@ -106,6 +123,7 @@ func (h *Handler) handleNodeDetail(w http.ResponseWriter, r *http.Request) {
 		LastSeen: n.LastSeen.Int64, LastReportAt: n.LastReportAt.Int64,
 		Apps: apps, ConfigApp: confApp, Config: cfg,
 		ObservedRaw: n.ObservedState, Undelivered: len(un),
+		NodeConfig: decodeNodeConfig(n.NodeConfig),
 	})
 }
 
