@@ -27,7 +27,8 @@ type detailVM struct {
 	Kind      string
 	IP        string
 	EUI       string
-	PollIntv  string
+	Mode      string
+	Cadence   string
 	Chip      string
 	Sdk       string
 	LastReset string
@@ -83,17 +84,6 @@ func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store
 			"no prints — forwarding may be off (set-forward --print on)", []string{"print"})
 	case "logs":
 		h.renderNodeLogs(w, n)
-	case "rename":
-		// The only surviving write is the gateway-side rename. It mutates state,
-		// so it must never be reachable by a GET — r.FormValue also reads the
-		// query string, so a GET with ?name=… would otherwise apply. Node-command
-		// writes were removed: the web console is read-only; commands go through
-		// the CLI / nodus.
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h.postRename(w, r, n)
 	default:
 		http.NotFound(w, r)
 	}
@@ -132,7 +122,8 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 		Kind:      n.Kind,
 		IP:        n.SourceAddr,
 		EUI:       n.ID,
-		PollIntv:  humanizeDur(n.PollIntervalS),
+		Mode:      n.Mode(),
+		Cadence:   humanizeDur(n.EffectiveCadenceS()),
 		Chip:      n.Chip,
 		Sdk:       n.Sdk,
 		LastReset: control.RenderReset(n.LastReset, resetCode),

@@ -125,6 +125,21 @@ func (n *Node) CadenceS() int64 {
 	return 0
 }
 
+// Mode returns the node's echoed power mode ("deep-sleep"/"always-on"), or "" if
+// it has not echoed a node_config yet.
+func (n *Node) Mode() string {
+	if n.NodeConfig == "" {
+		return ""
+	}
+	var c struct {
+		Mode string `json:"mode"`
+	}
+	if json.Unmarshal([]byte(n.NodeConfig), &c) != nil {
+		return ""
+	}
+	return c.Mode
+}
+
 // EffectiveCadenceS is the node's check-in cadence used for liveness: the
 // cadence echoed in node_config, else the stored poll_interval_s (a pre-echo
 // bootstrap fallback), else the default. Always > 0.
@@ -309,10 +324,6 @@ func (s *Store) UpdateNodeConfig(id, configJSON, name string) error {
 	return err
 }
 
-func (s *Store) SetPollInterval(id string, secs int64) error {
-	_, err := s.db.Exec(`UPDATE nodes SET poll_interval_s = ? WHERE id = ?`, secs, id)
-	return err
-}
 
 func (s *Store) RegisterPayload(crc int64, name string, image []byte) error {
 	_, err := s.db.Exec(`INSERT OR REPLACE INTO payloads (crc, name, size, image) VALUES (?, ?, ?, ?)`,

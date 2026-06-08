@@ -102,21 +102,6 @@ func TestRunDeviceSetForward(t *testing.T) {
 	}
 }
 
-func TestRunDeviceSetPowerMode(t *testing.T) {
-	c, st := newClientServer(t)
-	var out bytes.Buffer
-	if err := runDeviceSetPowerMode(&out, c, "aabbccddeeff", "always-on"); err != nil {
-		t.Fatal(err)
-	}
-	cmd, _ := st.NextUndelivered("aabbccddeeff")
-	if cmd == nil || cmd.Verb != "set-power-mode" {
-		t.Fatalf("queued=%+v", cmd)
-	}
-	if !strings.Contains(out.String(), "aabbccddeeff: enqueued set-power-mode always-on (command #") {
-		t.Errorf("output = %q", out.String())
-	}
-}
-
 func TestRunDeviceReboot(t *testing.T) {
 	c, st := newClientServer(t)
 	var out bytes.Buffer
@@ -129,17 +114,6 @@ func TestRunDeviceReboot(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "aabbccddeeff: enqueued reboot (command #") {
 		t.Errorf("output = %q", out.String())
-	}
-}
-
-func TestRunSetPollIntervalEnqueuesSilently(t *testing.T) {
-	c, st := newClientServer(t)
-	if err := runSetPollInterval(c, "aabbccddeeff", "45s"); err != nil {
-		t.Fatal(err)
-	}
-	cmd, _ := st.NextUndelivered("aabbccddeeff")
-	if cmd == nil || cmd.Verb != "set-poll-interval" {
-		t.Fatalf("queued=%+v", cmd)
 	}
 }
 
@@ -201,14 +175,28 @@ func TestRunInstallRejectsNonBin(t *testing.T) {
 	}
 }
 
-func TestRunDeviceName(t *testing.T) {
+// TestRunDeviceSetMode confirms porta relays an atomic set-mode for nodus-cli
+// (porta originates no config; it transports the vocabulary over the queue).
+func TestRunDeviceSetMode(t *testing.T) {
 	c, st := newClientServer(t)
-	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
-	if err := runDeviceName(c, "aabbccddeeff", "newname"); err != nil {
+	if _, _, err := c.Command("aabbccddeeff", "set-mode",
+		map[string]any{"mode": "deep-sleep", "max_awake_s": 20, "max_asleep_s": 300}); err != nil {
 		t.Fatal(err)
 	}
-	n, _ := st.GetNode("aabbccddeeff")
-	if n.Name != "newname" {
-		t.Errorf("name=%q", n.Name)
+	cmd, _ := st.NextUndelivered("aabbccddeeff")
+	if cmd == nil || cmd.Verb != "set-mode" {
+		t.Fatalf("queued=%+v", cmd)
+	}
+}
+
+// TestRunDeviceSetName confirms porta relays a set-name for nodus-cli.
+func TestRunDeviceSetName(t *testing.T) {
+	c, st := newClientServer(t)
+	if _, _, err := c.Command("aabbccddeeff", "set-name", map[string]any{"name": "door"}); err != nil {
+		t.Fatal(err)
+	}
+	cmd, _ := st.NextUndelivered("aabbccddeeff")
+	if cmd == nil || cmd.Verb != "set-name" || cmd.Args != `{"name":"door"}` {
+		t.Fatalf("queued=%+v", cmd)
 	}
 }

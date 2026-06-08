@@ -82,9 +82,72 @@ func Reboot() Command {
 	return Command{Verb: "reboot", ArgsJSON: `{}`}
 }
 
-// SetPollInterval builds a set-poll-interval command.
-func SetPollInterval(intervalS int64) Command {
-	return Command{Verb: "set-poll-interval", ArgsJSON: fmt.Sprintf(`{"interval":%d}`, intervalS)}
+// asInt coerces a wire/CLI value to int64, tolerating int64 (CLI), json.Number
+// (API UseNumber decode), and float64 (plain JSON decode). Reports ok=false for
+// a non-numeric or absent value.
+func asInt(v any) (int64, bool) {
+	switch x := v.(type) {
+	case int64:
+		return x, true
+	case int:
+		return int64(x), true
+	case float64:
+		return int64(x), true
+	case json.Number:
+		i, err := x.Int64()
+		return i, err == nil
+	}
+	return 0, false
+}
+
+// SetMode builds an atomic set-mode command from a verb-agnostic args map. Power
+// mode is one declaration, so the whole command is accepted or rejected — porta
+// validates client-side (the node re-validates authoritatively) mirroring
+// nodus' validate-set-mode: always-on takes no knobs; deep-sleep requires
+// positive max_awake_s + max_asleep_s with an optional min_awake_s ≤ max_awake_s.
+func SetMode(args map[string]any) (Command, error) {
+	mode, _ := args["mode"].(string)
+	switch mode {
+	case "always-on":
+		return Command{Verb: "set-mode", ArgsJSON: `{"mode":"always-on"}`}, nil
+	case "deep-sleep":
+		maxAwake, ok := asInt(args["max_awake_s"])
+		if !ok || maxAwake <= 0 {
+			return Command{}, fmt.Errorf("set-mode deep-sleep requires a positive max_awake_s")
+		}
+		maxAsleep, ok := asInt(args["max_asleep_s"])
+		if !ok || maxAsleep <= 0 {
+			return Command{}, fmt.Errorf("set-mode deep-sleep requires a positive max_asleep_s")
+		}
+		out := map[string]any{"mode": "deep-sleep", "max_awake_s": maxAwake, "max_asleep_s": maxAsleep}
+		if mv, present := args["min_awake_s"]; present && mv != nil {
+			minAwake, ok := asInt(mv)
+			if !ok || minAwake <= 0 {
+				return Command{}, fmt.Errorf("set-mode min_awake_s must be a positive int")
+			}
+			if minAwake > maxAwake {
+				return Command{}, fmt.Errorf("set-mode min_awake_s (%d) must be <= max_awake_s (%d)", minAwake, maxAwake)
+			}
+			out["min_awake_s"] = minAwake
+		}
+		b, err := json.Marshal(out)
+		if err != nil {
+			return Command{}, err
+		}
+		return Command{Verb: "set-mode", ArgsJSON: string(b)}, nil
+	default:
+		return Command{}, fmt.Errorf("invalid mode %q (expected deep-sleep or always-on)", mode)
+	}
+}
+
+// SetName builds a set-name command. The name is node-owned (stored in NVS and
+// echoed back); porta only relays + mirrors it.
+func SetName(name string) (Command, error) {
+	if name == "" {
+		return Command{}, fmt.Errorf("set-name requires a non-empty name")
+	}
+	nb, _ := json.Marshal(name)
+	return Command{Verb: "set-name", ArgsJSON: fmt.Sprintf(`{"name":%s}`, nb)}, nil
 }
 
 // StreamPolicy is one northbound stream's forwarding policy. On is always
@@ -125,20 +188,6 @@ func SetForward(p ForwardPolicy) (Command, error) {
 		return Command{}, err
 	}
 	return Command{Verb: "set-forward", ArgsJSON: string(b)}, nil
-}
-
-// validPowerMode reports whether mode is one the node honours
-// (supervisor.toit POWER-MODE-DEEP-SLEEP / POWER-MODE-ALWAYS-ON).
-func validPowerMode(mode string) bool { return mode == "deep-sleep" || mode == "always-on" }
-
-// SetPowerMode builds a set-power-mode command. The node reads args["mode"]
-// and caches it in NVS, choosing the deep-sleep or always-on supervisor loop.
-func SetPowerMode(mode string) (Command, error) {
-	if !validPowerMode(mode) {
-		return Command{}, fmt.Errorf("invalid power mode %q (expected deep-sleep or always-on)", mode)
-	}
-	mb, _ := json.Marshal(mode)
-	return Command{Verb: "set-power-mode", ArgsJSON: fmt.Sprintf(`{"mode":%s}`, mb)}, nil
 }
 
 // Set builds a set command for one (app, key, scalar value). value must be

@@ -111,10 +111,7 @@ func newDeviceCmd() *cobra.Command {
 		newDeviceGetCmd(),
 		newDeviceSetCmd(),
 		newDeviceSetForwardCmd(),
-		newDeviceSetPowerModeCmd(),
-		newDeviceSetPollIntervalCmd(),
 		newDeviceRebootCmd(),
-		newDeviceNameCmd(),
 	)
 	return parent
 }

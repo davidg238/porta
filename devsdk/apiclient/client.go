@@ -170,40 +170,6 @@ func (c *Client) Install(sel, name string, image io.Reader, opts InstallOpts) (i
 	return r.CommandID, r.NodeID, r.Size, nil
 }
 
-// patchResp decodes a PATCH /api/nodes/{sel} response.
-type patchResp struct {
-	NodeID string `json:"node_id"`
-}
-
-// PatchNode PATCHes only the present (non-nil) fields to /api/nodes/{sel} and
-// returns the server-resolved node id. Used for the gateway-side rename (not a
-// device command).
-func (c *Client) PatchNode(sel string, name *string) (string, error) {
-	body := map[string]any{}
-	if name != nil {
-		body["name"] = *name
-	}
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequest("PATCH",
-		c.baseURL+"/api/nodes/"+url.PathEscape(sel), bytes.NewReader(raw))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	data, err := c.do(req)
-	if err != nil {
-		return "", err
-	}
-	var r patchResp
-	if err := json.Unmarshal(data, &r); err != nil {
-		return "", err
-	}
-	return r.NodeID, nil
-}
-
 // DataRow is one telemetry row returned by the telemetry reads. Value is the
 // typed scalar reconstructed from value_type: int64 for int/bool, float64 for
 // float, nil for string & log rows (their payload is in Text).

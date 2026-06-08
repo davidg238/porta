@@ -85,7 +85,7 @@ func TestNodeDetailRendersSections(t *testing.T) {
 	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
 	// Read-only dashboard: identity/config/recent/containers + the gateway-settings
 	// edit block survive; node-command write surfaces do not.
-	for _, want := range []string{"demo", "gain", "Config", "Telemetry", "Recent", "Containers", "edit gateway settings"} {
+	for _, want := range []string{"demo", "gain", "Config", "Telemetry", "Recent", "Containers"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("detail body missing %q: %s", want, body)
 		}
@@ -102,15 +102,16 @@ func TestNodeDetailRendersSections(t *testing.T) {
 	}
 }
 
-// The node page is a read-only dashboard: the node-command write routes were
-// removed (writes go through the CLI / nodus). They must 404 and enqueue nothing,
-// whatever the method. The gateway-settings routes (rename, max-offline) survive.
+// The node page is a fully read-only dashboard: every write route — node
+// commands AND the former gateway-side rename/max-offline — was removed. Config
+// originates only in nodus-cli now; rename moved to `nodus rename`. They must
+// 404 and enqueue nothing, whatever the method.
 func TestRemovedWriteRoutesAre404(t *testing.T) {
 	st := testStore(t)
 	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
 	srv := serve(t, st)
 
-	for _, sub := range []string{"set", "console", "poll-interval", "containers/install", "containers/uninstall"} {
+	for _, sub := range []string{"set", "console", "poll-interval", "rename", "max-offline", "containers/install", "containers/uninstall"} {
 		resp, err := http.PostForm(srv.URL+"/n/aabbccddeeff/"+sub, url.Values{"app": {"demo"}, "key": {"gain"}, "value": {"3"}, "state": {"on"}, "dur": {"60s"}, "name": {"demo"}})
 		if err != nil {
 			t.Fatal(err)
@@ -125,40 +126,22 @@ func TestRemovedWriteRoutesAre404(t *testing.T) {
 	}
 }
 
-func TestRenameFormRenamesNode(t *testing.T) {
+// The node page shows the node-owned mode + cadence read-only (from the
+// node_config echo), and exposes no form that originates a config change.
+func TestNodePageShowsModeCadenceReadOnly(t *testing.T) {
 	st := testStore(t)
 	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
-	srv := serve(t, st)
-
-	resp, err := http.PostForm(srv.URL+"/n/aabbccddeeff/rename", url.Values{"name": {"foo"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := readBody(t, resp)
-	if resp.StatusCode != 200 || !strings.Contains(body, "foo") {
-		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
-	}
-	n, _ := st.GetNode("aabbccddeeff")
-	if n == nil || n.Name != "foo" {
-		t.Fatalf("node not renamed, got %+v", n)
-	}
-}
-
-func TestBannerGatewaySettingsToggle(t *testing.T) {
-	st := testStore(t)
-	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	st.UpdateNodeConfig("aabbccddeeff", `{"mode":"always-on","poll_interval_s":60,"name":"vin"}`, "vin")
 	srv := serve(t, st)
 
 	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
-	for _, want := range []string{`<details id="gw-settings"`, "/n/aabbccddeeff/rename"} {
+	for _, want := range []string{"mode always-on", "cadence 1m"} {
 		if !strings.Contains(body, want) {
-			t.Errorf("banner gateway-settings missing %q: %s", want, body)
+			t.Errorf("node page missing read-only %q: %s", want, body)
 		}
 	}
-	// The gateway-settings block must sit before the config section (i.e. in the
-	// banner, not inside the polled #hdr which precedes it).
-	if i, j := strings.Index(body, `id="gw-settings"`), strings.Index(body, `id="config"`); i < 0 || j < 0 || i > j {
-		t.Errorf("gw-settings (%d) should appear before config (%d)", i, j)
+	if strings.Contains(body, "gw-settings") || strings.Contains(body, "edit gateway settings") {
+		t.Error("node page must expose no gateway-settings write form")
 	}
 }
 

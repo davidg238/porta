@@ -51,7 +51,6 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/nodes/{sel}", recoverer(h.handleNodeDetail))
 	mux.HandleFunc("POST /api/nodes/{sel}/commands", recoverer(h.handleCommand))
 	mux.HandleFunc("POST /api/nodes/{sel}/containers", recoverer(h.handleContainerInstall))
-	mux.HandleFunc("PATCH /api/nodes/{sel}", recoverer(h.handlePatchNode))
 	mux.HandleFunc("GET /api/nodes/{sel}/commands", recoverer(h.handleNodeCommands))
 	mux.HandleFunc("GET /api/nodes/{sel}/config", recoverer(h.handleNodeConfig))
 	mux.HandleFunc("GET /api/nodes/{sel}/telemetry", recoverer(h.handleTelemetry))

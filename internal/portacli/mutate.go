@@ -75,17 +75,6 @@ func runDeviceSetForward(out io.Writer, c *apiclient.Client, sel string, print, 
 	return nil
 }
 
-// runDeviceSetPowerMode enqueues a set-power-mode command. The mode is validated
-// server-side (command.SetPowerMode).
-func runDeviceSetPowerMode(out io.Writer, c *apiclient.Client, sel, mode string) error {
-	cmdID, nodeID, err := c.Command(sel, "set-power-mode", map[string]any{"mode": mode})
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "%s: enqueued set-power-mode %s (command #%d)\n", nodeID, mode, cmdID)
-	return nil
-}
-
 // runDeviceReboot enqueues a reboot command (no args). The node reboots at the
 // end of its next poll; there is no observed-state convergence to confirm.
 func runDeviceReboot(out io.Writer, c *apiclient.Client, sel string) error {
@@ -95,13 +84,6 @@ func runDeviceReboot(out io.Writer, c *apiclient.Client, sel string) error {
 	}
 	fmt.Fprintf(out, "%s: enqueued reboot (command #%d)\n", nodeID, cmdID)
 	return nil
-}
-
-// runSetPollInterval enqueues a set-poll-interval command. The duration string
-// is parsed server-side. Silent on success (parity with the pre-S2 CLI).
-func runSetPollInterval(c *apiclient.Client, sel, dur string) error {
-	_, _, err := c.Command(sel, "set-poll-interval", map[string]any{"interval": dur})
-	return err
 }
 
 // runUninstall enqueues a stop command.
@@ -135,12 +117,6 @@ func runInstall(out io.Writer, c *apiclient.Client, sel, name, path string, opts
 	}
 	fmt.Fprintf(out, "%s: registered %s (%d B); enqueued run (command #%d)\n", nodeID, name, size, cmdID)
 	return nil
-}
-
-// runDeviceName renames a node (gateway-side). Silent on success (parity).
-func runDeviceName(c *apiclient.Client, sel, newName string) error {
-	_, err := c.PatchNode(sel, &newName)
-	return err
 }
 
 // --- cobra wiring (attached to the parents from inspect.go) ---
@@ -190,36 +166,6 @@ func newContainerUninstallCmd() *cobra.Command {
 	return cmd
 }
 
-func newDeviceSetPollIntervalCmd() *cobra.Command {
-	var device string
-	cmd := &cobra.Command{
-		Use:   "set-poll-interval <dur>",
-		Short: "Enqueue a poll-interval change",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			c := apiclient.New(serverURL())
-			return runSetPollInterval(c, device, args[0])
-		},
-	}
-	deviceFlag(cmd, &device)
-	return cmd
-}
-
-func newDeviceNameCmd() *cobra.Command {
-	var device string
-	cmd := &cobra.Command{
-		Use:   "name <new-name>",
-		Short: "Override the auto-assigned friendly name",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			c := apiclient.New(serverURL())
-			return runDeviceName(c, device, args[0])
-		},
-	}
-	deviceFlag(cmd, &device)
-	return cmd
-}
-
 func newDeviceSetCmd() *cobra.Command {
 	var device string
 	cmd := &cobra.Command{
@@ -229,21 +175,6 @@ func newDeviceSetCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := apiclient.New(serverURL())
 			return runDeviceSet(cmd.OutOrStdout(), c, device, args[0], args[1], args[2])
-		},
-	}
-	deviceFlag(cmd, &device)
-	return cmd
-}
-
-func newDeviceSetPowerModeCmd() *cobra.Command {
-	var device string
-	cmd := &cobra.Command{
-		Use:   "set-power-mode <deep-sleep|always-on>",
-		Short: "Set a node's power mode (always-on keeps run-loop daemons alive)",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			c := apiclient.New(serverURL())
-			return runDeviceSetPowerMode(cmd.OutOrStdout(), c, device, args[0])
 		},
 	}
 	deviceFlag(cmd, &device)
