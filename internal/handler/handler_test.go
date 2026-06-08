@@ -460,6 +460,19 @@ func TestWriteReportStoresNodeConfig(t *testing.T) {
 	if n.Name != "door" {
 		t.Errorf("steady-state report clobbered name: %q", n.Name)
 	}
+	// An echo without a name (unnamed node omits the key) updates the block but
+	// must NOT clobber the mirrored name — end-to-end through the handler.
+	ao := `{"mode":"always-on","poll_interval_s":60}`
+	if err := h.Write("report?id=aabbccddeeff", "p:1", []byte(`{"apps":{},"config":{},"health":{},"node_config":`+ao+`}`)); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = st.GetNode("aabbccddeeff")
+	if n.NodeConfig != ao {
+		t.Errorf("unnamed echo not stored: %q", n.NodeConfig)
+	}
+	if n.Name != "door" {
+		t.Errorf("unnamed echo clobbered mirrored name: %q", n.Name)
+	}
 }
 
 func TestAcceptWriteRejectsDataWithoutID(t *testing.T) {

@@ -324,7 +324,6 @@ func (s *Store) UpdateNodeConfig(id, configJSON, name string) error {
 	return err
 }
 
-
 func (s *Store) RegisterPayload(crc int64, name string, image []byte) error {
 	_, err := s.db.Exec(`INSERT OR REPLACE INTO payloads (crc, name, size, image) VALUES (?, ?, ?, ?)`,
 		crc, name, len(image), image)
