@@ -4,10 +4,14 @@ porta is the northbound controller and authority for a fleet of heterogeneous
 nodes: it owns the wire protocol, queues commands, delivers container images
 over TFTP, and ingests telemetry.
 
-Start with **`docs/ARCHITECTURE.md`** for the system picture, then `docs/specs/`
-for the approved designs and `docs/plans/` for the implementation plans.
+**New here?** Read **`docs/GETTING-STARTED.md`** to run a gateway and point a node
+at it, then **`docs/CLI.md`** for the command reference. For the system picture see
+**`docs/ARCHITECTURE.md`**, then `docs/specs/` (approved designs) and `docs/plans/`
+(implementation plans).
 
 - `cmd/porta/` + `internal/` — Go gateway (mainline), module `github.com/davidg238/porta`
+- `docs/GETTING-STARTED.md` — install, run the gateway, first steps
+- `docs/CLI.md` — the `porta` command-line reference
 - `docs/ARCHITECTURE.md` — the canonical system-architecture doc (the whole-system picture)
 - `docs/PROTOCOL.md` — the canonical wire protocol all node implementations conform to
 - `docs/DEVSDK.md` — the northbound dev-SDK contract for node-repo tooling
