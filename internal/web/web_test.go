@@ -150,7 +150,7 @@ func TestBannerGatewaySettingsToggle(t *testing.T) {
 	srv := serve(t, st)
 
 	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))
-	for _, want := range []string{`<details id="gw-settings"`, "/n/aabbccddeeff/max-offline", "/n/aabbccddeeff/rename"} {
+	for _, want := range []string{`<details id="gw-settings"`, "/n/aabbccddeeff/rename"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("banner gateway-settings missing %q: %s", want, body)
 		}

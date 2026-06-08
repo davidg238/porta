@@ -171,7 +171,7 @@ func TestPatchNodeSendsOnlyPresentFields(t *testing.T) {
 	c := New(srv.URL)
 
 	name := "rename"
-	nodeID, err := c.PatchNode("blinky", &name, nil)
+	nodeID, err := c.PatchNode("blinky", &name)
 	if err != nil {
 		t.Fatalf("PatchNode: %v", err)
 	}
@@ -187,28 +187,6 @@ func TestPatchNodeSendsOnlyPresentFields(t *testing.T) {
 	}
 	if body["name"] != "rename" {
 		t.Errorf("name not sent: %v", body)
-	}
-	if _, ok := body["max_offline_s"]; ok {
-		t.Errorf("max_offline_s must be omitted when nil: %v", body)
-	}
-}
-
-func TestPatchNodeMaxOffline(t *testing.T) {
-	var rec recordedReq
-	srv := stubServer(t, http.StatusOK,
-		`{"ok":true,"data":{"node_id":"x"},"error":""}`, &rec)
-	c := New(srv.URL)
-	secs := int64(600)
-	if _, err := c.PatchNode("n", nil, &secs); err != nil {
-		t.Fatal(err)
-	}
-	var body map[string]interface{}
-	json.Unmarshal([]byte(rec.body), &body)
-	if body["max_offline_s"].(float64) != 600 {
-		t.Errorf("max_offline_s=%v", body["max_offline_s"])
-	}
-	if _, ok := body["name"]; ok {
-		t.Errorf("name must be omitted when nil: %v", body)
 	}
 }
 

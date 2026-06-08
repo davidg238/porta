@@ -42,10 +42,10 @@ func (h *Handler) handleListNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 // nodePatch carries optional node-management settings; pointer fields let the
-// handler apply only what was sent.
+// handler apply only what was sent. (max_offline is retired — the offline window
+// is derived as 3×cadence from the node_config echo, not settable.)
 type nodePatch struct {
-	Name        *string `json:"name"`
-	MaxOfflineS *int64  `json:"max_offline_s"`
+	Name *string `json:"name"`
 }
 
 // nodeDetail is GET /api/nodes/{sel}: identity + observed apps + config
@@ -62,7 +62,8 @@ type nodeDetail struct {
 	Reset         string              `json:"reset"`
 	ResetCode     *int64              `json:"reset_code"`
 	PollIntervalS int64               `json:"poll_interval_s"`
-	MaxOfflineS   int64               `json:"max_offline_s"`
+	CadenceS      int64               `json:"cadence_s"`
+	OfflineS      int64               `json:"offline_s"`
 	LastSeen      int64               `json:"last_seen"`
 	LastReportAt  int64               `json:"last_report_at"`
 	Apps          []control.App       `json:"apps"`
@@ -119,7 +120,7 @@ func (h *Handler) handleNodeDetail(w http.ResponseWriter, r *http.Request) {
 		ID: n.ID, Name: n.Name, Kind: n.Kind, IP: n.SourceAddr,
 		Online: n.Online(h.now()), Chip: n.Chip, Sdk: n.Sdk,
 		Reset: n.LastReset, ResetCode: resetCode,
-		PollIntervalS: n.PollIntervalS, MaxOfflineS: n.MaxOfflineS,
+		PollIntervalS: n.PollIntervalS, CadenceS: n.EffectiveCadenceS(), OfflineS: n.OfflineThresholdS(),
 		LastSeen: n.LastSeen.Int64, LastReportAt: n.LastReportAt.Int64,
 		Apps: apps, ConfigApp: confApp, Config: cfg,
 		ObservedRaw: n.ObservedState, Undelivered: len(un),
@@ -139,8 +140,7 @@ func firstAppName(apps []control.App) string {
 	return first
 }
 
-// handlePatchNode applies rename / max-offline node settings (gateway-side,
-// not device commands).
+// handlePatchNode applies the gateway-side rename (not a device command).
 func (h *Handler) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 	id, ok := h.resolveSel(w, r.PathValue("sel"))
 	if !ok {
@@ -157,12 +157,6 @@ func (h *Handler) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.Name != nil {
 		if err := control.Rename(h.st, id, *p.Name); err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
-	if p.MaxOfflineS != nil {
-		if err := control.SetMaxOffline(h.st, id, *p.MaxOfflineS); err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}

@@ -139,13 +139,7 @@ func runInstall(out io.Writer, c *apiclient.Client, sel, name, path string, opts
 
 // runDeviceName renames a node (gateway-side). Silent on success (parity).
 func runDeviceName(c *apiclient.Client, sel, newName string) error {
-	_, err := c.PatchNode(sel, &newName, nil)
-	return err
-}
-
-// runSetMaxOffline sets the offline threshold (gateway-side). Silent on success.
-func runSetMaxOffline(c *apiclient.Client, sel string, secs int64) error {
-	_, err := c.PatchNode(sel, nil, &secs)
+	_, err := c.PatchNode(sel, &newName)
 	return err
 }
 
@@ -205,25 +199,6 @@ func newDeviceSetPollIntervalCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := apiclient.New(serverURL())
 			return runSetPollInterval(c, device, args[0])
-		},
-	}
-	deviceFlag(cmd, &device)
-	return cmd
-}
-
-func newDeviceSetMaxOfflineCmd() *cobra.Command {
-	var device string
-	cmd := &cobra.Command{
-		Use:   "set-max-offline <dur>",
-		Short: "Set the offline threshold (gateway-side only)",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			secs, err := command.ParseDurationSeconds(args[0])
-			if err != nil {
-				return err
-			}
-			c := apiclient.New(serverURL())
-			return runSetMaxOffline(c, device, secs)
 		},
 	}
 	deviceFlag(cmd, &device)

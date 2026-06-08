@@ -83,22 +83,17 @@ func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store
 			"no prints — forwarding may be off (set-forward --print on)", []string{"print"})
 	case "logs":
 		h.renderNodeLogs(w, n)
-	case "max-offline", "rename":
-		// The only surviving writes are the gateway-side node settings (friendly
-		// name, offline threshold). They mutate state, so they must never be
-		// reachable by a GET — r.FormValue also reads the query string, so a GET
-		// with ?name=… would otherwise apply. Node-command writes were removed:
-		// the web console is read-only; commands go through the CLI / nodus.
+	case "rename":
+		// The only surviving write is the gateway-side rename. It mutates state,
+		// so it must never be reachable by a GET — r.FormValue also reads the
+		// query string, so a GET with ?name=… would otherwise apply. Node-command
+		// writes were removed: the web console is read-only; commands go through
+		// the CLI / nodus.
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		switch sub {
-		case "max-offline":
-			h.postMaxOffline(w, r, n)
-		case "rename":
-			h.postRename(w, r, n)
-		}
+		h.postRename(w, r, n)
 	default:
 		http.NotFound(w, r)
 	}
@@ -117,7 +112,7 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 			ID:    c.ID,
 			Verb:  c.Verb,
 			Args:  c.Args,
-			State: string(control.LifecycleOf(c, obsConfig, n.MaxOfflineS, now)),
+			State: string(control.LifecycleOf(c, obsConfig, n.OfflineThresholdS(), now)),
 		})
 	}
 	apps, _ := control.AppsFromObserved(n.ObservedState)
@@ -141,7 +136,7 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 		Chip:      n.Chip,
 		Sdk:       n.Sdk,
 		LastReset: control.RenderReset(n.LastReset, resetCode),
-		Gauge:     Checkin(n.LastSeen.Valid, lastSeen, n.PollIntervalS, n.ReportIntervalS, n.MaxOfflineS, now),
+		Gauge:     Checkin(n.LastSeen.Valid, lastSeen, n.EffectiveCadenceS(), n.OfflineThresholdS(), now),
 		Config:    cfg,
 		ConfApp:   app,
 		Recent:    recent,

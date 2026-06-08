@@ -35,16 +35,6 @@ func parseResetHealth(health json.RawMessage) (string, *int64) {
 	return hb.Reset, hb.ResetCode
 }
 
-// parseReportInterval extracts the node's optional effective check-in cadence
-// (seconds) from a report's health blob. Absent/garbled → nil.
-func parseReportInterval(health json.RawMessage) *int64 {
-	var hb struct {
-		ReportInterval *int64 `json:"report_interval"`
-	}
-	_ = json.Unmarshal(health, &hb)
-	return hb.ReportInterval
-}
-
 // nodeConfigName extracts the node-owned name from a node_config echo block, or
 // "" if absent (an unnamed node omits the key) — the empty string is COALESCEd
 // in the store so it never clobbers porta's mirrored/auto-assigned name.
@@ -233,11 +223,6 @@ func (h *Handler) writeReport(id, peer string, data []byte) error {
 	}
 	if err := h.store.UpdateNodeReset(id, reset, resetCode); err != nil {
 		h.log("porta: reset update error for %s: %v", id, err)
-	}
-	// Effective check-in cadence: lets the gauge calibrate to the node's real
-	// report rate instead of guessing from poll-interval (absent → unchanged).
-	if err := h.store.UpdateNodeReportInterval(id, parseReportInterval(field("health"))); err != nil {
-		h.log("porta: report-interval update error for %s: %v", id, err)
 	}
 	// Effective-config echo: the node sends node_config only on cold boot + on
 	// change. Persist the block verbatim and mirror the node-owned name; absent

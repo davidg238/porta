@@ -34,40 +34,11 @@ func TestPatchNodeRename(t *testing.T) {
 	}
 }
 
-func TestPatchNodeMaxOffline(t *testing.T) {
-	h, st := newTestHandler(t)
-	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
-	rec := patchNode(t, h, "aabbccddeeff", `{"max_offline_s":600}`)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d", rec.Code)
-	}
-	n, _ := st.GetNode("aabbccddeeff")
-	if n.MaxOfflineS != 600 {
-		t.Errorf("max_offline_s=%d", n.MaxOfflineS)
-	}
-}
-
 func TestPatchNodeUnknownNode(t *testing.T) {
 	h, _ := newTestHandler(t)
 	rec := patchNode(t, h, "ghost", `{"name":"x"}`)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestPatchNodeBothFields(t *testing.T) {
-	h, st := newTestHandler(t)
-	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
-	rec := patchNode(t, h, "aabbccddeeff", `{"name":"both","max_offline_s":300}`)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	n, _ := st.GetNode("aabbccddeeff")
-	if n.Name != "both" {
-		t.Errorf("name=%q, want %q", n.Name, "both")
-	}
-	if n.MaxOfflineS != 300 {
-		t.Errorf("max_offline_s=%d, want 300", n.MaxOfflineS)
 	}
 }
 

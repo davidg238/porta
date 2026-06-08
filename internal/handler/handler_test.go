@@ -462,26 +462,6 @@ func TestWriteReportStoresNodeConfig(t *testing.T) {
 	}
 }
 
-func TestWriteReportStoresReportInterval(t *testing.T) {
-	h, st := newH(t)
-	body := []byte(`{"apps":{},"config":{},"health":{"uptime_us":1,"wakes":1,"report_interval":60}}`)
-	if err := h.Write("report?id=dev", "1.2.3.4:5", body); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
-	n, _ := st.GetNode("dev")
-	if n == nil || n.ReportIntervalS != 60 {
-		t.Fatalf("report_interval not stored: %+v", n)
-	}
-	// A report without report_interval must not clobber the stored cadence.
-	if err := h.Write("report?id=dev", "1.2.3.4:5", []byte(`{"apps":{},"config":{},"health":{}}`)); err != nil {
-		t.Fatal(err)
-	}
-	n, _ = st.GetNode("dev")
-	if n.ReportIntervalS != 60 {
-		t.Errorf("report_interval clobbered: %d", n.ReportIntervalS)
-	}
-}
-
 func TestAcceptWriteRejectsDataWithoutID(t *testing.T) {
 	h, _ := newH(t)
 	if err := h.AcceptWrite("data", "p:1"); err == nil {

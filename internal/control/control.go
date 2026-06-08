@@ -67,9 +67,6 @@ func SetPollInterval(st *store.Store, id string, secs int64, issuedBy string, no
 	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
 }
 
-// SetMaxOffline sets the offline threshold (gateway-side only).
-func SetMaxOffline(st *store.Store, id string, secs int64) error { return st.SetMaxOffline(id, secs) }
-
 // Rename sets a node's friendly name.
 func Rename(st *store.Store, id, name string) error { return st.SetNodeName(id, name) }
 

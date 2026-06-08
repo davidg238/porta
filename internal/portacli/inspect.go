@@ -113,7 +113,6 @@ func newDeviceCmd() *cobra.Command {
 		newDeviceSetForwardCmd(),
 		newDeviceSetPowerModeCmd(),
 		newDeviceSetPollIntervalCmd(),
-		newDeviceSetMaxOfflineCmd(),
 		newDeviceRebootCmd(),
 		newDeviceNameCmd(),
 	)
@@ -142,8 +141,8 @@ func newDeviceShowCmd() *cobra.Command {
 				lastSeen = control.RelativeAge(n.LastSeen, now)
 			}
 			fmt.Fprintf(out, "last_seen:     %s\n", lastSeen)
-			fmt.Fprintf(out, "poll_interval: %ds\n", n.PollIntervalS)
-			fmt.Fprintf(out, "max_offline:   %ds\n", n.MaxOfflineS)
+			fmt.Fprintf(out, "cadence:       %ds\n", n.CadenceS)
+			fmt.Fprintf(out, "offline_after: %ds (derived 3×cadence)\n", n.OfflineS)
 			fmt.Fprintf(out, "last_reset:    %s\n", control.RenderReset(n.Reset, n.ResetCode))
 			fmt.Fprintf(out, "observed:      %s\n", n.ObservedRaw)
 			fmt.Fprintf(out, "undelivered:   %d command(s)\n", n.Undelivered)

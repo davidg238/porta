@@ -14,7 +14,10 @@ import (
 
 const (
 	DefaultPollIntervalS = 30
-	DefaultMaxOfflineS   = 300
+	// OfflineMultiplier is porta's liveness policy constant k: a node is offline
+	// once silent for k × its check-in cadence. k=3 tolerates 2 consecutive
+	// missed check-ins (flaky TFTP / WiFi re-assoc) before flapping offline.
+	OfflineMultiplier = 3
 )
 
 const schema = `
@@ -26,14 +29,12 @@ CREATE TABLE IF NOT EXISTS nodes (
   first_seen INTEGER,
   last_seen INTEGER,
   poll_interval_s INTEGER DEFAULT 30,
-  max_offline_s INTEGER DEFAULT 300,
   last_report_at INTEGER,
   observed_state TEXT,
   chip TEXT,
   sdk TEXT,
   last_reset TEXT,
   last_reset_code INTEGER,
-  report_interval_s INTEGER,
   node_config TEXT
 );
 CREATE TABLE IF NOT EXISTS payloads (
@@ -87,17 +88,12 @@ type Node struct {
 	FirstSeen     sql.NullInt64
 	LastSeen      sql.NullInt64
 	PollIntervalS int64
-	MaxOfflineS   int64
 	LastReportAt  sql.NullInt64
 	ObservedState string
 	Chip          string
 	Sdk           string
 	LastReset     string
 	LastResetCode sql.NullInt64
-	// ReportIntervalS is the node's self-reported effective check-in cadence in
-	// seconds (REPORT-INTERVAL-S for always-on, poll-interval for deep-sleep).
-	// 0 means the node has not reported it → callers fall back to poll_interval_s.
-	ReportIntervalS int64
 	// NodeConfig is the node's last echoed effective-config block (the raw
 	// node_config JSON), persisted on cold boot + on-change only. "" until the
 	// node first echoes it. The node owns its config; porta caches + derives.
@@ -129,9 +125,31 @@ func (n *Node) CadenceS() int64 {
 	return 0
 }
 
-// Online reports whether the node has been seen within its max_offline window.
+// EffectiveCadenceS is the node's check-in cadence used for liveness: the
+// cadence echoed in node_config, else the stored poll_interval_s (a pre-echo
+// bootstrap fallback), else the default. Always > 0.
+func (n *Node) EffectiveCadenceS() int64 {
+	c := n.CadenceS()
+	if c <= 0 {
+		c = n.PollIntervalS
+	}
+	if c <= 0 {
+		c = DefaultPollIntervalS
+	}
+	return c
+}
+
+// OfflineThresholdS is the silence (seconds) after which the node reads offline:
+// OfflineMultiplier × its effective cadence. Derived — porta stores no settable
+// max_offline.
+func (n *Node) OfflineThresholdS() int64 {
+	return OfflineMultiplier * n.EffectiveCadenceS()
+}
+
+// Online reports whether the node has been seen within its derived offline
+// window (OfflineMultiplier × cadence).
 func (n *Node) Online(now int64) bool {
-	return n.LastSeen.Valid && (now-n.LastSeen.Int64) <= n.MaxOfflineS
+	return n.LastSeen.Valid && (now-n.LastSeen.Int64) <= n.OfflineThresholdS()
 }
 
 // Command is a row from the command_queue table.
@@ -180,13 +198,12 @@ func nullInt(v *int64) interface{} {
 // An empty source_addr is COALESCEd so it never clobbers a known address.
 func (s *Store) TouchNode(id, sourceAddr string, now int64) error {
 	_, err := s.db.Exec(`
-		INSERT INTO nodes (id, name, source_addr, first_seen, last_seen, poll_interval_s, max_offline_s)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO nodes (id, name, source_addr, first_seen, last_seen, poll_interval_s)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 		  last_seen = excluded.last_seen,
 		  source_addr = COALESCE(excluded.source_addr, nodes.source_addr)`,
-		id, NodeNameFor(id), nullStr(sourceAddr), now, now,
-		DefaultPollIntervalS, DefaultMaxOfflineS)
+		id, NodeNameFor(id), nullStr(sourceAddr), now, now, DefaultPollIntervalS)
 	return err
 }
 
@@ -194,24 +211,23 @@ func (s *Store) TouchNode(id, sourceAddr string, now int64) error {
 // Used to address a node by MAC before its first poll.
 func (s *Store) EnsureNode(id string, now int64) error {
 	_, err := s.db.Exec(`
-		INSERT INTO nodes (id, name, first_seen, poll_interval_s, max_offline_s)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO nodes (id, name, first_seen, poll_interval_s)
+		VALUES (?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`,
-		id, NodeNameFor(id), now, DefaultPollIntervalS, DefaultMaxOfflineS)
+		id, NodeNameFor(id), now, DefaultPollIntervalS)
 	return err
 }
 
 const nodeCols = `id, COALESCE(name,''), COALESCE(source_addr,''), kind, first_seen, last_seen,
-	COALESCE(poll_interval_s,30), COALESCE(max_offline_s,300), last_report_at,
+	COALESCE(poll_interval_s,30), last_report_at,
 	COALESCE(observed_state,''), COALESCE(chip,''), COALESCE(sdk,''),
-	COALESCE(last_reset,''), last_reset_code, COALESCE(report_interval_s,0),
-	COALESCE(node_config,'')`
+	COALESCE(last_reset,''), last_reset_code, COALESCE(node_config,'')`
 
 func scanNode(row interface{ Scan(...interface{}) error }) (*Node, error) {
 	var n Node
 	err := row.Scan(&n.ID, &n.Name, &n.SourceAddr, &n.Kind, &n.FirstSeen,
-		&n.LastSeen, &n.PollIntervalS, &n.MaxOfflineS, &n.LastReportAt, &n.ObservedState,
-		&n.Chip, &n.Sdk, &n.LastReset, &n.LastResetCode, &n.ReportIntervalS, &n.NodeConfig)
+		&n.LastSeen, &n.PollIntervalS, &n.LastReportAt, &n.ObservedState,
+		&n.Chip, &n.Sdk, &n.LastReset, &n.LastResetCode, &n.NodeConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -280,16 +296,6 @@ func (s *Store) UpdateNodeReset(id, reset string, code *int64) error {
 	return err
 }
 
-// UpdateNodeReportInterval records the node's self-reported effective check-in
-// cadence (seconds). A nil value (absent in the report) is COALESCEd so it never
-// clobbers a previously-known cadence — same self-healing pattern as chip/sdk.
-func (s *Store) UpdateNodeReportInterval(id string, secs *int64) error {
-	_, err := s.db.Exec(
-		`UPDATE nodes SET report_interval_s = COALESCE(?, report_interval_s) WHERE id = ?`,
-		nullInt(secs), id)
-	return err
-}
-
 // UpdateNodeConfig caches the node's echoed effective-config block and mirrors
 // the node-owned name for display. An empty configJSON / name is COALESCEd so a
 // steady-state report (no echo) never clobbers the cache, and an unnamed echo
@@ -300,11 +306,6 @@ func (s *Store) UpdateNodeConfig(id, configJSON, name string) error {
 		`UPDATE nodes SET node_config = COALESCE(?, node_config),
 		 name = COALESCE(?, name) WHERE id = ?`,
 		nullStr(configJSON), nullStr(name), id)
-	return err
-}
-
-func (s *Store) SetMaxOffline(id string, secs int64) error {
-	_, err := s.db.Exec(`UPDATE nodes SET max_offline_s = ? WHERE id = ?`, secs, id)
 	return err
 }
 

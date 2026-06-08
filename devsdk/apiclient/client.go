@@ -176,15 +176,12 @@ type patchResp struct {
 }
 
 // PatchNode PATCHes only the present (non-nil) fields to /api/nodes/{sel} and
-// returns the server-resolved node id. Used for rename and max-offline, which
-// are gateway-side settings (not device commands).
-func (c *Client) PatchNode(sel string, name *string, maxOfflineS *int64) (string, error) {
+// returns the server-resolved node id. Used for the gateway-side rename (not a
+// device command).
+func (c *Client) PatchNode(sel string, name *string) (string, error) {
 	body := map[string]any{}
 	if name != nil {
 		body["name"] = *name
-	}
-	if maxOfflineS != nil {
-		body["max_offline_s"] = *maxOfflineS
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -385,7 +382,8 @@ type NodeDetailResp struct {
 	Reset         string    `json:"reset"`
 	ResetCode     *int64    `json:"reset_code"`
 	PollIntervalS int64     `json:"poll_interval_s"`
-	MaxOfflineS   int64     `json:"max_offline_s"`
+	CadenceS      int64     `json:"cadence_s"`
+	OfflineS      int64     `json:"offline_s"`
 	LastSeen      int64     `json:"last_seen"`
 	LastReportAt  int64     `json:"last_report_at"`
 	Apps          []NodeApp `json:"apps"`

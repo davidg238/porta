@@ -212,15 +212,3 @@ func TestRunDeviceName(t *testing.T) {
 		t.Errorf("name=%q", n.Name)
 	}
 }
-
-func TestRunSetMaxOffline(t *testing.T) {
-	c, st := newClientServer(t)
-	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
-	if err := runSetMaxOffline(c, "aabbccddeeff", 600); err != nil {
-		t.Fatal(err)
-	}
-	n, _ := st.GetNode("aabbccddeeff")
-	if n.MaxOfflineS != 600 {
-		t.Errorf("max_offline_s=%d", n.MaxOfflineS)
-	}
-}

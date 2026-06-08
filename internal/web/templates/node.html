@@ -32,9 +32,6 @@
 
 {{define "node-gwsettings"}}<details id="gw-settings">
   <summary>edit gateway settings</summary>
-  <form class="action" hx-post="/n/{{.ID}}/max-offline" hx-target="#hdr" hx-swap="outerHTML">
-    <b>max-offline</b> <input name="dur" placeholder="5m" required> <button>set</button>
-  </form>
   <form class="action" hx-post="/n/{{.ID}}/rename" hx-target="#hdr" hx-swap="outerHTML">
     <b>rename</b> <input name="name" placeholder="new-name" required> <button>set</button>
   </form>

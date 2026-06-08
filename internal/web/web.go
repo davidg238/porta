@@ -71,7 +71,7 @@ func (h *Handler) nodeRows(now int64) ([]nodeRowVM, error) {
 		out = append(out, nodeRowVM{
 			ID: n.ID, Name: n.Name, Kind: n.Kind, IP: n.SourceAddr, SeenAgo: seen,
 			Summary: summarize(n.ObservedState),
-			Gauge:   Checkin(n.LastSeen.Valid, lastSeen, n.PollIntervalS, n.ReportIntervalS, n.MaxOfflineS, now),
+			Gauge:   Checkin(n.LastSeen.Valid, lastSeen, n.EffectiveCadenceS(), n.OfflineThresholdS(), now),
 		})
 	}
 	return out, nil
