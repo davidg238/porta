@@ -77,10 +77,10 @@ Verb constants (identical in `gateway/command.toit` and
 |-------------|----------|
 | `run` | `VERB-RUN` |
 | `stop` | `VERB-STOP` |
-| `set-poll-interval` | `VERB-SET-POLL-INTERVAL` |
+| `set-mode` | `VERB-SET-MODE` |
+| `set-name` | `VERB-SET-NAME` |
 | `set-forward` | `VERB-SET-FORWARD` |
 | `set` | `VERB-SET` |
-| `set-power-mode` | `VERB-SET-POWER-MODE` |
 | `reboot` | `VERB-REBOOT` |
 
 ### 2.1 `run` — install/run an app
@@ -133,18 +133,35 @@ are required.)
 
 The node removes `name` from its goal; reconcile then uninstalls the image.
 
-### 2.3 `set-poll-interval` — wake/poll cadence
+### 2.3 `set-mode` — power mode (atomic)
+
+A node's power mode is **one declaration**, so it is **one atomic command** — the
+node accepts the whole command or rejects it whole (it never half-applies the most
+safety-critical operation). It replaces the retired `set-power-mode` +
+`set-poll-interval` pair.
 
 | Key | Type | Required | Meaning |
 |-----|------|----------|---------|
-| `verb` | string | yes | `"set-poll-interval"` |
-| `interval` | int | yes | Seconds between wakes/polls. |
+| `verb` | string | yes | `"set-mode"` |
+| `mode` | string | yes | `"deep-sleep"` or `"always-on"`. |
+| `max_awake_s` | int | deep-sleep only | Awake-window ceiling (run-once payload-wait cap), seconds; must be > 0. |
+| `max_asleep_s` | int | deep-sleep only | Sleep cap = the node's deep-sleep cadence, seconds; must be > 0. |
+| `min_awake_s` | int | optional (deep-sleep) | Awake-window floor (no-payload settle window), seconds; `0 < min_awake_s ≤ max_awake_s`. |
 
 ```json
-{"verb": "set-poll-interval", "interval": 300}
+{"verb": "set-mode", "mode": "deep-sleep", "min_awake_s": 5, "max_awake_s": 20, "max_asleep_s": 300}
+{"verb": "set-mode", "mode": "always-on"}
 ```
 
-The node persists this and uses it as its deep-sleep / re-poll cadence.
+- `always-on` takes **no** cadence knob in v1 (the report cadence is fixed-but-reported).
+- The mode chooses the supervisor loop: `deep-sleep` polls then deep-sleeps for
+  `max_asleep_s` (waking via full reboot); `always-on` never sleeps, keeping `run-loop`
+  daemons (§2.7) alive between reports. A `run-loop` app on a `deep-sleep` node is killed
+  by each sleep, so `always-on` is required for a long-lived daemon.
+- The node validates atomically (reject partial/invalid), persists the resulting NVS
+  config, and **echoes** the effective config back in the report's `node_config` block
+  (§3.2). The echo doubles as the convergence ack — a config change is confirmed by
+  the gateway's persisted echo reflecting the new mode, not by any separate ACK.
 
 ### 2.4 `set-forward` — per-stream forwarding policy
 
@@ -161,7 +178,7 @@ resolves to its default (off) on the node — the command is the whole policy, n
 
 - `level` (log only) ∈ `trace|debug|info|warn|error|fatal`. Absent ⇒ node keeps `warn`.
 - `every_s` (optional, all streams): the always-on per-stream forward interval.
-  Ignored by deep-sleep nodes (cadence there is `set-poll-interval`). Absent ⇒ node
+  Ignored by deep-sleep nodes (cadence there is `set-mode`'s `max_asleep_s`). Absent ⇒ node
   coalesces with its report window. (Reserved; porta carries it but exposes no CLI flag yet.)
 
 ```json
@@ -192,23 +209,22 @@ back in the report's `config` field (§3), enabling desired-vs-observed
 reconciliation. The runtime type of `value` is significant and is preserved
 end to end. `set` for the same `(app, key)` is last-write-wins.
 
-### 2.6 `set-power-mode` — supervisor power mode
+### 2.6 `set-name` — node name
+
+Node naming is **node-owned** (stored in NVS, echoed in `node_config`). The gateway
+**mirrors** the echoed name for display; it does not originate it.
 
 | Key | Type | Required | Meaning |
 |-----|------|----------|---------|
-| `verb` | string | yes | `"set-power-mode"` |
-| `mode` | string | yes | `"deep-sleep"` or `"always-on"`. |
+| `verb` | string | yes | `"set-name"` |
+| `name` | string | yes | The node's new name. |
 
 ```json
-{"verb": "set-power-mode", "mode": "always-on"}
+{"verb": "set-name", "name": "lab-door"}
 ```
 
-The node persists `mode` (defaults to `"deep-sleep"` if absent at read time) and
-chooses its supervisor loop accordingly: `deep-sleep` polls then deep-sleeps for
-the poll interval (waking via full reboot); `always-on` never sleeps, keeping
-`run-loop` daemons (§2.7) alive between reports. A `run-loop` app on a
-`deep-sleep` node is killed by each sleep, so always-on is required for a
-long-lived daemon.
+The node persists `name` and includes it in its next `node_config` echo (§3.2); the
+gateway folds that into the node's display name.
 
 ### 2.7 `lifecycle` semantics
 
@@ -281,13 +297,22 @@ Each wake, after reconciling, the node PUTs (WRQ) one JSON object to
     "uptime_us": 1234567,
     "wakes": 42,
     "reset": "watchdog",
-    "reset_code": 6,
-    "report_interval": 60
+    "reset_code": 6
+  },
+  "node_config": {
+    "mode": "deep-sleep",
+    "min_awake_s": 5,
+    "max_awake_s": 20,
+    "max_asleep_s": 300,
+    "name": "lab-door"
   },
   "chip": "esp32",
   "sdk": "v2.0.0-alpha.192"
 }
 ```
+
+`node_config` is the **effective-config echo** (§3.2) — present **only** on cold boot
+and after a config change; steady-state reports omit it.
 
 Fields:
 
@@ -303,7 +328,7 @@ Fields:
 | `health.wakes` | int | Cumulative wake count. |
 | `health.reset` | string (optional) | Neutral reset category — the node maps its platform reset code onto the vocabulary below. Absent on firmware predating reset reporting. |
 | `health.reset_code` | int (optional) | Raw platform reset code, for diagnostics only. The gateway never interprets it. |
-| `health.report_interval` | int (optional) | Effective check-in cadence in **seconds** — how often the node actually reports. An always-on node sets this to its report loop period; a deep-sleep node sets it to its poll-interval. The gateway uses it to calibrate the next-check-in gauge (else it falls back to the configured poll-interval). Absent on firmware predating cadence reporting. |
+| `node_config` | object (optional) | The node's **effective-config echo** (§3.2): mode + its knobs + name. Present **only** on cold boot and after a config change. Absent on steady-state reports. |
 | `chip` | string (optional) | Node chip model, e.g. `"esp32"`, `"esp32c6"`, `"esp32s3"`. Used by a node-repo dev tool (e.g. `nodus run`) to pick the flash envelope. Absent on firmware predating identity reporting. |
 | `sdk` | string (optional) | Toit SDK version the node firmware was built with, e.g. `"v2.0.0-alpha.192"`. A node-repo dev tool (e.g. `nodus run`) refuses to deploy an image built with a different SDK (overridable with `--force`); absent → it blocks until the node reports it. |
 
@@ -319,11 +344,10 @@ Gateway ingest (`ReportWriter_` in `gateway/handler.toit`):
   on the node row (an absent/empty value never clobbers the last known one — like
   `chip`/`sdk`), surfaces it on node detail, and emits a `data_log` event (`kind:"reset"`)
   the first time a **fault** category appears (`watchdog`, `panic`, `brownout`).
-- `health.report_interval` is optional. The gateway records the latest on the node
-  row (an absent value never clobbers the last known one — like `chip`/`sdk`) and
-  uses it to calibrate the next-check-in gauge so an always-on node reporting on
-  its own clock is not mis-flagged "overdue". Absent → the gauge falls back to the
-  configured poll-interval.
+- `node_config` is optional (§3.2). When present, the gateway persists the block as
+  the node's cached effective config and mirrors the echoed `name` for display; an
+  absent block (steady-state report) never clobbers the cache. From the cached cadence
+  the gateway **derives** the node's offline window — it stores no settable `max_offline`.
 - After committing the report, the gateway runs config **self-heal**: it diffs
   the desired config (projected from delivered `set` commands) against the
   reported `config` and re-enqueues any delivered-but-divergent `set` (tagged
@@ -356,6 +380,57 @@ The optional `health.reset_code` carries the raw platform code alongside the
 category, for diagnostics only — the gateway records and displays it but never
 interprets it. `watchdog`, `panic`, and `brownout` are the **fault** categories the
 gateway treats as noteworthy (a `data_log` event on first appearance).
+
+### 3.2 Effective-config echo (`node_config`)
+
+The node **owns** its configuration and declares it back as a top-level `node_config`
+block so the gateway can display it (read-only) and derive liveness. To stay frugal on
+the wire (ESP-NOW / Thread MTUs), config does **not** travel every report:
+
+- Echoed **only** on (a) cold boot and (b) any config change. Steady-state reports omit it.
+- The on-change echo **is** the convergence ack for `set-mode`/`set-name` (§2.3).
+- The boot echo **heals drift** in the gateway's cache after a reflash/reset.
+
+Each node declares only the fields native to its mode (`build-node-config` in
+`nodus/src/node_config.toit`):
+
+**deep-sleep:**
+```json
+{"mode": "deep-sleep", "min_awake_s": 5, "max_awake_s": 20, "max_asleep_s": 300, "name": "lab-door"}
+```
+
+**always-on:**
+```json
+{"mode": "always-on", "poll_interval_s": 60, "name": "vin"}
+```
+
+| Field | deep-sleep | always-on | Meaning |
+|-------|:---------:|:---------:|---------|
+| `mode` | ✅ | ✅ | `"deep-sleep"` / `"always-on"`. |
+| `min_awake_s` | ✅ | — | Awake-window floor (settle window), seconds. |
+| `max_awake_s` | ✅ | — | Awake-window ceiling (payload-wait cap), seconds. |
+| `max_asleep_s` | ✅ | — | Sleep cap = the node's cadence, seconds. |
+| `poll_interval_s` | — | ✅ | Control-plane check-in cadence, seconds. |
+| `name` | optional | optional | Node-owned name; **omitted** when the node is unnamed. |
+| `max_offline` | **never** | **never** | Gateway-derived, never on the wire (see below). |
+
+No redundant fields: a deep-sleep node's cadence *is* `max_asleep_s`, so it does not also
+send `poll_interval_s`; an always-on node never sleeps, so it sends `poll_interval_s`
+instead. `poll_interval_s` is the **control-plane** heartbeat (the `report?id=` PUT +
+`commands?id=` fetch round-trip), **not** a telemetry cadence — liveness must key off the
+control-plane heartbeat, since a healthy ultra-low-power node may be silent on telemetry
+for hours while still checking in.
+
+**Liveness derivation (gateway-side).** The gateway computes, from the echoed cadence:
+
+```
+offline = k × cadence            k = 3 (gateway policy constant)
+cadence = (mode == "deep-sleep") ? max_asleep_s : poll_interval_s
+```
+
+`k = 3` tolerates two consecutive missed check-ins (flaky TFTP under load, WiFi re-assoc)
+before flapping a node offline. `max_offline` is **retired, not moved** — it is derived
+from fields the gateway already receives, with no extra every-report wire field.
 
 ---
 
@@ -470,17 +545,19 @@ A conforming node MUST:
 - Identify itself with `?id=<12-hex-mac>` on every TFTP request.
 - Drain `commands?id=` by repeated RRQ until a zero-byte body, treating commands
   as absolute/idempotent (last write wins per target).
-- Honour the seven verbs (`run`, `stop`, `set-poll-interval`, `set-forward`,
-  `set`, `set-power-mode`, `reboot`) with the arg schemas and defaults in §2,
-  including the `lifecycle` declaration (default `run-once`) and `runlevel`
-  (default `3`). `reboot` is applied at the end of the poll and SHOULD report
-  `health.reset: "software"` on the next check-in.
+- Honour the seven verbs (`run`, `stop`, `set-mode`, `set-name`, `set-forward`,
+  `set`, `reboot`) with the arg schemas and defaults in §2, including the
+  `lifecycle` declaration (default `run-once`) and `runlevel` (default `3`).
+  `set-mode` MUST apply atomically (accept whole or reject whole). `reboot` is
+  applied at the end of the poll and SHOULD report `health.reset: "software"` on
+  the next check-in.
 - Download images via `payload?id=&name=&crc=` as **raw bytes** and verify
   length against the command's `size` and CRC32-IEEE (§5 parameters) against the
   command's `crc` before committing.
 - Report observed state to `report?id=` with the `apps` / `config` / `health`
   shape in §3, echoing per-app `crc`/`runlevel`/`lifecycle`/`triggers` and the
-  applied `config` blob.
+  applied `config` blob, plus the `node_config` effective-config echo (§3.2) on
+  cold boot and after any config change (omitted on steady-state reports).
 - (If it forwards telemetry) ship JSONL to `data?id=` per §6.
 - (If it forwards telemetry) forward print/log/telemetry per the resolved `set-forward` policy, tagging log entries with `level`, and deliver FATAL logs + `kind:"panic"` entries even when the relevant gate is off.
 - (If it forwards telemetry) report uncaught payload exceptions as `kind:"panic"`

@@ -144,10 +144,10 @@ node can join the same fleet on the same terms.
 
 ## 5. Node power modes and container lifecycle
 
-A node has **two independent dimensions**, both gateway-declared and node-honoured,
-both echoed back in the report (`PROTOCOL.md §2.6, §2.7, §3`):
+A node has **two independent dimensions**, both node-owned and echoed back in the
+report's `node_config` block (`PROTOCOL.md §2.3, §2.7, §3.2`):
 
-**Power mode** (`set-power-mode`, per node):
+**Power mode** (`set-mode`, atomic, per node):
 
 - **`deep-sleep`** (default): the node wakes, polls the gateway (drains commands,
   reconciles, reports, ships telemetry), then deep-sleeps for its poll interval,
@@ -179,9 +179,9 @@ Wake/run conditions are expressed as **triggers** (`boot`, `interval`,
 
 **Declarative and absolute.** Every command is a single JSON object with a `verb`
 and flattened args. Applying one is idempotent, and a later command for the same
-target wins — so redelivery is always safe. The six verbs (`run`, `stop`,
-`set-poll-interval`, `set-forward`, `set`, `set-power-mode`) and their schemas are
-in `PROTOCOL.md §2`.
+target wins — so redelivery is always safe. The verbs (`run`, `stop`, `set-mode`,
+`set-name`, `set-forward`, `set`, `reboot`) and their schemas are in `PROTOCOL.md §2`;
+`set-mode` is atomic (whole-or-reject).
 
 **The queue + delivery accounting.** Commands sit in `command_queue` per node. A
 node drains by repeated `commands?id=` RRQ until it gets a zero-byte body. A real

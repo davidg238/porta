@@ -15,11 +15,7 @@ porta device show     -d <node>               node details
 porta device get      -d <node> <app> [key]   desired vs observed config
 porta device set      -d <node> <app> <key> <value>
 porta device set-forward -d <node> --print … --log … --telemetry …
-porta device set-power-mode  -d <node> <deep-sleep|always-on>
-porta device set-poll-interval -d <node> <dur>
-porta device set-max-offline   -d <node> <dur>
 porta device reboot   -d <node>
-porta device name     -d <node> <new-name>
 porta container list      -d <node>
 porta container install   -d <node> <name> <file.bin> [--trigger … --interval … --lifecycle …]
 porta container uninstall -d <node> <name>
@@ -120,8 +116,9 @@ porta monitor -d vin --kind metric -f
 porta device show -d <node>
 ```
 
-Prints id, name, kind, source address, last-seen, poll interval, max-offline,
-last reset reason, the raw observed state, and the undelivered command count.
+Prints id, name, kind, source address, last-seen, the node's check-in cadence,
+the derived offline window (3×cadence), last reset reason, the raw observed
+state, and the undelivered command count.
 
 ## device get
 
@@ -174,29 +171,6 @@ porta device set-forward -d <node> --print on|off --log on|off --telemetry on|of
 porta device set-forward -d vin --print on --log on --telemetry on --log-level info
 ```
 
-## device set-power-mode
-
-```
-porta device set-power-mode -d <node> <deep-sleep|always-on>
-```
-
-`always-on` keeps run-loop (daemon) containers alive; `deep-sleep` duty-cycles
-the node. Validated server-side.
-
-## device set-poll-interval
-
-```
-porta device set-poll-interval -d <node> <dur>      # e.g. 30s
-```
-
-## device set-max-offline
-
-Gateway-side only — the threshold after which a node is shown offline.
-
-```
-porta device set-max-offline -d <node> <dur>        # e.g. 5m
-```
-
 ## device reboot
 
 Enqueue a reboot; applied at the end of the node's next poll. No convergence to
@@ -206,17 +180,16 @@ confirm.
 porta device reboot -d <node>
 ```
 
-## device name
+## Node configuration (mode, cadence, name) — not a porta command
 
-Override the auto-assigned friendly name.
-
-```
-porta device name -d <node> <new-name>
-```
-
-```bash
-porta device name -d 7c9ebdd8f58c vin
-```
+A node **owns** its configuration; porta originates none of it. Power mode
+(`set-mode`), check-in cadence, and the node name (`set-name`) are set from the
+**node's own dev CLI** (e.g. `nodus mode` / `nodus rename`), which enqueues the
+command through porta's queue and polls porta's persisted `node_config` echo to
+confirm convergence. porta **transports** these verbs and **displays** the
+node's effective config read-only (`porta device show`, the web node page); it
+exposes no command, flag, or form that originates a config change. The node's
+offline window is **derived** (`3 × cadence`), not a settable `max-offline`.
 
 ---
 
