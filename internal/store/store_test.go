@@ -256,6 +256,63 @@ func TestUpdateNodeReset(t *testing.T) {
 	}
 }
 
+func TestUpdateNodeConfig(t *testing.T) {
+	st := openTmp(t)
+	if err := st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000); err != nil {
+		t.Fatal(err)
+	}
+	// Fresh node carries no echoed config.
+	n, _ := st.GetNode("aabbccddeeff")
+	if n.NodeConfig != "" {
+		t.Errorf("fresh node_config = %q, want empty", n.NodeConfig)
+	}
+	// A deep-sleep echo with a name persists the blob and mirrors the name.
+	ds := `{"mode":"deep-sleep","min_awake_s":5,"max_awake_s":20,"max_asleep_s":300,"name":"door"}`
+	if err := st.UpdateNodeConfig("aabbccddeeff", ds, "door"); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = st.GetNode("aabbccddeeff")
+	if n.NodeConfig != ds {
+		t.Errorf("node_config = %q, want %q", n.NodeConfig, ds)
+	}
+	if n.Name != "door" {
+		t.Errorf("name = %q, want mirrored 'door'", n.Name)
+	}
+	// An always-on echo without a name updates the blob but must NOT clobber the
+	// mirrored name (unnamed echo → name key omitted → keep prior).
+	ao := `{"mode":"always-on","poll_interval_s":60}`
+	if err := st.UpdateNodeConfig("aabbccddeeff", ao, ""); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = st.GetNode("aabbccddeeff")
+	if n.NodeConfig != ao {
+		t.Errorf("node_config = %q, want %q", n.NodeConfig, ao)
+	}
+	if n.Name != "door" {
+		t.Errorf("empty name clobbered mirror: %q", n.Name)
+	}
+}
+
+func TestNodeCadenceS(t *testing.T) {
+	// deep-sleep node's cadence is its max_asleep_s.
+	ds := &Node{NodeConfig: `{"mode":"deep-sleep","max_awake_s":20,"max_asleep_s":900}`}
+	if got := ds.CadenceS(); got != 900 {
+		t.Errorf("deep-sleep CadenceS = %d, want 900", got)
+	}
+	// always-on node's cadence is its poll_interval_s.
+	ao := &Node{NodeConfig: `{"mode":"always-on","poll_interval_s":60}`}
+	if got := ao.CadenceS(); got != 60 {
+		t.Errorf("always-on CadenceS = %d, want 60", got)
+	}
+	// No echo / garbage → 0 (caller falls back).
+	if got := (&Node{}).CadenceS(); got != 0 {
+		t.Errorf("no-config CadenceS = %d, want 0", got)
+	}
+	if got := (&Node{NodeConfig: "not json"}).CadenceS(); got != 0 {
+		t.Errorf("garbage CadenceS = %d, want 0", got)
+	}
+}
+
 func TestRecentCommandsForDevice(t *testing.T) {
 	st := openTmp(t)
 	for i := 0; i < 3; i++ {

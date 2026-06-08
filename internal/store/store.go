@@ -6,6 +6,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -32,7 +33,8 @@ CREATE TABLE IF NOT EXISTS nodes (
   sdk TEXT,
   last_reset TEXT,
   last_reset_code INTEGER,
-  report_interval_s INTEGER
+  report_interval_s INTEGER,
+  node_config TEXT
 );
 CREATE TABLE IF NOT EXISTS payloads (
   crc INTEGER PRIMARY KEY,
@@ -96,6 +98,35 @@ type Node struct {
 	// seconds (REPORT-INTERVAL-S for always-on, poll-interval for deep-sleep).
 	// 0 means the node has not reported it → callers fall back to poll_interval_s.
 	ReportIntervalS int64
+	// NodeConfig is the node's last echoed effective-config block (the raw
+	// node_config JSON), persisted on cold boot + on-change only. "" until the
+	// node first echoes it. The node owns its config; porta caches + derives.
+	NodeConfig string
+}
+
+// CadenceS returns the node's control-plane check-in cadence in seconds, parsed
+// from its echoed node_config: a deep-sleep node's cadence is its max_asleep_s,
+// an always-on node's is its poll_interval_s. 0 when no (or unparseable) echo —
+// callers then fall back to the stored poll_interval_s default.
+func (n *Node) CadenceS() int64 {
+	if n.NodeConfig == "" {
+		return 0
+	}
+	var c struct {
+		Mode          string `json:"mode"`
+		MaxAsleepS    int64  `json:"max_asleep_s"`
+		PollIntervalS int64  `json:"poll_interval_s"`
+	}
+	if json.Unmarshal([]byte(n.NodeConfig), &c) != nil {
+		return 0
+	}
+	switch c.Mode {
+	case "deep-sleep":
+		return c.MaxAsleepS
+	case "always-on":
+		return c.PollIntervalS
+	}
+	return 0
 }
 
 // Online reports whether the node has been seen within its max_offline window.
@@ -173,13 +204,14 @@ func (s *Store) EnsureNode(id string, now int64) error {
 const nodeCols = `id, COALESCE(name,''), COALESCE(source_addr,''), kind, first_seen, last_seen,
 	COALESCE(poll_interval_s,30), COALESCE(max_offline_s,300), last_report_at,
 	COALESCE(observed_state,''), COALESCE(chip,''), COALESCE(sdk,''),
-	COALESCE(last_reset,''), last_reset_code, COALESCE(report_interval_s,0)`
+	COALESCE(last_reset,''), last_reset_code, COALESCE(report_interval_s,0),
+	COALESCE(node_config,'')`
 
 func scanNode(row interface{ Scan(...interface{}) error }) (*Node, error) {
 	var n Node
 	err := row.Scan(&n.ID, &n.Name, &n.SourceAddr, &n.Kind, &n.FirstSeen,
 		&n.LastSeen, &n.PollIntervalS, &n.MaxOfflineS, &n.LastReportAt, &n.ObservedState,
-		&n.Chip, &n.Sdk, &n.LastReset, &n.LastResetCode, &n.ReportIntervalS)
+		&n.Chip, &n.Sdk, &n.LastReset, &n.LastResetCode, &n.ReportIntervalS, &n.NodeConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -255,6 +287,19 @@ func (s *Store) UpdateNodeReportInterval(id string, secs *int64) error {
 	_, err := s.db.Exec(
 		`UPDATE nodes SET report_interval_s = COALESCE(?, report_interval_s) WHERE id = ?`,
 		nullInt(secs), id)
+	return err
+}
+
+// UpdateNodeConfig caches the node's echoed effective-config block and mirrors
+// the node-owned name for display. An empty configJSON / name is COALESCEd so a
+// steady-state report (no echo) never clobbers the cache, and an unnamed echo
+// (name key omitted) keeps porta's prior/auto-assigned name. The node owns its
+// config + name; porta only mirrors what it echoes.
+func (s *Store) UpdateNodeConfig(id, configJSON, name string) error {
+	_, err := s.db.Exec(
+		`UPDATE nodes SET node_config = COALESCE(?, node_config),
+		 name = COALESCE(?, name) WHERE id = ?`,
+		nullStr(configJSON), nullStr(name), id)
 	return err
 }
 

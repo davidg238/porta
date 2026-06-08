@@ -433,6 +433,35 @@ func TestWriteReportStoresIdentity(t *testing.T) {
 	}
 }
 
+func TestWriteReportStoresNodeConfig(t *testing.T) {
+	h, st := newH(t)
+	// A report carrying a node_config echo (cold boot / on-change) persists the
+	// block verbatim and mirrors the node-owned name.
+	cfg := `{"mode":"deep-sleep","min_awake_s":5,"max_awake_s":20,"max_asleep_s":300,"name":"door"}`
+	body := []byte(`{"apps":{},"config":{},"health":{},"node_config":` + cfg + `}`)
+	if err := h.Write("report?id=aabbccddeeff", "p:1", body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	n, _ := st.GetNode("aabbccddeeff")
+	if n == nil || n.NodeConfig != cfg {
+		t.Fatalf("node_config not stored: %+v", n)
+	}
+	if n.Name != "door" {
+		t.Errorf("name not mirrored: %q", n.Name)
+	}
+	// A steady-state report (no node_config) must not clobber the cached block.
+	if err := h.Write("report?id=aabbccddeeff", "p:1", []byte(`{"apps":{},"config":{},"health":{}}`)); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = st.GetNode("aabbccddeeff")
+	if n.NodeConfig != cfg {
+		t.Errorf("steady-state report clobbered node_config: %q", n.NodeConfig)
+	}
+	if n.Name != "door" {
+		t.Errorf("steady-state report clobbered name: %q", n.Name)
+	}
+}
+
 func TestWriteReportStoresReportInterval(t *testing.T) {
 	h, st := newH(t)
 	body := []byte(`{"apps":{},"config":{},"health":{"uptime_us":1,"wakes":1,"report_interval":60}}`)
