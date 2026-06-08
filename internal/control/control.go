@@ -42,9 +42,21 @@ func SetForward(st *store.Store, id string, p command.ForwardPolicy, issuedBy st
 	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
 }
 
-// SetPowerMode enqueues a set-power-mode command (deep-sleep or always-on).
-func SetPowerMode(st *store.Store, id, mode, issuedBy string, now int64) (int64, error) {
-	c, err := command.SetPowerMode(mode)
+// SetMode enqueues an atomic set-mode command. porta validates the args
+// (whole-or-reject) but does not originate them — nodus-cli does. The node
+// re-validates and echoes the resulting config back in node_config.
+func SetMode(st *store.Store, id string, args map[string]any, issuedBy string, now int64) (int64, error) {
+	c, err := command.SetMode(args)
+	if err != nil {
+		return 0, err
+	}
+	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
+}
+
+// SetName enqueues a set-name command. The name is node-owned; porta relays the
+// command and later mirrors the echoed name for display.
+func SetName(st *store.Store, id, name, issuedBy string, now int64) (int64, error) {
+	c, err := command.SetName(name)
 	if err != nil {
 		return 0, err
 	}
@@ -57,21 +69,6 @@ func Reboot(st *store.Store, id, issuedBy string, now int64) (int64, error) {
 	c := command.Reboot()
 	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
 }
-
-// SetPollInterval caches the poll interval and enqueues the command.
-func SetPollInterval(st *store.Store, id string, secs int64, issuedBy string, now int64) (int64, error) {
-	if err := st.SetPollInterval(id, secs); err != nil {
-		return 0, err
-	}
-	c := command.SetPollInterval(secs)
-	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
-}
-
-// SetMaxOffline sets the offline threshold (gateway-side only).
-func SetMaxOffline(st *store.Store, id string, secs int64) error { return st.SetMaxOffline(id, secs) }
-
-// Rename sets a node's friendly name.
-func Rename(st *store.Store, id, name string) error { return st.SetNodeName(id, name) }
 
 // Uninstall enqueues a stop command for the named container.
 func Uninstall(st *store.Store, id, name, issuedBy string, now int64) (int64, error) {

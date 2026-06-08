@@ -29,8 +29,9 @@ func TestPostCommandVerbs(t *testing.T) {
 	}{
 		{"set", `{"verb":"set","args":{"app":"sampler","key":"interval","value":30}}`, "set"},
 		{"forward", `{"verb":"set-forward","args":{"print":{"on":false},"log":{"on":true,"level":"warn"},"telemetry":{"on":true}}}`, "set-forward"},
-		{"poll", `{"verb":"set-poll-interval","args":{"interval":"30s"}}`, "set-poll-interval"},
-		{"power", `{"verb":"set-power-mode","args":{"mode":"always-on"}}`, "set-power-mode"},
+		{"mode-always-on", `{"verb":"set-mode","args":{"mode":"always-on"}}`, "set-mode"},
+		{"mode-deep-sleep", `{"verb":"set-mode","args":{"mode":"deep-sleep","max_awake_s":20,"max_asleep_s":300}}`, "set-mode"},
+		{"name", `{"verb":"set-name","args":{"name":"door"}}`, "set-name"},
 		{"stop", `{"verb":"stop","args":{"name":"blink"}}`, "stop"},
 		{"reboot", `{"verb":"reboot"}`, "reboot"},
 	}
@@ -147,15 +148,15 @@ func TestCoerceScalar(t *testing.T) {
 // TestPostCommandValidationError verifies that a control-layer validation
 // rejection surfaces as a 400 response with a non-empty error message.
 //
-// set-power-mode validates the mode value at enqueue time via command.SetPowerMode
-// (rejects anything other than "deep-sleep" or "always-on"), making it the ideal
-// probe. The other verbs — set, set-forward, set-poll-interval, stop — validate
-// their own structural args before reaching control but do not have a mode enum
-// that control rejects; their validation is inline in dispatch().
+// set-mode validates the mode value at enqueue time via command.SetMode
+// (rejects anything other than "deep-sleep" or "always-on", and partial
+// deep-sleep args), making it the ideal probe. The other verbs — set,
+// set-forward, set-name, stop — validate their own structural args before
+// reaching control; their validation is inline in dispatch().
 func TestPostCommandValidationError(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
-	rec := postCmd(t, h, "aabbccddeeff", `{"verb":"set-power-mode","args":{"mode":"turbo"}}`)
+	rec := postCmd(t, h, "aabbccddeeff", `{"verb":"set-mode","args":{"mode":"turbo"}}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
 	}

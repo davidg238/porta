@@ -4,8 +4,12 @@ package web
 
 import "testing"
 
+// Checkin keys off the node's derived cadence (from its node_config echo) and a
+// derived offline threshold (3×cadence). Green while within one cadence, amber
+// while overdue but inside the offline window, red past it.
+
 func TestCheckinFilling(t *testing.T) {
-	g := Checkin(true, 100, 30, 0, 300, 110) // 10s since seen, polls every 30s
+	g := Checkin(true, 100, 30, 90, 110) // 10s since seen, cadence 30s
 	if g.Color != "green" {
 		t.Errorf("color=%s", g.Color)
 	}
@@ -18,44 +22,39 @@ func TestCheckinFilling(t *testing.T) {
 }
 
 func TestCheckinOverdue(t *testing.T) {
-	g := Checkin(true, 100, 30, 0, 300, 140) // 40s since seen, expected 30s
+	g := Checkin(true, 100, 30, 90, 140) // 40s since seen, cadence 30s, offline 90s
 	if g.Color != "amber" || g.FillPct != 100 || g.Online != true {
 		t.Errorf("got %+v", g)
 	}
 }
 
 func TestCheckinOffline(t *testing.T) {
-	g := Checkin(true, 100, 30, 0, 300, 500) // 400s > max-offline 300
+	g := Checkin(true, 100, 30, 90, 200) // 100s > offline threshold 90s
 	if g.Color != "red" || g.Online != false {
 		t.Errorf("got %+v", g)
 	}
 }
 
 func TestCheckinNeverSeen(t *testing.T) {
-	g := Checkin(false, 0, 30, 0, 300, 500)
+	g := Checkin(false, 0, 30, 90, 500)
 	if g.Color != "red" || g.Online != false || g.FillPct != 0 {
 		t.Errorf("got %+v", g)
 	}
 }
 
-// An always-on node reports every 60s but its poll-interval is 30s. The gauge
-// must key off the reported cadence and stay green at 42s (issue #14), not flip
-// amber for the 30→60s half of every window.
-func TestCheckinReportedIntervalOverridesPoll(t *testing.T) {
-	g := Checkin(true, 100, 30, 60, 300, 142) // 42s since seen, reported every 60s
+// An always-on node with a 60s cadence stays green at 42s and only goes amber
+// past its cadence (keyed off the echoed cadence, not a poll-interval guess).
+func TestCheckinCadenceWindow(t *testing.T) {
+	g := Checkin(true, 100, 60, 180, 142) // 42s since seen, cadence 60s
 	if g.Color != "green" || g.Online != true {
 		t.Errorf("expected green, got %+v", g)
 	}
 	if g.FillPct < 65 || g.FillPct > 75 { // 42/60 = 70%
 		t.Errorf("fill=%d, want ~70", g.FillPct)
 	}
-}
-
-// Past the reported cadence it still goes amber (overdue keyed off 60s, not 30s).
-func TestCheckinReportedIntervalOverdue(t *testing.T) {
-	g := Checkin(true, 100, 30, 60, 300, 175) // 75s since seen, reported every 60s
-	if g.Color != "amber" || g.FillPct != 100 || g.Online != true {
-		t.Errorf("got %+v", g)
+	g2 := Checkin(true, 100, 60, 180, 175) // 75s since seen → overdue
+	if g2.Color != "amber" || g2.FillPct != 100 || g2.Online != true {
+		t.Errorf("got %+v", g2)
 	}
 }
 

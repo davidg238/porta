@@ -27,7 +27,8 @@ type detailVM struct {
 	Kind      string
 	IP        string
 	EUI       string
-	PollIntv  string
+	Mode      string
+	Cadence   string
 	Chip      string
 	Sdk       string
 	LastReset string
@@ -83,22 +84,6 @@ func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store
 			"no prints — forwarding may be off (set-forward --print on)", []string{"print"})
 	case "logs":
 		h.renderNodeLogs(w, n)
-	case "max-offline", "rename":
-		// The only surviving writes are the gateway-side node settings (friendly
-		// name, offline threshold). They mutate state, so they must never be
-		// reachable by a GET — r.FormValue also reads the query string, so a GET
-		// with ?name=… would otherwise apply. Node-command writes were removed:
-		// the web console is read-only; commands go through the CLI / nodus.
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		switch sub {
-		case "max-offline":
-			h.postMaxOffline(w, r, n)
-		case "rename":
-			h.postRename(w, r, n)
-		}
 	default:
 		http.NotFound(w, r)
 	}
@@ -117,7 +102,7 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 			ID:    c.ID,
 			Verb:  c.Verb,
 			Args:  c.Args,
-			State: string(control.LifecycleOf(c, obsConfig, n.MaxOfflineS, now)),
+			State: string(control.LifecycleOf(c, obsConfig, n.OfflineThresholdS(), now)),
 		})
 	}
 	apps, _ := control.AppsFromObserved(n.ObservedState)
@@ -137,11 +122,12 @@ func (h *Handler) detailVM(n *store.Node) detailVM {
 		Kind:      n.Kind,
 		IP:        n.SourceAddr,
 		EUI:       n.ID,
-		PollIntv:  humanizeDur(n.PollIntervalS),
+		Mode:      n.Mode(),
+		Cadence:   humanizeDur(n.EffectiveCadenceS()),
 		Chip:      n.Chip,
 		Sdk:       n.Sdk,
 		LastReset: control.RenderReset(n.LastReset, resetCode),
-		Gauge:     Checkin(n.LastSeen.Valid, lastSeen, n.PollIntervalS, n.ReportIntervalS, n.MaxOfflineS, now),
+		Gauge:     Checkin(n.LastSeen.Valid, lastSeen, n.EffectiveCadenceS(), n.OfflineThresholdS(), now),
 		Config:    cfg,
 		ConfApp:   app,
 		Recent:    recent,

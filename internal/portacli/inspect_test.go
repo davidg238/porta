@@ -157,8 +157,8 @@ func TestDeviceShowCmdOverAPI(t *testing.T) {
 		"id:            aabbccddeeff",
 		"name:          blinky",
 		"source_addr:   1.2.3.4:5",
-		"poll_interval: 30s",
-		"max_offline:   300s",
+		"cadence:       30s",
+		"offline_after: 90s (derived 3×cadence)",
 		`observed:      {"apps":{"blink":{"crc":7,"runlevel":3}},"config":{"sampler":{"interval":30}}}`,
 		"undelivered:   1 command(s)",
 	} {

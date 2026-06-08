@@ -77,26 +77,22 @@ func (h *Handler) dispatch(id string, req commandReq) (int64, error) {
 			return 0, err
 		}
 		return control.SetForward(h.st, id, p, "api", now)
-	case "set-poll-interval":
+	case "set-mode":
+		// Atomic power-mode declaration relayed for nodus-cli. UseNumber keeps the
+		// int knobs from becoming floats; command.SetMode validates whole-or-reject.
+		var a map[string]any
+		if err := decodeArgs(req.Args, &a); err != nil {
+			return 0, err
+		}
+		return control.SetMode(h.st, id, a, "api", now)
+	case "set-name":
 		var a struct {
-			Interval string `json:"interval"`
+			Name string `json:"name"`
 		}
 		if err := decodeArgs(req.Args, &a); err != nil {
 			return 0, err
 		}
-		secs, err := command.ParseDurationSeconds(a.Interval)
-		if err != nil {
-			return 0, err
-		}
-		return control.SetPollInterval(h.st, id, secs, "api", now)
-	case "set-power-mode":
-		var a struct {
-			Mode string `json:"mode"`
-		}
-		if err := decodeArgs(req.Args, &a); err != nil {
-			return 0, err
-		}
-		return control.SetPowerMode(h.st, id, a.Mode, "api", now)
+		return control.SetName(h.st, id, a.Name, "api", now)
 	case "stop":
 		var a struct {
 			Name string `json:"name"`

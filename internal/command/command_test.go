@@ -63,14 +63,7 @@ func TestEncodeWireScalarFidelity(t *testing.T) {
 	}
 }
 
-func TestSetPollIntervalAndStop(t *testing.T) {
-	c := SetPollInterval(45)
-	if c.Verb != "set-poll-interval" {
-		t.Fatalf("verb = %q", c.Verb)
-	}
-	if c.ArgsJSON != `{"interval":45}` {
-		t.Errorf("args = %q", c.ArgsJSON)
-	}
+func TestStop(t *testing.T) {
 	st := Stop("blink")
 	if st.Verb != "stop" || st.ArgsJSON != `{"name":"blink"}` {
 		t.Errorf("stop = %+v", st)
@@ -104,10 +97,10 @@ func contains(s, sub string) bool {
 
 func TestSet(t *testing.T) {
 	cases := []struct {
-		name      string
-		app, key  string
-		value     any
-		wantArgs  string
+		name     string
+		app, key string
+		value    any
+		wantArgs string
 	}{
 		{"int", "sampler", "interval", int64(30), `{"app":"sampler","key":"interval","value":30}`},
 		{"float", "thermostat", "setpoint", 21.5, `{"app":"thermostat","key":"setpoint","value":21.5}`},
@@ -136,36 +129,66 @@ func TestSetRejectsBadType(t *testing.T) {
 	}
 }
 
-func TestSetPowerMode(t *testing.T) {
-	for _, mode := range []string{"always-on", "deep-sleep"} {
-		c, err := SetPowerMode(mode)
-		if err != nil {
-			t.Fatalf("SetPowerMode(%q): %v", mode, err)
-		}
-		if c.Verb != "set-power-mode" {
-			t.Errorf("Verb=%q, want set-power-mode", c.Verb)
-		}
-		want := `{"mode":"` + mode + `"}`
-		if c.ArgsJSON != want {
-			t.Errorf("ArgsJSON=%s, want %s", c.ArgsJSON, want)
-		}
-		// Wire round-trip: node reads the mode from args["mode"].
-		verb, args, err := Decode(EncodeWire(c.Verb, c.ArgsJSON))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if verb != "set-power-mode" {
-			t.Errorf("decoded verb=%q, want set-power-mode", verb)
-		}
-		if v, ok := args["mode"].(string); !ok || v != mode {
-			t.Errorf("decoded mode=%v (%T), want %q", args["mode"], args["mode"], mode)
+func TestSetModeAlwaysOn(t *testing.T) {
+	c, err := SetMode(map[string]any{"mode": "always-on"})
+	if err != nil {
+		t.Fatalf("SetMode always-on: %v", err)
+	}
+	if c.Verb != "set-mode" || c.ArgsJSON != `{"mode":"always-on"}` {
+		t.Errorf("always-on = %+v", c)
+	}
+	// Wire round-trip: node reads the mode + knobs from the flattened args.
+	verb, args, err := Decode(EncodeWire(c.Verb, c.ArgsJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verb != "set-mode" || args["mode"] != "always-on" {
+		t.Errorf("decoded verb=%q mode=%v", verb, args["mode"])
+	}
+}
+
+func TestSetModeDeepSleep(t *testing.T) {
+	// Deep-sleep requires positive max_awake_s + max_asleep_s; min_awake_s optional.
+	c, err := SetMode(map[string]any{"mode": "deep-sleep", "min_awake_s": int64(5), "max_awake_s": int64(20), "max_asleep_s": int64(300)})
+	if err != nil {
+		t.Fatalf("SetMode deep-sleep: %v", err)
+	}
+	if c.Verb != "set-mode" {
+		t.Errorf("verb=%q", c.Verb)
+	}
+	verb, args, err := Decode(EncodeWire(c.Verb, c.ArgsJSON))
+	if err != nil || verb != "set-mode" {
+		t.Fatalf("decode: %v verb=%q", err, verb)
+	}
+	if args["max_asleep_s"].(json.Number).String() != "300" || args["max_awake_s"].(json.Number).String() != "20" {
+		t.Errorf("decoded knobs = %+v", args)
+	}
+}
+
+func TestSetModeRejectsInvalid(t *testing.T) {
+	cases := []map[string]any{
+		{"mode": "turbo"}, // unknown mode
+		{"mode": "deep-sleep", "max_awake_s": int64(20)},                                                       // missing max_asleep_s
+		{"mode": "deep-sleep", "max_awake_s": int64(0), "max_asleep_s": int64(300)},                            // non-positive cap
+		{"mode": "deep-sleep", "min_awake_s": int64(25), "max_awake_s": int64(20), "max_asleep_s": int64(300)}, // min > max
+	}
+	for _, args := range cases {
+		if _, err := SetMode(args); err == nil {
+			t.Errorf("SetMode(%v) should error", args)
 		}
 	}
 }
 
-func TestSetPowerModeRejectsBadMode(t *testing.T) {
-	if _, err := SetPowerMode("turbo"); err == nil {
-		t.Error("SetPowerMode with unknown mode should error")
+func TestSetName(t *testing.T) {
+	c, err := SetName("door")
+	if err != nil {
+		t.Fatalf("SetName: %v", err)
+	}
+	if c.Verb != "set-name" || c.ArgsJSON != `{"name":"door"}` {
+		t.Errorf("set-name = %+v", c)
+	}
+	if _, err := SetName(""); err == nil {
+		t.Error("SetName with empty name should error")
 	}
 }
 

@@ -3,6 +3,7 @@
 package store
 
 import (
+	"database/sql"
 	"testing"
 )
 
@@ -34,8 +35,8 @@ func TestTouchNodeCreatesThenUpdates(t *testing.T) {
 	if n.Kind != "toit" {
 		t.Errorf("kind = %q, want toit", n.Kind)
 	}
-	if n.PollIntervalS != 30 || n.MaxOfflineS != 300 {
-		t.Errorf("defaults wrong: poll=%d max=%d", n.PollIntervalS, n.MaxOfflineS)
+	if n.PollIntervalS != 30 {
+		t.Errorf("poll-interval default wrong: %d", n.PollIntervalS)
 	}
 	if err := st.TouchNode("aabbccddeeff", "", 2000); err != nil {
 		t.Fatal(err)
@@ -142,19 +143,51 @@ func TestInsertReportCachesObservedState(t *testing.T) {
 	}
 }
 
-func TestNodeOnline(t *testing.T) {
-	st := openTmp(t)
-	st.TouchNode("dev", "x", 1000)
-	n, _ := st.GetNode("dev")
-	if !n.Online(1000 + 299) {
-		t.Error("within max_offline should be online")
+func TestNodeOnlineDerivesFromCadence(t *testing.T) {
+	seen := sql.NullInt64{Int64: 1000, Valid: true}
+	// always-on: cadence 60 → offline threshold 3×60 = 180.
+	ao := &Node{LastSeen: seen, NodeConfig: `{"mode":"always-on","poll_interval_s":60}`}
+	if !ao.Online(1000 + 180) {
+		t.Error("always-on within 3×cadence should be online")
 	}
-	if n.Online(1000 + 301) {
-		t.Error("past max_offline should be offline")
+	if ao.Online(1000 + 181) {
+		t.Error("always-on past 3×cadence should be offline")
 	}
-	en := &Node{}
-	if en.Online(123456) {
+	// deep-sleep: cadence = max_asleep_s 900 → threshold 2700.
+	ds := &Node{LastSeen: seen, NodeConfig: `{"mode":"deep-sleep","max_asleep_s":900}`}
+	if !ds.Online(1000 + 2700) {
+		t.Error("deep-sleep within 3×cadence should be online")
+	}
+	if ds.Online(1000 + 2701) {
+		t.Error("deep-sleep past 3×cadence should be offline")
+	}
+	// No echo yet → fall back to the stored poll_interval_s (default 30) → 90.
+	fb := &Node{LastSeen: seen, PollIntervalS: 30}
+	if !fb.Online(1000 + 90) {
+		t.Error("pre-echo node should fall back to 3×poll_interval")
+	}
+	if fb.Online(1000 + 91) {
+		t.Error("pre-echo node past fallback threshold should be offline")
+	}
+	if (&Node{}).Online(123456) {
 		t.Error("never-seen must be offline")
+	}
+}
+
+func TestNodeOfflineThresholdAndCadence(t *testing.T) {
+	ao := &Node{NodeConfig: `{"mode":"always-on","poll_interval_s":60}`}
+	if c := ao.EffectiveCadenceS(); c != 60 {
+		t.Errorf("EffectiveCadenceS = %d, want 60", c)
+	}
+	if th := ao.OfflineThresholdS(); th != 180 {
+		t.Errorf("OfflineThresholdS = %d, want 180", th)
+	}
+	// Pre-echo fallback chain: poll_interval_s, then default.
+	if c := (&Node{PollIntervalS: 45}).EffectiveCadenceS(); c != 45 {
+		t.Errorf("fallback cadence = %d, want 45", c)
+	}
+	if c := (&Node{}).EffectiveCadenceS(); c != DefaultPollIntervalS {
+		t.Errorf("default cadence = %d, want %d", c, DefaultPollIntervalS)
 	}
 }
 
@@ -199,37 +232,6 @@ func TestUpdateNodeIdentity(t *testing.T) {
 	}
 }
 
-func TestUpdateNodeReportInterval(t *testing.T) {
-	st := openTmp(t)
-	if err := st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000); err != nil {
-		t.Fatal(err)
-	}
-	// Default (never reported) is 0 → callers fall back to poll-interval.
-	n, _ := st.GetNode("aabbccddeeff")
-	if n.ReportIntervalS != 0 {
-		t.Errorf("fresh node report_interval_s = %d, want 0", n.ReportIntervalS)
-	}
-	secs := int64(60)
-	if err := st.UpdateNodeReportInterval("aabbccddeeff", &secs); err != nil {
-		t.Fatal(err)
-	}
-	n, err := st.GetNode("aabbccddeeff")
-	if err != nil || n == nil {
-		t.Fatalf("GetNode: %v / %v", n, err)
-	}
-	if n.ReportIntervalS != 60 {
-		t.Errorf("got report_interval_s=%d, want 60", n.ReportIntervalS)
-	}
-	// A nil value (absent in report) must not clobber a known cadence.
-	if err := st.UpdateNodeReportInterval("aabbccddeeff", nil); err != nil {
-		t.Fatal(err)
-	}
-	n, _ = st.GetNode("aabbccddeeff")
-	if n.ReportIntervalS != 60 {
-		t.Errorf("nil update clobbered report_interval_s: %d", n.ReportIntervalS)
-	}
-}
-
 func TestUpdateNodeReset(t *testing.T) {
 	st := openTmp(t)
 	if err := st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000); err != nil {
@@ -253,6 +255,63 @@ func TestUpdateNodeReset(t *testing.T) {
 	n, _ = st.GetNode("aabbccddeeff")
 	if n.LastReset != "watchdog" || n.LastResetCode.Int64 != 6 {
 		t.Errorf("empty update clobbered reset: reset=%q code=%v", n.LastReset, n.LastResetCode)
+	}
+}
+
+func TestUpdateNodeConfig(t *testing.T) {
+	st := openTmp(t)
+	if err := st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000); err != nil {
+		t.Fatal(err)
+	}
+	// Fresh node carries no echoed config.
+	n, _ := st.GetNode("aabbccddeeff")
+	if n.NodeConfig != "" {
+		t.Errorf("fresh node_config = %q, want empty", n.NodeConfig)
+	}
+	// A deep-sleep echo with a name persists the blob and mirrors the name.
+	ds := `{"mode":"deep-sleep","min_awake_s":5,"max_awake_s":20,"max_asleep_s":300,"name":"door"}`
+	if err := st.UpdateNodeConfig("aabbccddeeff", ds, "door"); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = st.GetNode("aabbccddeeff")
+	if n.NodeConfig != ds {
+		t.Errorf("node_config = %q, want %q", n.NodeConfig, ds)
+	}
+	if n.Name != "door" {
+		t.Errorf("name = %q, want mirrored 'door'", n.Name)
+	}
+	// An always-on echo without a name updates the blob but must NOT clobber the
+	// mirrored name (unnamed echo → name key omitted → keep prior).
+	ao := `{"mode":"always-on","poll_interval_s":60}`
+	if err := st.UpdateNodeConfig("aabbccddeeff", ao, ""); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = st.GetNode("aabbccddeeff")
+	if n.NodeConfig != ao {
+		t.Errorf("node_config = %q, want %q", n.NodeConfig, ao)
+	}
+	if n.Name != "door" {
+		t.Errorf("empty name clobbered mirror: %q", n.Name)
+	}
+}
+
+func TestNodeCadenceS(t *testing.T) {
+	// deep-sleep node's cadence is its max_asleep_s.
+	ds := &Node{NodeConfig: `{"mode":"deep-sleep","max_awake_s":20,"max_asleep_s":900}`}
+	if got := ds.CadenceS(); got != 900 {
+		t.Errorf("deep-sleep CadenceS = %d, want 900", got)
+	}
+	// always-on node's cadence is its poll_interval_s.
+	ao := &Node{NodeConfig: `{"mode":"always-on","poll_interval_s":60}`}
+	if got := ao.CadenceS(); got != 60 {
+		t.Errorf("always-on CadenceS = %d, want 60", got)
+	}
+	// No echo / garbage → 0 (caller falls back).
+	if got := (&Node{}).CadenceS(); got != 0 {
+		t.Errorf("no-config CadenceS = %d, want 0", got)
+	}
+	if got := (&Node{NodeConfig: "not json"}).CadenceS(); got != 0 {
+		t.Errorf("garbage CadenceS = %d, want 0", got)
 	}
 }
 

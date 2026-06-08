@@ -13,45 +13,41 @@ type CheckinState struct {
 	Label   string
 }
 
-// Checkin derives the gauge from last-seen + check-in interval + max-offline.
+// Checkin derives the gauge from last-seen + the node's check-in cadence and the
+// derived offline threshold (OfflineMultiplier × cadence).
 //
-// The expected cadence is the node's self-reported reportIntervalS when present
-// (>0) — an always-on node reports on its own clock, not the poll-interval — and
-// falls back to pollIntervalS otherwise. Without this the gauge mis-flags
-// always-on nodes "overdue" for the half of every window past poll-interval
-// (issue #14).
-func Checkin(seenValid bool, lastSeen, pollIntervalS, reportIntervalS, maxOfflineS, now int64) CheckinState {
+// cadenceS comes from the node's node_config echo (an always-on node reports on
+// its own clock, a deep-sleep node on its sleep cap), falling back to the stored
+// poll-interval before the first echo. offlineS is 3×cadence. Both are computed
+// by the caller from store.Node (EffectiveCadenceS / OfflineThresholdS).
+func Checkin(seenValid bool, lastSeen, cadenceS, offlineS, now int64) CheckinState {
 	if !seenValid {
 		return CheckinState{Online: false, Color: "red", FillPct: 0, Label: "never seen"}
-	}
-	intervalS := pollIntervalS
-	if reportIntervalS > 0 {
-		intervalS = reportIntervalS
 	}
 	elapsed := now - lastSeen
 	if elapsed < 0 {
 		elapsed = 0
 	}
 	switch {
-	case elapsed <= intervalS:
+	case elapsed <= cadenceS:
 		pct := 0
-		if intervalS > 0 {
-			pct = int(elapsed * 100 / intervalS)
+		if cadenceS > 0 {
+			pct = int(elapsed * 100 / cadenceS)
 		}
-		remain := intervalS - elapsed
+		remain := cadenceS - elapsed
 		return CheckinState{
 			Online: true, Color: "green", FillPct: pct,
-			Label: fmt.Sprintf("every %s · next ~%s", humanizeDur(intervalS), humanizeDur(remain)),
+			Label: fmt.Sprintf("every %s · next ~%s", humanizeDur(cadenceS), humanizeDur(remain)),
 		}
-	case elapsed <= maxOfflineS:
+	case elapsed <= offlineS:
 		return CheckinState{
 			Online: true, Color: "amber", FillPct: 100,
-			Label: fmt.Sprintf("overdue %s", humanizeDur(elapsed-intervalS)),
+			Label: fmt.Sprintf("overdue %s", humanizeDur(elapsed-cadenceS)),
 		}
 	default:
 		return CheckinState{
 			Online: false, Color: "red", FillPct: 100,
-			Label: fmt.Sprintf("offline (>%s)", humanizeDur(maxOfflineS)),
+			Label: fmt.Sprintf("offline (>%s)", humanizeDur(offlineS)),
 		}
 	}
 }

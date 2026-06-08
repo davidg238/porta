@@ -69,9 +69,9 @@ func TestCommandPostsEnvelopeAndDecodes(t *testing.T) {
 func TestCommandServerErrorBecomesError(t *testing.T) {
 	var rec recordedReq
 	srv := stubServer(t, http.StatusBadRequest,
-		`{"ok":false,"data":null,"error":"set-power-mode: invalid mode"}`, &rec)
+		`{"ok":false,"data":null,"error":"set-mode: invalid mode"}`, &rec)
 	c := New(srv.URL)
-	_, _, err := c.Command("n", "set-power-mode", map[string]any{"mode": "turbo"})
+	_, _, err := c.Command("n", "set-mode", map[string]any{"mode": "turbo"})
 	if err == nil || !strings.Contains(err.Error(), "invalid mode") {
 		t.Fatalf("want server error string, got %v", err)
 	}
@@ -164,54 +164,6 @@ func TestInstallOmitsZeroInterval(t *testing.T) {
 	}
 }
 
-func TestPatchNodeSendsOnlyPresentFields(t *testing.T) {
-	var rec recordedReq
-	srv := stubServer(t, http.StatusOK,
-		`{"ok":true,"data":{"node_id":"aabbccddeeff"},"error":""}`, &rec)
-	c := New(srv.URL)
-
-	name := "rename"
-	nodeID, err := c.PatchNode("blinky", &name, nil)
-	if err != nil {
-		t.Fatalf("PatchNode: %v", err)
-	}
-	if nodeID != "aabbccddeeff" {
-		t.Fatalf("nodeID=%q", nodeID)
-	}
-	if rec.method != "PATCH" || rec.path != "/api/nodes/blinky" {
-		t.Fatalf("request = %s %s", rec.method, rec.path)
-	}
-	var body map[string]interface{}
-	if err := json.Unmarshal([]byte(rec.body), &body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if body["name"] != "rename" {
-		t.Errorf("name not sent: %v", body)
-	}
-	if _, ok := body["max_offline_s"]; ok {
-		t.Errorf("max_offline_s must be omitted when nil: %v", body)
-	}
-}
-
-func TestPatchNodeMaxOffline(t *testing.T) {
-	var rec recordedReq
-	srv := stubServer(t, http.StatusOK,
-		`{"ok":true,"data":{"node_id":"x"},"error":""}`, &rec)
-	c := New(srv.URL)
-	secs := int64(600)
-	if _, err := c.PatchNode("n", nil, &secs); err != nil {
-		t.Fatal(err)
-	}
-	var body map[string]interface{}
-	json.Unmarshal([]byte(rec.body), &body)
-	if body["max_offline_s"].(float64) != 600 {
-		t.Errorf("max_offline_s=%v", body["max_offline_s"])
-	}
-	if _, ok := body["name"]; ok {
-		t.Errorf("name must be omitted when nil: %v", body)
-	}
-}
-
 func TestNodeIdentity(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" || r.URL.Path != "/api/nodes/aabbccddeeff" {
@@ -228,6 +180,22 @@ func TestNodeIdentity(t *testing.T) {
 	}
 	if chip != "esp32" || sdk != "v2.0.0-alpha.192" {
 		t.Errorf("got chip=%q sdk=%q, want esp32 / v2.0.0-alpha.192", chip, sdk)
+	}
+}
+
+func TestNodeDetailDecodesNodeConfig(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true,"data":{"id":"aabbccddeeff","name":"door","node_config":{"mode":"deep-sleep","max_asleep_s":300,"name":"door"}}}`)
+	}))
+	defer srv.Close()
+
+	d, err := New(srv.URL).NodeDetail("aabbccddeeff")
+	if err != nil {
+		t.Fatalf("NodeDetail: %v", err)
+	}
+	if d.NodeConfig["mode"] != "deep-sleep" || d.NodeConfig["max_asleep_s"] != float64(300) {
+		t.Errorf("node_config=%+v", d.NodeConfig)
 	}
 }
 

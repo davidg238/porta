@@ -8,7 +8,6 @@
 <div class="node-cols">
   <div class="node-left">
     {{template "node-header" .}}
-    {{template "node-gwsettings" .}}
     {{template "node-config" .}}
     {{template "node-recent" .}}
     {{template "node-containers" .}}
@@ -26,19 +25,9 @@
 
 {{define "node-header"}}<div id="hdr" hx-get="/n/{{.ID}}/header" hx-trigger="every 2s" hx-swap="outerHTML">
   <h1>{{.Name}} <span class="dot-{{.Gauge.Color}}">{{if .Gauge.Online}}● online{{else}}○ offline{{end}}</span></h1>
-  <p class="subtitle">{{.Kind}} · {{.IP}} · eui {{.EUI}} · poll {{.PollIntv}} · {{if .Chip}}{{.Chip}}{{else}}chip ?{{end}} · sdk {{if .Sdk}}{{.Sdk}}{{else}}—{{end}} · reset {{.LastReset}} · <a href="/telemetry?node={{.ID}}">Telemetry →</a></p>
+  <p class="subtitle">{{.Kind}} · {{.IP}} · eui {{.EUI}} · {{if .Mode}}mode {{.Mode}} · cadence {{.Cadence}} · {{end}}{{if .Chip}}{{.Chip}}{{else}}chip ?{{end}} · sdk {{if .Sdk}}{{.Sdk}}{{else}}—{{end}} · reset {{.LastReset}} · <a href="/telemetry?node={{.ID}}">Telemetry →</a></p>
   <div class="gauge {{.Gauge.Color}}" style="width:280px;height:20px"><div class="fill" style="width:{{.Gauge.FillPct}}%"></div><span class="lbl">{{.Gauge.Label}}</span></div>
 </div>{{end}}
-
-{{define "node-gwsettings"}}<details id="gw-settings">
-  <summary>edit gateway settings</summary>
-  <form class="action" hx-post="/n/{{.ID}}/max-offline" hx-target="#hdr" hx-swap="outerHTML">
-    <b>max-offline</b> <input name="dur" placeholder="5m" required> <button>set</button>
-  </form>
-  <form class="action" hx-post="/n/{{.ID}}/rename" hx-target="#hdr" hx-swap="outerHTML">
-    <b>rename</b> <input name="name" placeholder="new-name" required> <button>set</button>
-  </form>
-</details>{{end}}
 
 {{define "node-config"}}<section id="config" hx-get="/n/{{.ID}}/config" hx-trigger="every 2s" hx-swap="outerHTML">
   <h2>Config — desired vs observed{{if .ConfApp}} · {{.ConfApp}}{{end}}</h2>
