@@ -102,16 +102,16 @@ type Node struct {
 
 // CadenceS returns the node's control-plane check-in cadence in seconds, parsed
 // from its echoed node_config: a deep-sleep node's cadence is its max_asleep_s,
-// an always-on node's is its poll_interval_s. 0 when no (or unparseable) echo —
+// an always-on node's is its loop_sleep_s. 0 when no (or unparseable) echo —
 // callers then fall back to the stored poll_interval_s default.
 func (n *Node) CadenceS() int64 {
 	if n.NodeConfig == "" {
 		return 0
 	}
 	var c struct {
-		Mode          string `json:"mode"`
-		MaxAsleepS    int64  `json:"max_asleep_s"`
-		PollIntervalS int64  `json:"poll_interval_s"`
+		Mode       string `json:"mode"`
+		MaxAsleepS int64  `json:"max_asleep_s"`
+		LoopSleepS int64  `json:"loop_sleep_s"`
 	}
 	if json.Unmarshal([]byte(n.NodeConfig), &c) != nil {
 		return 0
@@ -120,7 +120,7 @@ func (n *Node) CadenceS() int64 {
 	case "deep-sleep":
 		return c.MaxAsleepS
 	case "always-on":
-		return c.PollIntervalS
+		return c.LoopSleepS
 	}
 	return 0
 }

@@ -401,7 +401,7 @@ Each node declares only the fields native to its mode (`build-node-config` in
 
 **always-on:**
 ```json
-{"mode": "always-on", "poll_interval_s": 60, "name": "vin"}
+{"mode": "always-on", "loop_sleep_s": 60, "name": "vin"}
 ```
 
 | Field | deep-sleep | always-on | Meaning |
@@ -410,13 +410,13 @@ Each node declares only the fields native to its mode (`build-node-config` in
 | `min_awake_s` | ✅ | — | Awake-window floor (settle window), seconds. |
 | `max_awake_s` | ✅ | — | Awake-window ceiling (payload-wait cap), seconds. |
 | `max_asleep_s` | ✅ | — | Sleep cap = the node's cadence, seconds. |
-| `poll_interval_s` | — | ✅ | Control-plane check-in cadence, seconds. |
+| `loop_sleep_s` | — | ✅ | The run-loop's sleep duration = control-plane check-in cadence, seconds. |
 | `name` | optional | optional | Node-owned name; **omitted** when the node is unnamed. |
 | `max_offline` | **never** | **never** | Gateway-derived, never on the wire (see below). |
 
 No redundant fields: a deep-sleep node's cadence *is* `max_asleep_s`, so it does not also
-send `poll_interval_s`; an always-on node never sleeps, so it sends `poll_interval_s`
-instead. `poll_interval_s` is the **control-plane** heartbeat (the `report?id=` PUT +
+send `loop_sleep_s`; an always-on node never sleeps, so it sends `loop_sleep_s`
+instead. `loop_sleep_s` is the **control-plane** heartbeat (the `report?id=` PUT +
 `commands?id=` fetch round-trip), **not** a telemetry cadence — liveness must key off the
 control-plane heartbeat, since a healthy ultra-low-power node may be silent on telemetry
 for hours while still checking in.
@@ -425,7 +425,7 @@ for hours while still checking in.
 
 ```
 offline = k × cadence            k = 3 (gateway policy constant)
-cadence = (mode == "deep-sleep") ? max_asleep_s : poll_interval_s
+cadence = (mode == "deep-sleep") ? max_asleep_s : loop_sleep_s
 ```
 
 `k = 3` tolerates two consecutive missed check-ins (flaky TFTP under load, WiFi re-assoc)

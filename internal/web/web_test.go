@@ -131,7 +131,7 @@ func TestRemovedWriteRoutesAre404(t *testing.T) {
 func TestNodePageShowsModeCadenceReadOnly(t *testing.T) {
 	st := testStore(t)
 	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
-	st.UpdateNodeConfig("aabbccddeeff", `{"mode":"always-on","poll_interval_s":60,"name":"vin"}`, "vin")
+	st.UpdateNodeConfig("aabbccddeeff", `{"mode":"always-on","loop_sleep_s":60,"name":"vin"}`, "vin")
 	srv := serve(t, st)
 
 	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff"))

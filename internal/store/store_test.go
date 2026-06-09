@@ -146,7 +146,7 @@ func TestInsertReportCachesObservedState(t *testing.T) {
 func TestNodeOnlineDerivesFromCadence(t *testing.T) {
 	seen := sql.NullInt64{Int64: 1000, Valid: true}
 	// always-on: cadence 60 → offline threshold 3×60 = 180.
-	ao := &Node{LastSeen: seen, NodeConfig: `{"mode":"always-on","poll_interval_s":60}`}
+	ao := &Node{LastSeen: seen, NodeConfig: `{"mode":"always-on","loop_sleep_s":60}`}
 	if !ao.Online(1000 + 180) {
 		t.Error("always-on within 3×cadence should be online")
 	}
@@ -175,7 +175,7 @@ func TestNodeOnlineDerivesFromCadence(t *testing.T) {
 }
 
 func TestNodeOfflineThresholdAndCadence(t *testing.T) {
-	ao := &Node{NodeConfig: `{"mode":"always-on","poll_interval_s":60}`}
+	ao := &Node{NodeConfig: `{"mode":"always-on","loop_sleep_s":60}`}
 	if c := ao.EffectiveCadenceS(); c != 60 {
 		t.Errorf("EffectiveCadenceS = %d, want 60", c)
 	}
@@ -282,7 +282,7 @@ func TestUpdateNodeConfig(t *testing.T) {
 	}
 	// An always-on echo without a name updates the blob but must NOT clobber the
 	// mirrored name (unnamed echo → name key omitted → keep prior).
-	ao := `{"mode":"always-on","poll_interval_s":60}`
+	ao := `{"mode":"always-on","loop_sleep_s":60}`
 	if err := st.UpdateNodeConfig("aabbccddeeff", ao, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -301,8 +301,8 @@ func TestNodeCadenceS(t *testing.T) {
 	if got := ds.CadenceS(); got != 900 {
 		t.Errorf("deep-sleep CadenceS = %d, want 900", got)
 	}
-	// always-on node's cadence is its poll_interval_s.
-	ao := &Node{NodeConfig: `{"mode":"always-on","poll_interval_s":60}`}
+	// always-on node's cadence is its loop_sleep_s.
+	ao := &Node{NodeConfig: `{"mode":"always-on","loop_sleep_s":60}`}
 	if got := ao.CadenceS(); got != 60 {
 		t.Errorf("always-on CadenceS = %d, want 60", got)
 	}
