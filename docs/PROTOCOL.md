@@ -36,8 +36,9 @@ The identifier must be stable across reboot, deep sleep, and reflash — it is t
 node's primary key.
 
 The resource name is `base?key=value&key2=value2`. A key with no `=` maps to the
-empty string. The gateway parses this with `parse-resource_` in
-`gateway/handler.toit`.
+empty string. A single leading `/` on the base is tolerated (some TFTP clients
+send rooted resource names); the canonical form has no slash. The gateway parses
+this with `parse-resource_` in `gateway/handler.toit`.
 
 | Direction | TFTP op | Resource | Meaning |
 |-----------|---------|----------|---------|

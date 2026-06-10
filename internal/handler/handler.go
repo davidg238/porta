@@ -63,9 +63,12 @@ func New(st *store.Store, now func() int64) *Handler {
 // keeps the default log.Printf).
 func (h *Handler) SetLog(fn func(format string, args ...any)) { h.log = fn }
 
-// parseResource splits "base?k=v&k2=v2" into base + params. A bare key maps to "".
+// parseResource splits "base?k=v&k2=v2" into base + params. A bare key maps
+// to "". A single leading "/" on the base is tolerated (some TFTP clients,
+// e.g. the jast-era ST firmware, send rooted resource names).
 func parseResource(raw string) (string, map[string]string) {
 	params := map[string]string{}
+	raw = strings.TrimPrefix(raw, "/")
 	q := strings.Index(raw, "?")
 	if q < 0 {
 		return raw, params

@@ -34,6 +34,11 @@ func TestParseResource(t *testing.T) {
 	if base != "report" || len(params) != 0 {
 		t.Errorf("no query: %q %v", base, params)
 	}
+	// Rooted resource names are tolerated (jast-era ST firmware sends them).
+	base, params = parseResource("/commands?id=aabbccddeeff1122")
+	if base != "commands" || params["id"] != "aabbccddeeff1122" {
+		t.Errorf("leading slash: %q %v", base, params)
+	}
 }
 
 func TestReadCommandsDrainIsEmptyNotError(t *testing.T) {
