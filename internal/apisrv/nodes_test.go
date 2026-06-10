@@ -13,7 +13,7 @@ func TestGetNodeDetail(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
 	st.SetNodeName("aabbccddeeff", "blinky")
-	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192")
+	st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192", "")
 
 	mux := http.NewServeMux()
 	h.Register(mux)
@@ -110,7 +110,7 @@ func TestGetNodesList(t *testing.T) {
 	h, st := newTestHandler(t)
 	st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000)
 	st.SetNodeName("aabbccddeeff", "blinky")
-	st.UpdateNodeIdentity("aabbccddeeff", "esp32c6", "v2.0.0-alpha.192")
+	st.UpdateNodeIdentity("aabbccddeeff", "esp32c6", "v2.0.0-alpha.192", "")
 
 	mux := http.NewServeMux()
 	h.Register(mux)

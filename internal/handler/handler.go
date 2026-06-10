@@ -199,7 +199,7 @@ func (h *Handler) writeReport(id, peer string, data []byte) error {
 		}
 		return s
 	}
-	if err := h.store.UpdateNodeIdentity(id, strField("chip"), strField("sdk")); err != nil {
+	if err := h.store.UpdateNodeIdentity(id, strField("chip"), strField("sdk"), strField("kind")); err != nil {
 		h.log("porta: identity update error for %s: %v", id, err)
 	}
 	// Reset reason: store the latest, and emit a data_log event the first time a
