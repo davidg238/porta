@@ -118,9 +118,9 @@ fleet-wide pod builder. Those are node-repo concerns (§6).
 
 Today the only transport is **TFTP over UDP** (`:6969`): the node is the TFTP
 **client**, the gateway is the **server**, and the node identifies itself with a
-`?id=<12-hex-mac>` suffix on every resource it touches. WiFi is the only physical
-link in use. Full framing, resource names, and the drain-to-empty-body semantics
-are in `PROTOCOL.md §1`.
+`?id=<hex-id>` suffix (opaque lowercase hex, 12–16 digits) on every resource it
+touches. WiFi is the only physical link in use. Full framing, resource names, and
+the drain-to-empty-body semantics are in `PROTOCOL.md §1`.
 
 Why TFTP/UDP: it is tiny enough to implement on a constrained node, connectionless
 (no session state to keep across a node's deep-sleep/reboot cycle), and the

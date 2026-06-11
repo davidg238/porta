@@ -41,7 +41,7 @@ func (s *Server) containerList(_ context.Context, _ *mcp.CallToolRequest, in Dev
 
 // DeviceConfigInput selects a node and optionally one app.
 type DeviceConfigInput struct {
-	Device string `json:"device" jsonschema:"node MAC (12 lowercase hex) or friendly name"`
+	Device string `json:"device" jsonschema:"node id (12-16 lowercase hex) or friendly name"`
 	App    string `json:"app,omitempty" jsonschema:"app name; omit for all observed apps"`
 }
 

@@ -43,7 +43,7 @@ func newScanCmd() *cobra.Command {
 					status = "online"
 				}
 				seen := control.RelativeAge(n.LastSeen, now)
-				fmt.Fprintf(cmd.OutOrStdout(), "%-12s  %-16s  %-12s  %s\n", n.ID, n.Name, seen, status)
+				fmt.Fprintf(cmd.OutOrStdout(), "%-16s  %-16s  %-12s  %s\n", n.ID, n.Name, seen, status)
 			}
 			return nil
 		},

@@ -15,7 +15,7 @@ import (
 // Until omitted (0) means open-ended — all rows from Since onward. Kind filters
 // by row kind when non-empty. Limit defaults to 100, caps at 1000.
 type QueryTelemetryInput struct {
-	Device string `json:"device" jsonschema:"node MAC (12 lowercase hex) or friendly name"`
+	Device string `json:"device" jsonschema:"node id (12-16 lowercase hex) or friendly name"`
 	Since  int64  `json:"since,omitempty" jsonschema:"window start, epoch seconds"`
 	Until  int64  `json:"until,omitempty" jsonschema:"window end, epoch seconds; omit/0 = open-ended (all rows from since on)"`
 	Kind   string `json:"kind,omitempty" jsonschema:"filter by telemetry kind; applies only with a [since,until] window, ignored for recent queries"`

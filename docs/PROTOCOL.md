@@ -553,7 +553,8 @@ skipped; the rest of the batch is unaffected.
 
 A conforming node MUST:
 
-- Identify itself with `?id=<12-hex-mac>` on every TFTP request.
+- Identify itself with `?id=<hex-id>` (opaque lowercase hex, 12–16 digits, §1)
+  on every TFTP request.
 - Drain `commands?id=` by repeated RRQ until a zero-byte body, treating commands
   as absolute/idempotent (last write wins per target).
 - Honour the seven verbs (`run`, `stop`, `set-mode`, `set-name`, `set-forward`,
