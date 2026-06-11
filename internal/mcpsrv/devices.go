@@ -50,9 +50,9 @@ func (s *Server) listDevices(_ context.Context, _ *mcp.CallToolRequest, _ ListDe
 	return textResult(fmt.Sprintf("%d device(s)", len(out.Devices))), out, nil
 }
 
-// DeviceInput identifies a node by MAC (12 hex) or friendly name.
+// DeviceInput identifies a node by hex id (12-16 hex) or friendly name.
 type DeviceInput struct {
-	Device string `json:"device" jsonschema:"node MAC (12 lowercase hex) or friendly name"`
+	Device string `json:"device" jsonschema:"node id (12-16 lowercase hex) or friendly name"`
 }
 
 // DeviceStatusOutput is the structured result of device_status.

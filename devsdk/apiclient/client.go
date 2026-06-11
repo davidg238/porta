@@ -76,7 +76,7 @@ type cmdResp struct {
 }
 
 // Command marshals {verb,args}, POSTs it to /api/nodes/{sel}/commands, and
-// returns the queued command id plus the server-resolved 12-hex node id.
+// returns the queued command id plus the server-resolved node id.
 func (c *Client) Command(sel, verb string, args any) (int64, string, error) {
 	raw, err := json.Marshal(args)
 	if err != nil {

@@ -16,9 +16,10 @@ var nouns = []string{
 	"pine", "quartz", "raven", "summit",
 }
 
-// NodeNameFor maps a 12-hex-lowercase MAC to a deterministic adjective-noun
-// name. Horner hash with multiplier 31, masked to 31 bits, then indexed into
-// the two 20-word lists. Collisions are accepted (operator can override).
+// NodeNameFor maps an opaque hex device id (12-hex ESP32 MAC or 16-hex EUI-64,
+// PROTOCOL.md §1) to a deterministic adjective-noun name. Horner hash with
+// multiplier 31, masked to 31 bits, then indexed into the two 20-word lists.
+// Collisions are accepted (operator can override).
 func NodeNameFor(mac string) string {
 	h := 0
 	for _, c := range mac {

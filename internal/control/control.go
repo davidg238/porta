@@ -105,9 +105,10 @@ func Install(st *store.Store, id, name string, img io.Reader, opts InstallOpts, 
 	return st.EnqueueCommand(id, runCmd.Verb, runCmd.ArgsJSON, issuedBy, now)
 }
 
-// IsMAC reports whether s is exactly 12 lowercase hex digits.
-func IsMAC(s string) bool {
-	if len(s) != 12 {
+// IsNodeID reports whether s is a node id per PROTOCOL.md §1: opaque
+// lowercase hex, 12-16 digits (12-hex ESP32 MAC or 16-hex EUI-64).
+func IsNodeID(s string) bool {
+	if len(s) < 12 || len(s) > 16 {
 		return false
 	}
 	for _, c := range s {
@@ -118,9 +119,9 @@ func IsMAC(s string) bool {
 	return true
 }
 
-// ResolveNodeID turns a <node> arg (MAC or friendly name) into a node id.
+// ResolveNodeID turns a <node> arg (hex id or friendly name) into a node id.
 func ResolveNodeID(st *store.Store, nodeArg string) (string, error) {
-	if IsMAC(nodeArg) {
+	if IsNodeID(nodeArg) {
 		return nodeArg, nil
 	}
 	n, err := st.NodeByName(nodeArg)

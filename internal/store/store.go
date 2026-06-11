@@ -291,12 +291,13 @@ func (s *Store) SetNodeName(id, name string) error {
 }
 
 // UpdateNodeIdentity records the node's self-reported firmware identity.
-// Empty chip/sdk are COALESCEd so a report missing the field never clobbers a
-// previously-known value.
-func (s *Store) UpdateNodeIdentity(id, chip, sdk string) error {
+// Empty chip/sdk/kind are COALESCEd so a report missing the field never
+// clobbers a previously-known value (kind then keeps its 'toit' default).
+func (s *Store) UpdateNodeIdentity(id, chip, sdk, kind string) error {
 	_, err := s.db.Exec(
-		`UPDATE nodes SET chip = COALESCE(?, chip), sdk = COALESCE(?, sdk) WHERE id = ?`,
-		nullStr(chip), nullStr(sdk), id)
+		`UPDATE nodes SET chip = COALESCE(?, chip), sdk = COALESCE(?, sdk),
+		 kind = COALESCE(?, kind) WHERE id = ?`,
+		nullStr(chip), nullStr(sdk), nullStr(kind), id)
 	return err
 }
 

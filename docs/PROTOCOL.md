@@ -23,12 +23,22 @@ Source of truth in code:
 
 All traffic is TFTP. The node is the TFTP **client**; the gateway is the TFTP
 **server**. The node identifies itself in every request via a `?id=<mac>` query
-suffix on the TFTP resource name, where `<mac>` is the node's 12-hex-digit MAC
-(lowercase, no separators, e.g. `aabbccddeeff`).
+suffix on the TFTP resource name, where `<mac>` is an **opaque lowercase-hex
+device identifier** (no separators, 12–16 hex digits). The gateway treats it as
+an opaque key; derivation is defined per node kind:
+
+| Node kind | Identifier source | Width |
+|-----------|-------------------|-------|
+| `toit` (ESP32 family) | 6-byte WiFi MAC, e.g. `aabbccddeeff` | 12 hex |
+| `st` (nRF52840 / Zephyr) | IEEE 802.15.4 EUI-64, e.g. `aabbccddeeff1122` | 16 hex |
+
+The identifier must be stable across reboot, deep sleep, and reflash — it is the
+node's primary key.
 
 The resource name is `base?key=value&key2=value2`. A key with no `=` maps to the
-empty string. The gateway parses this with `parse-resource_` in
-`gateway/handler.toit`.
+empty string. A single leading `/` on the base is tolerated (some TFTP clients
+send rooted resource names); the canonical form has no slash. The gateway parses
+this with `parse-resource_` in `gateway/handler.toit`.
 
 | Direction | TFTP op | Resource | Meaning |
 |-----------|---------|----------|---------|
@@ -331,13 +341,14 @@ Fields:
 | `node_config` | object (optional) | The node's **effective-config echo** (§3.2): mode + its knobs + name. Present **only** on cold boot and after a config change. Absent on steady-state reports. |
 | `chip` | string (optional) | Node chip model, e.g. `"esp32"`, `"esp32c6"`, `"esp32s3"`. Used by a node-repo dev tool (e.g. `nodus run`) to pick the flash envelope. Absent on firmware predating identity reporting. |
 | `sdk` | string (optional) | Toit SDK version the node firmware was built with, e.g. `"v2.0.0-alpha.192"`. A node-repo dev tool (e.g. `nodus run`) refuses to deploy an image built with a different SDK (overridable with `--force`); absent → it blocks until the node reports it. |
+| `kind` | string (optional) | The node's **runtime/payload family** — which toolchain builds the images this node runs: `"toit"` (Toit container images) or `"st"` (Smalltalk → Berry `.bec` bytecode). Not the chip (see `chip`) and not the transport (observable from the peer address). Defaults to `"toit"` when never reported, for back-compat with firmware predating kind reporting. |
 
 Gateway ingest (`ReportWriter_` in `gateway/handler.toit`):
 - `apps`, `config`, `health` each default to `{}` if absent (a node that does
   not implement `config` is tolerated; `config` then defaults empty).
-- `chip` / `sdk` are optional self-reported firmware identity. The gateway records
-  them on the node row (self-healing — corrected automatically if a device is
-  reflashed); an absent or empty value never clobbers a previously-known identity.
+- `chip` / `sdk` / `kind` are optional self-reported firmware identity. The gateway
+  records them on the node row (self-healing — corrected automatically if a device
+  is reflashed); an absent or empty value never clobbers a previously-known identity.
 - The gateway stores `{"apps":…, "config":…}` as observed-state and `health`
   separately.
 - `health.reset` / `health.reset_code` are optional. The gateway records the latest
@@ -542,7 +553,8 @@ skipped; the rest of the batch is unaffected.
 
 A conforming node MUST:
 
-- Identify itself with `?id=<12-hex-mac>` on every TFTP request.
+- Identify itself with `?id=<hex-id>` (opaque lowercase hex, 12–16 digits, §1)
+  on every TFTP request.
 - Drain `commands?id=` by repeated RRQ until a zero-byte body, treating commands
   as absolute/idempotent (last write wins per target).
 - Honour the seven verbs (`run`, `stop`, `set-mode`, `set-name`, `set-forward`,

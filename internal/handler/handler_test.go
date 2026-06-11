@@ -34,6 +34,11 @@ func TestParseResource(t *testing.T) {
 	if base != "report" || len(params) != 0 {
 		t.Errorf("no query: %q %v", base, params)
 	}
+	// Rooted resource names are tolerated (jast-era ST firmware sends them).
+	base, params = parseResource("/commands?id=aabbccddeeff1122")
+	if base != "commands" || params["id"] != "aabbccddeeff1122" {
+		t.Errorf("leading slash: %q %v", base, params)
+	}
 }
 
 func TestReadCommandsDrainIsEmptyNotError(t *testing.T) {
@@ -423,6 +428,9 @@ func TestWriteReportStoresIdentity(t *testing.T) {
 	if n == nil || n.Chip != "esp32c6" || n.Sdk != "v2.0.0-alpha.192" {
 		t.Fatalf("identity not stored: %+v", n)
 	}
+	if n.Kind != "toit" {
+		t.Errorf("kind without report field: got %q, want default toit", n.Kind)
+	}
 	// A report without chip/sdk must not clobber the stored identity.
 	if err := h.Write("report?id=aabbccddeeff", "p:1", []byte(`{"apps":{},"config":{}}`)); err != nil {
 		t.Fatal(err)
@@ -430,6 +438,27 @@ func TestWriteReportStoresIdentity(t *testing.T) {
 	n, _ = st.GetNode("aabbccddeeff")
 	if n.Chip != "esp32c6" || n.Sdk != "v2.0.0-alpha.192" {
 		t.Errorf("identity clobbered: chip=%q sdk=%q", n.Chip, n.Sdk)
+	}
+}
+
+func TestWriteReportStoresKind(t *testing.T) {
+	h, st := newH(t)
+	// A 16-hex EUI-64 id with kind:"st" — the ST/Zephyr node shape (PROTOCOL.md §1).
+	body := []byte(`{"apps":{},"config":{},"health":{},"chip":"nrf52840","sdk":"zephyr-3.7","kind":"st"}`)
+	if err := h.Write("report?id=aabbccddeeff1122", "p:1", body); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	n, _ := st.GetNode("aabbccddeeff1122")
+	if n == nil || n.Kind != "st" || n.Chip != "nrf52840" {
+		t.Fatalf("kind not stored: %+v", n)
+	}
+	// A steady-state report omitting kind must not clobber it back to the default.
+	if err := h.Write("report?id=aabbccddeeff1122", "p:1", []byte(`{"apps":{},"config":{}}`)); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = st.GetNode("aabbccddeeff1122")
+	if n.Kind != "st" {
+		t.Errorf("kind clobbered: got %q, want st", n.Kind)
 	}
 }
 

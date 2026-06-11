@@ -94,11 +94,13 @@ func TestResolveNodeID(t *testing.T) {
 	}
 }
 
-func TestIsMAC(t *testing.T) {
-	if !IsMAC("30aea41a6208") {
-		t.Error("12 lowercase hex should be a MAC")
+func TestIsNodeID(t *testing.T) {
+	// 12-hex ESP32 MAC and 16-hex EUI-64 are both node ids (PROTOCOL.md §1).
+	if !IsNodeID("30aea41a6208") || !IsNodeID("aabbccddeeff1122") {
+		t.Error("12- and 16-hex lowercase should be node ids")
 	}
-	if IsMAC("jolly-pine") || IsMAC("AABBCCDDEEFF") || IsMAC("30aea41a620") {
-		t.Error("non-12-lowercase-hex should not be a MAC")
+	if IsNodeID("jolly-pine") || IsNodeID("AABBCCDDEEFF1122") ||
+		IsNodeID("30aea41a620") || IsNodeID("aabbccddeeff11223") {
+		t.Error("non-hex, uppercase, 11-hex, and 17-hex should not be node ids")
 	}
 }

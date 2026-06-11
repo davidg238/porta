@@ -92,7 +92,8 @@ func TestScanCmdOverAPI(t *testing.T) {
 	st := seededStore(t)
 	_, url := serveStore(t, st)
 	out := runReadCmd(t, url, "scan")
-	if !strings.Contains(out, "aabbccddeeff  blinky") {
+	// id column is %-16s (12-16 hex ids, PROTOCOL.md §1): a 12-hex id pads with 4.
+	if !strings.Contains(out, "aabbccddeeff      blinky") {
 		t.Errorf("scan output = %q", out)
 	}
 	if !strings.Contains(out, "online") {

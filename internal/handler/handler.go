@@ -63,9 +63,12 @@ func New(st *store.Store, now func() int64) *Handler {
 // keeps the default log.Printf).
 func (h *Handler) SetLog(fn func(format string, args ...any)) { h.log = fn }
 
-// parseResource splits "base?k=v&k2=v2" into base + params. A bare key maps to "".
+// parseResource splits "base?k=v&k2=v2" into base + params. A bare key maps
+// to "". A single leading "/" on the base is tolerated (some TFTP clients,
+// e.g. the jast-era ST firmware, send rooted resource names).
 func parseResource(raw string) (string, map[string]string) {
 	params := map[string]string{}
+	raw = strings.TrimPrefix(raw, "/")
 	q := strings.Index(raw, "?")
 	if q < 0 {
 		return raw, params
@@ -199,7 +202,7 @@ func (h *Handler) writeReport(id, peer string, data []byte) error {
 		}
 		return s
 	}
-	if err := h.store.UpdateNodeIdentity(id, strField("chip"), strField("sdk")); err != nil {
+	if err := h.store.UpdateNodeIdentity(id, strField("chip"), strField("sdk"), strField("kind")); err != nil {
 		h.log("porta: identity update error for %s: %v", id, err)
 	}
 	// Reset reason: store the latest, and emit a data_log event the first time a

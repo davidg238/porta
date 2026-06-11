@@ -262,7 +262,7 @@ func TestRecentCommandsColumnOrder(t *testing.T) {
 func TestNodeHeaderShowsIdentity(t *testing.T) {
 	st := testStore(t)
 	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
-	if err := st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192"); err != nil {
+	if err := st.UpdateNodeIdentity("aabbccddeeff", "esp32", "v2.0.0-alpha.192", ""); err != nil {
 		t.Fatal(err)
 	}
 	srv := serve(t, st)

@@ -209,18 +209,29 @@ func TestUpdateNodeIdentity(t *testing.T) {
 	if err := st.TouchNode("aabbccddeeff", "1.2.3.4:5", 1000); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UpdateNodeIdentity("aabbccddeeff", "esp32c6", "v2.0.0-alpha.192"); err != nil {
+	// kind defaults to 'toit' before any report carries it.
+	n, err := st.GetNode("aabbccddeeff")
+	if err != nil || n == nil {
+		t.Fatalf("GetNode: %v / %v", n, err)
+	}
+	if n.Kind != "toit" {
+		t.Errorf("got kind=%q, want default toit", n.Kind)
+	}
+	if err := st.UpdateNodeIdentity("aabbccddeeff", "esp32c6", "v2.0.0-alpha.192", ""); err != nil {
 		t.Fatal(err)
 	}
-	n, err := st.GetNode("aabbccddeeff")
+	n, err = st.GetNode("aabbccddeeff")
 	if err != nil || n == nil {
 		t.Fatalf("GetNode: %v / %v", n, err)
 	}
 	if n.Chip != "esp32c6" || n.Sdk != "v2.0.0-alpha.192" {
 		t.Errorf("got chip=%q sdk=%q, want esp32c6 / v2.0.0-alpha.192", n.Chip, n.Sdk)
 	}
+	if n.Kind != "toit" {
+		t.Errorf("empty kind clobbered default: kind=%q", n.Kind)
+	}
 	// Empty values must not clobber a known identity.
-	if err := st.UpdateNodeIdentity("aabbccddeeff", "", ""); err != nil {
+	if err := st.UpdateNodeIdentity("aabbccddeeff", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	n, err = st.GetNode("aabbccddeeff")
@@ -229,6 +240,20 @@ func TestUpdateNodeIdentity(t *testing.T) {
 	}
 	if n.Chip != "esp32c6" || n.Sdk != "v2.0.0-alpha.192" {
 		t.Errorf("empty update clobbered identity: chip=%q sdk=%q", n.Chip, n.Sdk)
+	}
+	// A reported kind sticks (16-hex EUI-64 id exercises the opaque-id contract).
+	if err := st.TouchNode("aabbccddeeff1122", "[fd00::2]:5", 1000); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateNodeIdentity("aabbccddeeff1122", "nrf52840", "zephyr-3.7", "st"); err != nil {
+		t.Fatal(err)
+	}
+	n, err = st.GetNode("aabbccddeeff1122")
+	if err != nil || n == nil {
+		t.Fatalf("GetNode eui64: %v / %v", n, err)
+	}
+	if n.Kind != "st" || n.Chip != "nrf52840" {
+		t.Errorf("got kind=%q chip=%q, want st / nrf52840", n.Kind, n.Chip)
 	}
 }
 
