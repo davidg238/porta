@@ -34,6 +34,3 @@ a full Toit implementation of the gateway in **`gateway`** (`github.com/davidg23
 the parked Smalltalk gateway / future ST-node tooling in **`nodus-st`**
 (`github.com/davidg238/nodus-st`); and the node side in
 **[`nodus`](https://github.com/davidg238/nodus)**.
-
-#### Links
-* [Logging MQTT Sensor Data to SQLite DataBase With Python](http://www.steves-internet-guide.com/logging-mqtt-sensor-data-to-sql-database-with-python/)
