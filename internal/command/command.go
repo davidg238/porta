@@ -103,13 +103,26 @@ func asInt(v any) (int64, bool) {
 // SetMode builds an atomic set-mode command from a verb-agnostic args map. Power
 // mode is one declaration, so the whole command is accepted or rejected — porta
 // validates client-side (the node re-validates authoritatively) mirroring
-// nodus' validate-set-mode: always-on takes no knobs; deep-sleep requires
-// positive max_awake_s + max_asleep_s with an optional min_awake_s ≤ max_awake_s.
+// nodus' validate-set-mode: always-on takes an optional loop_sleep_s (1..600);
+// deep-sleep requires positive max_awake_s + max_asleep_s with an optional
+// min_awake_s ≤ max_awake_s.
 func SetMode(args map[string]any) (Command, error) {
 	mode, _ := args["mode"].(string)
 	switch mode {
 	case "always-on":
-		return Command{Verb: "set-mode", ArgsJSON: `{"mode":"always-on"}`}, nil
+		out := map[string]any{"mode": "always-on"}
+		if lv, present := args["loop_sleep_s"]; present && lv != nil {
+			loopSleep, ok := asInt(lv)
+			if !ok || loopSleep <= 0 || loopSleep > 600 {
+				return Command{}, fmt.Errorf("set-mode loop_sleep_s must be an int in 1..600")
+			}
+			out["loop_sleep_s"] = loopSleep
+		}
+		b, err := json.Marshal(out)
+		if err != nil {
+			return Command{}, err
+		}
+		return Command{Verb: "set-mode", ArgsJSON: string(b)}, nil
 	case "deep-sleep":
 		maxAwake, ok := asInt(args["max_awake_s"])
 		if !ok || maxAwake <= 0 {

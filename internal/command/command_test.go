@@ -145,6 +145,19 @@ func TestSetModeAlwaysOn(t *testing.T) {
 	if verb != "set-mode" || args["mode"] != "always-on" {
 		t.Errorf("decoded verb=%q mode=%v", verb, args["mode"])
 	}
+
+	// Optional loop_sleep_s (1..600) is carried through when present.
+	c, err = SetMode(map[string]any{"mode": "always-on", "loop_sleep_s": int64(300)})
+	if err != nil {
+		t.Fatalf("SetMode always-on with loop_sleep_s: %v", err)
+	}
+	verb, args, err = Decode(EncodeWire(c.Verb, c.ArgsJSON))
+	if err != nil || verb != "set-mode" {
+		t.Fatalf("decode: %v verb=%q", err, verb)
+	}
+	if args["mode"] != "always-on" || args["loop_sleep_s"].(json.Number).String() != "300" {
+		t.Errorf("decoded args = %+v", args)
+	}
 }
 
 func TestSetModeDeepSleep(t *testing.T) {
@@ -171,6 +184,9 @@ func TestSetModeRejectsInvalid(t *testing.T) {
 		{"mode": "deep-sleep", "max_awake_s": int64(20)},                                                       // missing max_asleep_s
 		{"mode": "deep-sleep", "max_awake_s": int64(0), "max_asleep_s": int64(300)},                            // non-positive cap
 		{"mode": "deep-sleep", "min_awake_s": int64(25), "max_awake_s": int64(20), "max_asleep_s": int64(300)}, // min > max
+		{"mode": "always-on", "loop_sleep_s": int64(0)},                                                        // non-positive cadence
+		{"mode": "always-on", "loop_sleep_s": int64(601)},                                                      // above node max (600)
+		{"mode": "always-on", "loop_sleep_s": "fast"},                                                          // non-numeric
 	}
 	for _, args := range cases {
 		if _, err := SetMode(args); err == nil {
