@@ -156,13 +156,19 @@ safety-critical operation). It replaces the retired `set-power-mode` +
 | `max_awake_s` | int | deep-sleep only | Awake-window ceiling (run-once payload-wait cap), seconds; must be > 0. |
 | `max_asleep_s` | int | deep-sleep only | Sleep cap = the node's deep-sleep cadence, seconds; must be > 0. |
 | `min_awake_s` | int | optional (deep-sleep) | Awake-window floor (no-payload settle window), seconds; `0 < min_awake_s ≤ max_awake_s`. |
+| `loop_sleep_s` | int | optional (always-on) | Always-on loop sleep = the node's check-in cadence, seconds; `0 < loop_sleep_s ≤ 600`. Omitted ⇒ the node leaves its stored value unchanged. |
 
 ```json
 {"verb": "set-mode", "mode": "deep-sleep", "min_awake_s": 5, "max_awake_s": 20, "max_asleep_s": 300}
+{"verb": "set-mode", "mode": "always-on", "loop_sleep_s": 300}
 {"verb": "set-mode", "mode": "always-on"}
 ```
 
-- `always-on` takes **no** cadence knob in v1 (the report cadence is fixed-but-reported).
+- `loop_sleep_s` is the always-on analogue of deep-sleep's `max_asleep_s` cadence. The
+  node bounds it at 600 s (it caps the node's HW-watchdog budget) and re-validates
+  authoritatively, rejecting an out-of-range value atomically with the whole command.
+  When and how the new cadence takes effect is a node implementation detail, not a
+  wire contract; the `node_config` echo (§3.2) reports the *in-effect* value.
 - The mode chooses the supervisor loop: `deep-sleep` polls then deep-sleeps for
   `max_asleep_s` (waking via full reboot); `always-on` never sleeps, keeping `run-loop`
   daemons (§2.7) alive between reports. A `run-loop` app on a `deep-sleep` node is killed
@@ -559,7 +565,9 @@ A conforming node MUST:
 - Honour the seven verbs (`run`, `stop`, `set-mode`, `set-name`, `set-forward`,
   `set`, `reboot`) with the arg schemas and defaults in §2, including the
   `lifecycle` declaration (default `run-once`) and `runlevel` (default `3`).
-  `set-mode` MUST apply atomically (accept whole or reject whole). `reboot` is
+  `set-mode` MUST apply atomically (accept whole or reject whole); an always-on
+  `set-mode` MAY carry the optional `loop_sleep_s`, which the node re-validates,
+  rejecting an out-of-range value atomically with the whole command. `reboot` is
   applied at the end of the poll and SHOULD report `health.reset: "software"` on
   the next check-in.
 - Download images via `payload?id=&name=&crc=` as **raw bytes** and verify
