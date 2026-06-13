@@ -200,8 +200,10 @@ resolves to its default (off) on the node — the command is the whole policy, n
 {"verb": "set-forward", "print": {"on": false}, "log": {"on": true, "level": "warn"}, "telemetry": {"on": true}}
 ```
 
-The node persists the resolved policy in its flash config (so it survives reboot).
-FATAL-level logs and panics are delivered regardless of the gates.
+The node persists the resolved policy in its flash config (so it survives reboot)
+and echoes the resolved, in-effect policy back as `node_config.forward` (§3.2) —
+the read-back half of this write. FATAL-level logs and panics are delivered
+regardless of the gates.
 
 ### 2.5 `set` — per-app config key
 
@@ -343,6 +345,7 @@ Fields:
 | `health.wakes` | int | Cumulative wake count. |
 | `health.reset` | string (optional) | Neutral reset category — the node maps its platform reset code onto the vocabulary below. Absent on firmware predating reset reporting. |
 | `health.reset_code` | int (optional) | Raw platform reset code, for diagnostics only. The gateway never interprets it. |
+| `health.poll_timeouts` | int (optional) | Cumulative count of **expected gateway-window transients** (poll/flush deadline or TFTP retry exhaustion) since boot — "couldn't reach the gateway," not "crashed." Resets to 0 each boot, not persisted. Only ever non-zero on always-on nodes: a deep-sleep node whose poll fails delivers no report at all, so it reads 0. Absent on firmware predating timeout classification. Genuine unexpected errors are not counted here — they still ship as `kind:"panic"` telemetry (§6). |
 | `node_config` | object (optional) | The node's **effective-config echo** (§3.2): mode + its knobs + name. Present **only** on cold boot and after a config change. Absent on steady-state reports. |
 | `chip` | string (optional) | Node chip model, e.g. `"esp32"`, `"esp32c6"`, `"esp32s3"`. Used by a node-repo dev tool (e.g. `nodus run`) to pick the flash envelope. Absent on firmware predating identity reporting. |
 | `sdk` | string (optional) | Toit SDK version the node firmware was built with, e.g. `"v2.0.0-alpha.192"`. A node-repo dev tool (e.g. `nodus run`) refuses to deploy an image built with a different SDK (overridable with `--force`); absent → it blocks until the node reports it. |
@@ -404,7 +407,8 @@ block so the gateway can display it (read-only) and derive liveness. To stay fru
 the wire (ESP-NOW / Thread MTUs), config does **not** travel every report:
 
 - Echoed **only** on (a) cold boot and (b) any config change. Steady-state reports omit it.
-- The on-change echo **is** the convergence ack for `set-mode`/`set-name` (§2.3).
+- The on-change echo **is** the convergence ack for `set-mode`/`set-name` (§2.3) and
+  `set-forward` (§2.4).
 - The boot echo **heals drift** in the gateway's cache after a reflash/reset.
 
 Each node declares only the fields native to its mode (`build-node-config` in
@@ -417,7 +421,8 @@ Each node declares only the fields native to its mode (`build-node-config` in
 
 **always-on:**
 ```json
-{"mode": "always-on", "loop_sleep_s": 60, "name": "vin"}
+{"mode": "always-on", "loop_sleep_s": 60, "name": "vin",
+ "forward": {"print": {"on": true}, "log": {"on": true, "level": "warn"}, "telemetry": {"on": false, "every_s": 300}}}
 ```
 
 | Field | deep-sleep | always-on | Meaning |
@@ -428,7 +433,16 @@ Each node declares only the fields native to its mode (`build-node-config` in
 | `max_asleep_s` | ✅ | — | Sleep cap = the node's cadence, seconds. |
 | `loop_sleep_s` | — | ✅ | The run-loop's sleep duration = control-plane check-in cadence, seconds. |
 | `name` | optional | optional | Node-owned name; **omitted** when the node is unnamed. |
+| `forward` | ✅ | ✅ | Resolved per-stream forwarding policy — the read-back half of `set-forward` (§2.4), same shape as its wire args (see below). Absent on firmware predating the forward echo ⇒ gate state unknown. |
 | `max_offline` | **never** | **never** | Gateway-derived, never on the wire (see below). |
+
+**`forward` shape.** Each stream (`print` / `log` / `telemetry`) echoes `{"on": bool}`;
+`log` additionally always carries `level` (∈ `trace|debug|info|warn|error|fatal`,
+echoed regardless of its `on` value); `every_s` appears per stream only when configured
+(omitted ⇒ the node coalesces with its report window). A node whose gates have never
+been set echoes `on: false` for all three streams — the default. The echo reports the
+**in-effect** policy, so a gate that did not survive a reset is visible as `off` on the
+boot echo rather than silently diverging.
 
 No redundant fields: a deep-sleep node's cadence *is* `max_asleep_s`, so it does not also
 send `loop_sleep_s`; an always-on node never sleeps, so it sends `loop_sleep_s`
