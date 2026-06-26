@@ -604,6 +604,35 @@ func TestWriteReportResetAbsentDoesNotClobber(t *testing.T) {
 	}
 }
 
+func TestDebugChannel(t *testing.T) {
+	h, st := newH(t)
+	st.TouchNode("dev", "1.2.3.4:5", 1000)
+	st.EnqueueDebugRequest("dev", "dbg:methods", 1000)
+
+	// RRQ drains the queued request line.
+	body, err := h.Read("debug?id=dev", "1.2.3.4:5")
+	if err != nil || string(body) != "dbg:methods" {
+		t.Fatalf("read debug = %q err=%v", body, err)
+	}
+	// Complete marks it delivered → next RRQ drains empty.
+	h.Complete(tftp.OpRRQ, "debug?id=dev", "1.2.3.4:5", true)
+	body, err = h.Read("debug?id=dev", "1.2.3.4:5")
+	if err != nil || body != nil {
+		t.Fatalf("expected drain sentinel, got %q err=%v", body, err)
+	}
+	// WRQ ingests response lines.
+	if err := h.AcceptWrite("debug?id=dev", "1.2.3.4:5"); err != nil {
+		t.Fatalf("AcceptWrite: %v", err)
+	}
+	if err := h.Write("debug?id=dev", "1.2.3.4:5", []byte("dbg:ready\ndbg:ok methods\n")); err != nil {
+		t.Fatalf("write debug: %v", err)
+	}
+	resp, _ := st.DebugResponsesAfter("dev", 0, 0)
+	if len(resp) != 2 || resp[1].Line != "dbg:ok methods" {
+		t.Fatalf("responses = %+v", resp)
+	}
+}
+
 func TestWriteReportFaultEventNoCode(t *testing.T) {
 	h, st := newH(t)
 	if err := h.Write("report?id=dev", "1.2.3.4:5", []byte(`{"apps":{},"config":{},"health":{"reset":"panic"}}`)); err != nil {

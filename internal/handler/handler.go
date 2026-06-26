@@ -97,6 +97,8 @@ func (h *Handler) Read(resource, peer string) ([]byte, error) {
 	switch base {
 	case "commands":
 		return h.readCommands(params["id"])
+	case "debug":
+		return h.readDebug(params["id"])
 	case "payload":
 		return h.readPayload(params)
 	default:
@@ -121,6 +123,22 @@ func (h *Handler) readCommands(id string) ([]byte, error) {
 	return command.EncodeWire(cmd.Verb, cmd.Args), nil
 }
 
+// readDebug is the debug-request chokepoint, mirroring readCommands: (nil,err)
+// → TFTP ERROR; (nil,nil) → drained; (bytes,nil) → one dbg: request line.
+func (h *Handler) readDebug(id string) ([]byte, error) {
+	if id == "" {
+		return nil, fmt.Errorf("debug: missing id")
+	}
+	r, err := h.store.NextUndeliveredDebugRequest(id)
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, nil // drain sentinel
+	}
+	return []byte(r.Line), nil
+}
+
 func (h *Handler) readPayload(params map[string]string) ([]byte, error) {
 	crc, err := strconv.ParseInt(params["crc"], 10, 64)
 	if err != nil {
@@ -140,7 +158,7 @@ func (h *Handler) readPayload(params map[string]string) ([]byte, error) {
 // else (missing id, unknown base) → TFTP ERROR.
 func (h *Handler) AcceptWrite(resource, peer string) error {
 	base, params := parseResource(resource)
-	if base != "report" && base != "data" {
+	if base != "report" && base != "data" && base != "debug" {
 		return fmt.Errorf("access denied: %s", base)
 	}
 	if params["id"] == "" {
@@ -162,6 +180,8 @@ func (h *Handler) Write(resource, peer string, data []byte) error {
 		return h.writeReport(id, peer, data)
 	case "data":
 		return h.writeData(id, peer, data)
+	case "debug":
+		return h.writeDebug(id, peer, data)
 	default:
 		return fmt.Errorf("access denied: %s", base)
 	}
@@ -275,6 +295,28 @@ func (h *Handler) writeData(id, peer string, data []byte) error {
 	return nil
 }
 
+// writeDebug ingests newline-delimited dbg: response lines into debug_response.
+// Best-effort per line: blank lines skipped; per-row insert errors logged.
+func (h *Handler) writeDebug(id, peer string, data []byte) error {
+	if err := h.store.TouchNode(id, peer, h.now()); err != nil {
+		return err
+	}
+	now := h.now()
+	seq := int64(0)
+	for _, raw := range bytes.Split(data, []byte("\n")) {
+		line := strings.TrimRight(string(raw), "\r")
+		if line == "" {
+			continue
+		}
+		if err := h.store.InsertDebugResponse(id, now, seq, line); err != nil {
+			h.log("porta: debug response insert error for %s seq=%d: %v", id, seq, err)
+			continue
+		}
+		seq++
+	}
+	return nil
+}
+
 // reconcileAfterReport is the post-report self-heal hook. Best-effort:
 // every error path (panic, SQL, decode) is caught and logged; nothing
 // propagates to the TFTP layer.
@@ -316,23 +358,29 @@ func (h *Handler) reconcileAfterReport(id string, configRaw json.RawMessage) {
 	}
 }
 
-// Complete marks a command delivered after a successful commands RRQ transfer —
-// never on pop, never for payload transfers, never on failure.
+// Complete marks a command or debug request delivered after a successful RRQ
+// transfer — never on pop, never for payload transfers, never on failure.
 func (h *Handler) Complete(op uint16, resource, peer string, ok bool) {
 	if !ok || op != tftp.OpRRQ {
 		return
 	}
 	base, params := parseResource(resource)
-	if base != "commands" {
-		return
-	}
 	id := params["id"]
 	if id == "" {
 		return
 	}
-	cmd, err := h.store.NextUndelivered(id)
-	if err != nil || cmd == nil {
-		return // nothing to mark (drain-sentinel transfer or transient error)
+	switch base {
+	case "commands":
+		cmd, err := h.store.NextUndelivered(id)
+		if err != nil || cmd == nil {
+			return // nothing to mark (drain-sentinel transfer or transient error)
+		}
+		_ = h.store.MarkDelivered(cmd.ID, h.now())
+	case "debug":
+		r, err := h.store.NextUndeliveredDebugRequest(id)
+		if err != nil || r == nil {
+			return
+		}
+		_ = h.store.MarkDebugRequestDelivered(r.ID, h.now())
 	}
-	_ = h.store.MarkDelivered(cmd.ID, h.now())
 }
