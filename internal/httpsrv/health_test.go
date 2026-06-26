@@ -24,7 +24,7 @@ func openTestStore(t *testing.T) *store.Store {
 
 func TestHealthHandlerReturnsOK(t *testing.T) {
 	st := openTestStore(t)
-	h := healthHandler(st)
+	h := healthHandler(st, nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/health", nil))
 	if w.Code != http.StatusOK {
@@ -53,7 +53,7 @@ func TestHealthHandlerCountsNodes(t *testing.T) {
 	st.EnsureNode("dev1", 1000)
 	st.EnsureNode("dev2", 1000)
 	st.EnsureNode("dev3", 1000)
-	h := healthHandler(st)
+	h := healthHandler(st, nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/health", nil))
 	var body struct {

@@ -25,7 +25,9 @@ STAGE="$DIST/$PKG"
 echo "==> Building porta binary (CGO dynamic, trimmed)"
 rm -rf "$STAGE"
 mkdir -p "$STAGE/DEBIAN" "$STAGE/usr/bin" "$STAGE/lib/systemd/system"
-( cd "$REPO" && CGO_ENABLED=1 go build -trimpath -ldflags "-s -w" -o "$STAGE/usr/bin/porta" ./cmd/porta )
+COMMIT="$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || true)"
+LDFLAGS="-s -w -X github.com/davidg238/porta/internal/portacli.version=$VERSION -X github.com/davidg238/porta/internal/portacli.commit=$COMMIT"
+( cd "$REPO" && CGO_ENABLED=1 go build -trimpath -ldflags "$LDFLAGS" -o "$STAGE/usr/bin/porta" ./cmd/porta )
 
 echo "==> Max glibc symbol the binary needs (must be <= target's glibc):"
 objdump -T "$STAGE/usr/bin/porta" 2>/dev/null | grep -oE 'GLIBC_[0-9.]+' | sort -V | tail -1 || true

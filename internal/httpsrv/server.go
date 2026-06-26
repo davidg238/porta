@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/davidg238/porta/internal/serverstat"
 	"github.com/davidg238/porta/internal/store"
 )
 
@@ -36,9 +37,14 @@ type Config struct {
 // shared mux that consumer packages register routes on; the allowlist
 // middleware wraps every route uniformly via the http.Server.Handler.
 type Server struct {
-	http *http.Server
-	Mux  *http.ServeMux
+	http  *http.Server
+	Mux   *http.ServeMux
+	stats *serverstat.Stats // optional; enriches /health when set
 }
+
+// SetStats attaches the process stats holder so /health can report version,
+// uptime, and the report-reject count. Call before Run.
+func (s *Server) SetStats(st *serverstat.Stats) { s.stats = st }
 
 // New constructs a Server with the allowlist middleware applied to a
 // fresh mux. /health is pre-registered; consumer packages (mcp, web)
@@ -50,8 +56,7 @@ func New(cfg Config, st *store.Store) (*Server, error) {
 		return nil, fmt.Errorf("httpsrv: parse allow-cidr: %w", err)
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/health", healthHandler(st))
-	return &Server{
+	s := &Server{
 		http: &http.Server{
 			// JoinHostPort brackets bare IPv6 binds ("::" → "[::]:6970");
 			// fmt.Sprintf("%s:%d") would yield the invalid ":::6970".
@@ -60,7 +65,9 @@ func New(cfg Config, st *store.Store) (*Server, error) {
 			ReadHeaderTimeout: defaultReadHeaderTimeout,
 		},
 		Mux: mux,
-	}, nil
+	}
+	mux.Handle("/health", healthHandler(st, func() *serverstat.Stats { return s.stats }))
+	return s, nil
 }
 
 // Run starts the listener and blocks until ctx is cancelled or the

@@ -92,7 +92,8 @@ CREATE INDEX IF NOT EXISTS idx_dbgresp_device ON debug_response(device_id, id);
 
 // Store wraps the sqlite database.
 type Store struct {
-	db *sql.DB
+	db   *sql.DB
+	path string // db file path, for on-disk size metrics
 }
 
 // Node is a row from the nodes table.
@@ -203,7 +204,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, path: path}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }

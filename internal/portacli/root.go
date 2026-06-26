@@ -16,17 +16,32 @@ import (
 
 var (
 	dbPath string
+
+	// Build identity, injected at link time via -ldflags -X (see
+	// deploy/build-deb.sh). Defaults make `go run`/tests report a dev build.
+	version = "dev"
+	commit  = ""
 )
 
 func nowSec() int64 { return time.Now().Unix() }
+
+// versionString is what `porta --version` prints and what the status surface
+// reports: the version, with the short commit appended when linked in.
+func versionString() string {
+	if commit != "" {
+		return version + " (" + commit + ")"
+	}
+	return version
+}
 
 func openStore() (*store.Store, error) { return store.Open(dbPath) }
 
 // NewRootCmd builds the porta command tree.
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "porta",
-		Short: "porta — northbound gateway for nodus-style nodes",
+		Use:     "porta",
+		Short:   "porta — northbound gateway for nodus-style nodes",
+		Version: versionString(),
 	}
 	root.PersistentFlags().StringVar(&dbPath, "db", "porta.db", "SQLite database path")
 	root.PersistentFlags().StringVar(&serverFlag, "server", "",

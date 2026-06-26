@@ -15,18 +15,27 @@ import (
 	"time"
 
 	"github.com/davidg238/porta/internal/control"
+	"github.com/davidg238/porta/internal/serverstat"
 	"github.com/davidg238/porta/internal/store"
 )
 
 // Handler holds the store and a clock. now is injectable for tests.
 type Handler struct {
-	st  *store.Store
-	now func() int64
+	st    *store.Store
+	now   func() int64
+	stats *serverstat.Stats // optional; nil → /api/status reports zero counters
 }
 
 // New builds a Handler over st with a wall-clock now (Unix seconds).
 func New(st *store.Store) *Handler {
 	return &Handler{st: st, now: func() int64 { return time.Now().Unix() }}
+}
+
+// WithStats attaches the process stats holder so /api/status can report version,
+// uptime, and per-transport packet/report counters. Returns h for chaining.
+func (h *Handler) WithStats(s *serverstat.Stats) *Handler {
+	h.stats = s
+	return h
 }
 
 // recoverer wraps h so a panic in any API handler becomes a 500 {ok:false}
@@ -47,6 +56,7 @@ func recoverer(h http.HandlerFunc) http.HandlerFunc {
 // Every handler is wrapped with recoverer so panics produce a 500 envelope
 // rather than aborting the connection (spec §6).
 func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/status", recoverer(h.handleStatus))
 	mux.HandleFunc("GET /api/nodes", recoverer(h.handleListNodes))
 	mux.HandleFunc("GET /api/nodes/{sel}", recoverer(h.handleNodeDetail))
 	mux.HandleFunc("POST /api/nodes/{sel}/commands", recoverer(h.handleCommand))

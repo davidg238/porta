@@ -14,6 +14,7 @@ import (
 	"github.com/davidg238/porta/internal/handler"
 	"github.com/davidg238/porta/internal/httpsrv"
 	"github.com/davidg238/porta/internal/mcpsrv"
+	"github.com/davidg238/porta/internal/serverstat"
 	"github.com/davidg238/porta/internal/tftp"
 	"github.com/davidg238/porta/internal/web"
 	"github.com/spf13/cobra"
@@ -61,11 +62,18 @@ func newServeCmd() *cobra.Command {
 				return err
 			}
 			defer udpConn.Close()
+
+			// Process-lifetime stats shared by the dispatcher (report outcomes),
+			// the UDP loop (per-transport packet volume), and the HTTP surface.
+			stats := serverstat.New(version, commit, nowSec)
+
+			disp := handler.New(st, nowSec)
+			disp.SetStats(stats)
 			tftpSrv := tftp.NewServer()
-			tftpSrv.SetDispatcher(handler.New(st, nowSec))
+			tftpSrv.SetDispatcher(disp)
 			log.Printf("porta: serving TFTP on udp %s (db=%s)", udpAddr, dbPath)
 			udpErr := make(chan error, 1)
-			go func() { udpErr <- serveUDPLoop(ctx, udpConn, tftpSrv) }()
+			go func() { udpErr <- serveUDPLoop(ctx, udpConn, tftpSrv, stats) }()
 
 			// HTTP listener (B4a, optional). When --http-port 0, httpErr
 			// stays nil so the select arm blocks forever — UDP keeps
@@ -82,9 +90,10 @@ func newServeCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+				srv.SetStats(stats)
 				web.New(st).Register(srv.Mux)
 				mcpsrv.New(st).Register(srv.Mux)
-				apisrv.New(st).Register(srv.Mux)
+				apisrv.New(st).WithStats(stats).Register(srv.Mux)
 				httpErr = make(chan error, 1)
 				go func() { httpErr <- srv.Run(ctx) }()
 				log.Printf("porta: serving HTTP on %s:%d", httpBind, httpPort)
@@ -106,7 +115,7 @@ func newServeCmd() *cobra.Command {
 // the peer. Mirrors the pre-B4a serveUDP body, with two additions: a
 // sidekick goroutine that closes the conn when ctx fires, and clean-exit
 // recognition for the net.ErrClosed that results.
-func serveUDPLoop(ctx context.Context, conn net.PacketConn, srv *tftp.Server) error {
+func serveUDPLoop(ctx context.Context, conn net.PacketConn, srv *tftp.Server, stats *serverstat.Stats) error {
 	go func() {
 		<-ctx.Done()
 		conn.Close()
@@ -119,6 +128,11 @@ func serveUDPLoop(ctx context.Context, conn net.PacketConn, srv *tftp.Server) er
 				return nil
 			}
 			return err
+		}
+		// Tag inbound volume by transport: IPv4 source = WiFi, IPv6 = Thread
+		// (both arrive on the one dual-stack socket).
+		if stats != nil {
+			stats.Packet(serverstat.TransportOf(peer.String()), n)
 		}
 		pkt := make([]byte, n)
 		copy(pkt, buf[:n])

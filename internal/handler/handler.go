@@ -14,6 +14,7 @@ import (
 
 	"github.com/davidg238/porta/internal/command"
 	"github.com/davidg238/porta/internal/config"
+	"github.com/davidg238/porta/internal/serverstat"
 	"github.com/davidg238/porta/internal/store"
 	"github.com/davidg238/porta/internal/telemetry"
 	"github.com/davidg238/porta/internal/tftp"
@@ -51,6 +52,7 @@ type Handler struct {
 	store *store.Store
 	now   func() int64
 	log   func(format string, args ...any) // injectable; defaults to log.Printf
+	stats *serverstat.Stats                // optional; nil in tests that don't care
 }
 
 // New creates a Handler. now supplies the current epoch seconds (injectable
@@ -62,6 +64,10 @@ func New(st *store.Store, now func() int64) *Handler {
 // SetLog replaces the handler's log sink (used by tests; production code
 // keeps the default log.Printf).
 func (h *Handler) SetLog(fn func(format string, args ...any)) { h.log = fn }
+
+// SetStats attaches the process stats holder so the dispatcher can record
+// report outcomes. Optional — nil leaves counting disabled.
+func (h *Handler) SetStats(s *serverstat.Stats) { h.stats = s }
 
 // parseResource splits "base?k=v&k2=v2" into base + params. A bare key maps to "".
 func parseResource(raw string) (string, map[string]string) {
@@ -175,16 +181,31 @@ func (h *Handler) Write(resource, peer string, data []byte) error {
 	if id == "" {
 		return fmt.Errorf("access denied")
 	}
+	var err error
 	switch base {
 	case "report":
-		return h.writeReport(id, peer, data)
+		err = h.writeReport(id, peer, data)
 	case "data":
-		return h.writeData(id, peer, data)
+		err = h.writeData(id, peer, data)
 	case "debug":
-		return h.writeDebug(id, peer, data)
+		err = h.writeDebug(id, peer, data)
 	default:
 		return fmt.Errorf("access denied: %s", base)
 	}
+	// Record the report-write outcome and — importantly — log a rejection. A
+	// rejected write used to be silent on porta's side (only the node panicked),
+	// which is how the doubled-JSON storm hid for weeks.
+	if h.stats != nil && base == "report" {
+		if err != nil {
+			h.stats.ReportRejected()
+		} else {
+			h.stats.ReportOK()
+		}
+	}
+	if err != nil {
+		h.log("porta: %s write rejected from %s (id=%s): %v", base, peer, id, err)
+	}
+	return err
 }
 
 // writeReport is the previous Write body, refactored out.
