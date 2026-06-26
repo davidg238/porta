@@ -107,6 +107,18 @@ func (h *Handler) dispatch(id string, req commandReq) (int64, error) {
 	case "reboot":
 		// No args. Imperative one-shot; the node reboots at end of poll.
 		return control.Reboot(h.st, id, "api", now)
+	case "debug":
+		var a struct {
+			Name   string `json:"name"`
+			Action string `json:"action"`
+		}
+		if err := decodeArgs(req.Args, &a); err != nil {
+			return 0, err
+		}
+		if a.Name == "" {
+			return 0, fmt.Errorf("debug requires name")
+		}
+		return control.Debug(h.st, id, a.Name, a.Action, "api", now)
 	default:
 		return 0, fmt.Errorf("unknown verb %q", req.Verb)
 	}

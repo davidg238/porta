@@ -70,6 +70,15 @@ func Reboot(st *store.Store, id, issuedBy string, now int64) (int64, error) {
 	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
 }
 
+// Debug enqueues a declarative debug session goal (action attach|detach).
+func Debug(st *store.Store, id, name, action, issuedBy string, now int64) (int64, error) {
+	c, err := command.Debug(name, action)
+	if err != nil {
+		return 0, err
+	}
+	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
+}
+
 // Uninstall enqueues a stop command for the named container.
 func Uninstall(st *store.Store, id, name, issuedBy string, now int64) (int64, error) {
 	c := command.Stop(name)

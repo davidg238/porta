@@ -233,6 +233,20 @@ func TestReboot(t *testing.T) {
 	}
 }
 
+func TestDebugVerb(t *testing.T) {
+	c, err := Debug("blink", "attach")
+	if err != nil || c.Verb != "debug" {
+		t.Fatalf("Debug: verb=%q err=%v", c.Verb, err)
+	}
+	wire := string(EncodeWire(c.Verb, c.ArgsJSON))
+	if wire != `{"action":"attach","name":"blink","verb":"debug"}` {
+		t.Fatalf("wire = %s", wire)
+	}
+	if _, err := Debug("blink", "frob"); err == nil {
+		t.Fatal("expected error on invalid action")
+	}
+}
+
 func TestSetForward(t *testing.T) {
 	p := ForwardPolicy{
 		Print:     &StreamPolicy{On: false},

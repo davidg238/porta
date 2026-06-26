@@ -34,6 +34,7 @@ func TestPostCommandVerbs(t *testing.T) {
 		{"name", `{"verb":"set-name","args":{"name":"door"}}`, "set-name"},
 		{"stop", `{"verb":"stop","args":{"name":"blink"}}`, "stop"},
 		{"reboot", `{"verb":"reboot"}`, "reboot"},
+		{"debug-attach", `{"verb":"debug","args":{"name":"blink","action":"attach"}}`, "debug"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -153,6 +153,17 @@ func SetMode(args map[string]any) (Command, error) {
 	}
 }
 
+// Debug enqueues a declarative debug session goal: action ∈ {attach, detach}.
+// attach launches app `name` under the in-image debugger (long-lived);
+// detach tears the session down.
+func Debug(name, action string) (Command, error) {
+	if action != "attach" && action != "detach" {
+		return Command{}, fmt.Errorf("invalid debug action %q (expected attach|detach)", action)
+	}
+	b, _ := json.Marshal(map[string]string{"name": name, "action": action})
+	return Command{Verb: "debug", ArgsJSON: string(b)}, nil
+}
+
 // SetName builds a set-name command. The name is node-owned (stored in NVS and
 // echoed back); porta only relays + mirrors it.
 func SetName(name string) (Command, error) {
