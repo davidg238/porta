@@ -154,8 +154,8 @@ func (h *Handler) readPayload(params map[string]string) ([]byte, error) {
 	return img, nil
 }
 
-// AcceptWrite gates WRQs: report?id= and data?id= are accepted. Everything
-// else (missing id, unknown base) → TFTP ERROR.
+// AcceptWrite gates WRQs: report?id=, data?id=, and debug?id= are accepted.
+// Everything else (missing id, unknown base) → TFTP ERROR.
 func (h *Handler) AcceptWrite(resource, peer string) error {
 	base, params := parseResource(resource)
 	if base != "report" && base != "data" && base != "debug" {
@@ -168,7 +168,7 @@ func (h *Handler) AcceptWrite(resource, peer string) error {
 }
 
 // Write ingests a completed WRQ body: report → observed_state + reconcile;
-// data → JSONL telemetry ingest. Anything else is rejected.
+// data → JSONL telemetry ingest; debug → dbg: response lines. Anything else is rejected.
 func (h *Handler) Write(resource, peer string, data []byte) error {
 	base, params := parseResource(resource)
 	id := params["id"]

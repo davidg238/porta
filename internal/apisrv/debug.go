@@ -23,6 +23,10 @@ func (h *Handler) handleDebugSend(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
 		return
 	}
+	if body.Line == "" {
+		writeErr(w, http.StatusBadRequest, "line must not be empty")
+		return
+	}
 	cid, err := control.DebugSend(h.st, id, body.Line, "api", h.now())
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
