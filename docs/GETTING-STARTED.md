@@ -129,6 +129,11 @@ Full command details: [CLI reference](CLI.md).
   lifecycle badges, containers, and two console panels (Prints / Logs). Panic
   rows carry a `[decode ↗]` link that hands the trace to the node's dev tool.
 - **Telemetry** and **Command Log** pages.
+- **Status page** — porta build identity + uptime, per-transport volume
+  (wifi/thread/espnow nodes, packets, bytes), report ok/rejected counts, and
+  sqlite store metrics (on-disk size, pages, per-table rows, data_log span).
+  The same surface is available as JSON at `GET /api/status` (and a slimmer
+  subset at `/health`).
 
 ---
 

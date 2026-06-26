@@ -91,7 +91,7 @@ func newServeCmd() *cobra.Command {
 					return err
 				}
 				srv.SetStats(stats)
-				web.New(st).Register(srv.Mux)
+				web.New(st).WithStats(stats).Register(srv.Mux)
 				mcpsrv.New(st).Register(srv.Mux)
 				apisrv.New(st).WithStats(stats).Register(srv.Mux)
 				httpErr = make(chan error, 1)

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/davidg238/porta/internal/control"
+	"github.com/davidg238/porta/internal/serverstat"
 	"github.com/davidg238/porta/internal/store"
 )
 
@@ -23,9 +24,10 @@ var content embed.FS
 
 // Handler renders the operator console.
 type Handler struct {
-	st   *store.Store
-	now  func() int64
-	tmpl *template.Template
+	st    *store.Store
+	now   func() int64
+	tmpl  *template.Template
+	stats *serverstat.Stats // optional; nil → status page reports zero counters
 }
 
 // New builds a Handler. now defaults to wall-clock epoch seconds.
@@ -37,6 +39,14 @@ func New(st *store.Store) *Handler {
 	}
 }
 
+// WithStats attaches the process stats holder so the status page can render
+// build identity, uptime, and per-transport packet/report counters. Returns h
+// for chaining (mirrors apisrv.Handler.WithStats).
+func (h *Handler) WithStats(s *serverstat.Stats) *Handler {
+	h.stats = s
+	return h
+}
+
 // Register mounts all routes on mux. "/" is the catch-all; it 404s any path
 // it does not own so it never shadows sibling routes like /health.
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -44,6 +54,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.handleIndex)
 	mux.HandleFunc("/n/", h.handleNode)
 	mux.HandleFunc("/log", h.handleLog)
+	mux.HandleFunc("/status", h.handleStatus)
+	mux.HandleFunc("/partials/status", h.handleStatusPartial)
 	mux.HandleFunc("/telemetry", h.handleTelemetry)
 	mux.HandleFunc("/partials/telemetry", h.handleTelemetryPartial)
 	mux.HandleFunc("/partials/nodes", h.handleNodesPartial)

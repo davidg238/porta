@@ -1,0 +1,42 @@
+<!-- Copyright (c) 2026 Ekorau LLC -->
+{{define "status"}}{{template "head" .}}
+<h1>Server Status</h1>
+{{template "status-body" .}}
+{{template "foot" .}}{{end}}
+
+{{/* status-body re-emits its own wrapper so the htmx outerHTML poll is idempotent. */}}
+{{define "status-body"}}<div id="status" hx-get="/partials/status" hx-trigger="every 5s" hx-swap="outerHTML">
+<h2>porta</h2>
+<table>
+  <tbody>
+    <tr><th>Version</th><td>{{.Version}}</td></tr>
+    <tr><th>Commit</th><td>{{.Commit}}</td></tr>
+    <tr><th>Uptime</th><td>{{.Uptime}}</td></tr>
+    <tr><th>Reports</th><td>{{.ReportsOK}} ok · {{.ReportsRejected}} rejected</td></tr>
+  </tbody>
+</table>
+
+<h2>Transports</h2>
+<table>
+  <thead><tr><th>Transport</th><th>Nodes</th><th>Packets</th><th>Bytes</th></tr></thead>
+  <tbody>
+  {{range .Transports}}<tr><td>{{.Name}}</td><td>{{.Nodes}}</td><td>{{.Packets}}</td><td>{{.Bytes}}</td></tr>{{end}}
+  </tbody>
+</table>
+
+<h2>Store</h2>
+<table>
+  <tbody>
+    <tr><th>On disk</th><td>{{.DBFileBytes}} ({{.DBWALBytes}} WAL)</td></tr>
+    <tr><th>Pages</th><td>{{.DBPageCount}} × {{.DBPageSize}} B · {{.DBFreelist}} free</td></tr>
+    <tr><th>sqlite</th><td>{{.SQLiteVersion}}</td></tr>
+    <tr><th>data_log span</th><td>{{.DataLogSpan}}</td></tr>
+  </tbody>
+</table>
+<table>
+  <thead><tr><th>Table</th><th>Rows</th></tr></thead>
+  <tbody>
+  {{range .Tables}}<tr><td>{{.Name}}</td><td>{{.Rows}}</td></tr>{{end}}
+  </tbody>
+</table>
+</div>{{end}}
