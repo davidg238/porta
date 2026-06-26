@@ -19,6 +19,16 @@ table.compact td { padding-right:1.4rem; white-space:nowrap; }
 #recent table.compact { width:100%; }
 #recent td.json { width:100%; padding-right:.4rem; white-space:normal; word-break:break-all; }
 tr.node-row:hover { background:#f0f0f0; cursor:pointer; }
+/* Status page: tile the metric cards left-to-right and wrap, so a wide screen
+   shows a dense grid instead of full-width blocks with a sea of whitespace. */
+.status-grid { display:flex; flex-wrap:wrap; gap:.7rem; align-items:flex-start; }
+.status-grid > section { margin:0; }
+.status-grid h2 { text-transform:lowercase; }
+.status-grid .kv th { padding-right:1.4rem; white-space:nowrap; }
+/* Numeric columns (everything past the first) right-align under right-aligned
+   headers so counts line up by magnitude. */
+.status-grid table.num th:not(:first-child),
+.status-grid table.num td:not(:first-child) { text-align:right; padding-left:1.4rem; }
 .dot-green { color:var(--green); } .dot-red { color:var(--red); } .dot-amber { color:var(--amber); }
 .gauge { position:relative; background:#eee; border-radius:3px; height:16px; min-width:120px; overflow:hidden; }
 .gauge > .fill { height:100%; border-radius:3px; }

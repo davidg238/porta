@@ -57,6 +57,14 @@ func TestStatusPartialPolls(t *testing.T) {
 	if !strings.Contains(p, `hx-get="/partials/status"`) {
 		t.Errorf("status partial missing self-poll: %s", p)
 	}
+	// Dense layout: cards tile in a grid and the tables size to content
+	// (table.compact) instead of stretching full-width.
+	if !strings.Contains(p, `class="status-grid"`) {
+		t.Errorf("status partial missing tiled grid container: %s", p)
+	}
+	if !strings.Contains(p, "compact") {
+		t.Errorf("status partial missing compact tables: %s", p)
+	}
 }
 
 func TestStatusPageRendersWithoutStats(t *testing.T) {
