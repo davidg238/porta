@@ -72,6 +72,22 @@ CREATE TABLE IF NOT EXISTS data_log (
   level TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_data_device_ts ON data_log(device_id, ts);
+CREATE TABLE IF NOT EXISTS debug_request (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id TEXT,
+  line TEXT,
+  issued_at INTEGER,
+  delivered_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS debug_response (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id TEXT,
+  ts INTEGER,
+  seq INTEGER,
+  line TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dbgreq_device ON debug_request(device_id, delivered_at);
+CREATE INDEX IF NOT EXISTS idx_dbgresp_device ON debug_response(device_id, id);
 `
 
 // Store wraps the sqlite database.
