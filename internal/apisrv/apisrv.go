@@ -54,6 +54,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/nodes/{sel}/commands", recoverer(h.handleNodeCommands))
 	mux.HandleFunc("GET /api/nodes/{sel}/config", recoverer(h.handleNodeConfig))
 	mux.HandleFunc("GET /api/nodes/{sel}/telemetry", recoverer(h.handleTelemetry))
+	mux.HandleFunc("POST /api/nodes/{sel}/debug/send", recoverer(h.handleDebugSend))
+	mux.HandleFunc("GET /api/nodes/{sel}/debug/responses", recoverer(h.handleDebugResponses))
 }
 
 // envelope is the uniform response shape, echoing jast-gw's Response.

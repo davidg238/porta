@@ -170,6 +170,57 @@ func (c *Client) Install(sel, name string, image io.Reader, opts InstallOpts) (i
 	return r.CommandID, r.NodeID, r.Size, nil
 }
 
+// DebugLine is one response line returned by the debug responses read.
+type DebugLine struct {
+	ID   int64  `json:"id"`
+	Line string `json:"line"`
+}
+
+// DebugAttach enqueues a debug attach command for sel targeting app.
+func (c *Client) DebugAttach(sel, app string) (int64, string, error) {
+	return c.Command(sel, "debug", map[string]any{"name": app, "action": "attach"})
+}
+
+// DebugDetach enqueues a debug detach command for sel targeting app.
+func (c *Client) DebugDetach(sel, app string) (int64, string, error) {
+	return c.Command(sel, "debug", map[string]any{"name": app, "action": "detach"})
+}
+
+// DebugSend POSTs one dbg: request line to the node's debug send endpoint.
+func (c *Client) DebugSend(sel, line string) error {
+	body, _ := json.Marshal(map[string]string{"line": line})
+	req, err := http.NewRequest("POST",
+		c.baseURL+"/api/nodes/"+url.PathEscape(sel)+"/debug/send", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	_, err = c.do(req)
+	return err
+}
+
+// DebugResponses GETs dbg: response lines with id > after from the node's debug
+// responses endpoint.
+func (c *Client) DebugResponses(sel string, after int64) ([]DebugLine, error) {
+	req, err := http.NewRequest("GET",
+		c.baseURL+"/api/nodes/"+url.PathEscape(sel)+"/debug/responses?after="+
+			strconv.FormatInt(after, 10), nil)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	var r struct {
+		Responses []DebugLine `json:"responses"`
+	}
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, err
+	}
+	return r.Responses, nil
+}
+
 // DataRow is one telemetry row returned by the telemetry reads. Value is the
 // typed scalar reconstructed from value_type: int64 for int/bool, float64 for
 // float, nil for string & log rows (their payload is in Text).

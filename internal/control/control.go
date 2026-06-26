@@ -114,6 +114,16 @@ func Install(st *store.Store, id, name string, img io.Reader, opts InstallOpts, 
 	return st.EnqueueCommand(id, runCmd.Verb, runCmd.ArgsJSON, issuedBy, now)
 }
 
+// DebugSend enqueues one dbg: request line onto the node's debug channel.
+func DebugSend(st *store.Store, id, line, issuedBy string, now int64) (int64, error) {
+	return st.EnqueueDebugRequest(id, line, now)
+}
+
+// DebugResponses returns dbg: response lines with id > after.
+func DebugResponses(st *store.Store, id string, after int64, limit int) ([]store.DebugResponse, error) {
+	return st.DebugResponsesAfter(id, after, limit)
+}
+
 // IsNodeID reports whether s is a node id per PROTOCOL.md §1: opaque
 // lowercase hex, 12-16 digits (12-hex ESP32 MAC or 16-hex EUI-64).
 func IsNodeID(s string) bool {
