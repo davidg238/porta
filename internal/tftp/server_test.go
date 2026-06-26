@@ -257,3 +257,57 @@ func TestServerWRQMultiBlock(t *testing.T) {
 		t.Fatal("data mismatch")
 	}
 }
+
+// TestServerWRQDuplicateBlockNotConcatenated reproduces the report-corruption
+// bug: when a client retransmits a DATA block (its ACK timed out), the server
+// must re-ACK without appending the payload a second time. Appending the
+// duplicate concatenates the body (e.g. two JSON objects → "invalid character
+// '{' after top-level value" on the porta side).
+func TestServerWRQDuplicateBlockNotConcatenated(t *testing.T) {
+	s := NewServer()
+	var handlerCalled int
+	var gotData []byte
+	s.RegisterPut("/report", func(path string, data []byte) {
+		handlerCalled++
+		gotData = make([]byte, len(data))
+		copy(gotData, data)
+	})
+
+	wrq := BuildWRQ("/report", 64)
+	s.HandlePacket(wrq) // OACK
+
+	// Block 1: 64 bytes (full).
+	block1 := make([]byte, 64)
+	for i := range block1 {
+		block1[i] = byte(i)
+	}
+	replies := s.HandlePacket(BuildData(1, block1))
+	if b, _ := ParseACK(replies[0]); b != 1 {
+		t.Fatalf("expected ACK 1, got %d", b)
+	}
+
+	// Client's ACK-wait timed out, so it RETRANSMITS block 1 before block 2.
+	// The server must re-ACK block 1 without buffering the payload again.
+	replies = s.HandlePacket(BuildData(1, block1))
+	if len(replies) != 1 {
+		t.Fatalf("expected one reply (re-ACK) for duplicate block 1, got %d", len(replies))
+	}
+	if b, _ := ParseACK(replies[0]); b != 1 {
+		t.Fatalf("expected re-ACK 1 for duplicate, got %d", b)
+	}
+
+	// Block 2: 3 bytes (short = final).
+	block2 := []byte{0xAA, 0xBB, 0xCC}
+	replies = s.HandlePacket(BuildData(2, block2))
+	if b, _ := ParseACK(replies[0]); b != 2 {
+		t.Fatalf("expected ACK 2, got %d", b)
+	}
+
+	expected := append(append([]byte{}, block1...), block2...)
+	if handlerCalled != 1 {
+		t.Fatalf("expected handler called once, got %d", handlerCalled)
+	}
+	if !bytes.Equal(gotData, expected) {
+		t.Fatalf("duplicate block 1 corrupted the buffer: got %d bytes, want %d", len(gotData), len(expected))
+	}
+}

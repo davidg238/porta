@@ -47,6 +47,7 @@ type putTransfer struct {
 	handler  PutHandler
 	buf      []byte
 	blksize  int
+	expected uint16 // next in-order DATA block number to accept (starts at 1)
 	resource string // dispatcher-mode resource key (empty in legacy mode)
 	peer     string
 }
@@ -173,7 +174,7 @@ func (s *Server) dispatchWRQ(pkt []byte, peer string) [][]byte {
 			blksize, hasBlksize = v, true
 		}
 	}
-	s.puts[resource] = &putTransfer{resource: resource, peer: peer, blksize: blksize}
+	s.puts[resource] = &putTransfer{resource: resource, peer: peer, blksize: blksize, expected: 1}
 	if hasBlksize {
 		return [][]byte{BuildOACK(map[string]string{"blksize": strconv.Itoa(blksize)})}
 	}
@@ -248,9 +249,10 @@ func (s *Server) handleWRQ(pkt []byte) [][]byte {
 	}
 
 	s.puts[path] = &putTransfer{
-		path:    path,
-		handler: handler,
-		blksize: blksize,
+		path:     path,
+		handler:  handler,
+		blksize:  blksize,
+		expected: 1,
 	}
 
 	if hasBlksize {
@@ -300,7 +302,19 @@ func (s *Server) handleDATA(pkt []byte) [][]byte {
 
 	// Find the active put transfer.
 	for path, xfer := range s.puts {
+		// Only buffer the block we expect next. A retransmitted earlier block
+		// (the client's ACK was lost or slow) must be re-ACKed WITHOUT appending
+		// its payload again — otherwise the body is concatenated (e.g. duplicate
+		// JSON → "invalid character '{' after top-level value" downstream). A
+		// future block (gap) is dropped so the client retransmits in order.
+		if block != xfer.expected {
+			if block < xfer.expected {
+				return [][]byte{BuildACK(block)}
+			}
+			return nil
+		}
 		xfer.buf = append(xfer.buf, data...)
+		xfer.expected++
 
 		if len(data) < xfer.blksize {
 			// Final block: ingest and clean up.
