@@ -45,6 +45,8 @@ in `gateway/handler.toit`.
 | node → gw | RRQ | `payload?id=<mac>&name=<app>&crc=<crc>` | Download a container image (raw bytes) selected by `crc`. |
 | node → gw | WRQ | `report?id=<mac>` | Upload the observed-state report. |
 | node → gw | WRQ | `data?id=<mac>` | Upload buffered telemetry (JSONL). |
+| node → gw | RRQ | `debug?id=<mac>` | Pull the next undelivered `dbg:` request line. Empty body = none queued. |
+| node → gw | WRQ | `debug?id=<mac>` | Upload newline-delimited `dbg:` response lines from the in-image debugger. |
 
 Notes:
 - Any RRQ/WRQ carrying `id` causes the gateway to **touch** (last-seen) the node.
@@ -55,9 +57,12 @@ Notes:
   **delivered** on the gateway only on the TFTP transfer-complete event with
   `ok=true` (`on-transfer-complete` in `gateway/handler.toit`). A failed or
   drain (empty) transfer marks nothing.
-- A WRQ to any base other than `report` or `data`, or any WRQ missing `id`, is
-  rejected (`STORAGE-ACCESS-DENIED`). A `payload` RRQ whose `crc` does not match
-  a stored image throws `STORAGE-FILE-NOT-FOUND`.
+- `debug?id=` follows the same drain pattern as `commands`: served one request
+  line per RRQ, marked delivered on transfer-complete, empty body = none queued.
+  See §8 for the full debug channel semantics.
+- A WRQ to any base other than `report`, `data`, or `debug`, or any WRQ missing
+  `id`, is rejected (`STORAGE-ACCESS-DENIED`). A `payload` RRQ whose `crc` does
+  not match a stored image throws `STORAGE-FILE-NOT-FOUND`.
 
 ---
 
@@ -91,6 +96,7 @@ Verb constants (identical in `gateway/command.toit` and
 | `set-forward` | `VERB-SET-FORWARD` |
 | `set` | `VERB-SET` |
 | `reboot` | `VERB-REBOOT` |
+| `debug` | `VERB-DEBUG` |
 
 ### 2.1 `run` — install/run an app
 
@@ -289,6 +295,38 @@ the node's next report as `health.reset: "software"` (§3.1) so the gateway can
 distinguish an operator-commanded restart from a duty-cycle deep-sleep wake.
 This requires the node to use a true software-reset primitive — **not**
 `esp32.deep-sleep`, which would report `deep-sleep`.
+
+### 2.9 `debug` — attach or detach the remote debugger
+
+Declares the node's debug-session goal for a named app: **attach** launches it
+under the in-image debugger; **detach** tears the session down. This is a
+**declarative, last-write-wins** command — a later `debug` for the same app
+supersedes an earlier one; while a session is attached, a `run` command for
+that app is held back (the debugger owns it).
+
+| Key | Type | Required | Meaning |
+|-----|------|----------|---------|
+| `verb` | string | yes | `"debug"` |
+| `name` | string | yes | App name to debug (must already be installed). |
+| `action` | string | yes | `"attach"` — start a debug session; `"detach"` — end it. |
+
+```json
+{"verb": "debug", "name": "myapp", "action": "attach"}
+{"verb": "debug", "name": "myapp", "action": "detach"}
+```
+
+On **attach**: the node looks up the already-installed app image and starts it as
+a long-lived child process with the in-image debugger active (`OEVM_DEBUG=1`).
+The child is connected by a pair of pipes; the node shuttles `dbg:` request lines
+into the child's stdin and `dbg:` response lines out of its stdout (see §8).
+
+On **detach** (or VM exit): the node tears down the pipes, terminates the child,
+and clears the debug goal. The app is no longer running under the debugger; a
+subsequent `run` command restores normal run-once behaviour.
+
+The debug session is **stateful in the node**: while the keeper process is alive,
+the child VM and its pipe handles persist across poll turns. The session lives in
+the keeper, not in porta — porta is a stateless relay.
 
 ---
 
@@ -576,8 +614,8 @@ A conforming node MUST:
   on every TFTP request.
 - Drain `commands?id=` by repeated RRQ until a zero-byte body, treating commands
   as absolute/idempotent (last write wins per target).
-- Honour the seven verbs (`run`, `stop`, `set-mode`, `set-name`, `set-forward`,
-  `set`, `reboot`) with the arg schemas and defaults in §2, including the
+- Honour the eight verbs (`run`, `stop`, `set-mode`, `set-name`, `set-forward`,
+  `set`, `reboot`, `debug`) with the arg schemas and defaults in §2, including the
   `lifecycle` declaration (default `run-once`) and `runlevel` (default `3`).
   `set-mode` MUST apply atomically (accept whole or reject whole); an always-on
   `set-mode` MAY carry the optional `loop_sleep_s`, which the node re-validates,
@@ -596,6 +634,11 @@ A conforming node MUST:
 - (If it forwards telemetry) report uncaught payload exceptions as `kind:"panic"`
   entries per §6 (the base64 trace blob in `text`); decoding is node-defined and
   lives in the node repo's tooling.
+- (If it supports remote debug) on `debug attach`, launch the named installed app
+  under the in-image debugger; drain `debug?id=` requests each poll and feed them
+  to the debugger; ship response lines back via `debug?id=` WRQ (§8). On
+  `debug detach`, tear down the session. While attached, hold back any `run`
+  command for the same app.
 
 A conforming node MAY omit `config` from its report (it defaults to empty),
 omit optional command args (defaults apply), and implement any transport that
@@ -606,3 +649,65 @@ A conforming node SHOULD report its `chip` / `sdk` identity (§3) so a node-repo
 tool (e.g. `nodus run`) can verify payload/SDK compatibility before deploying; a node
 that omits them still conforms, but such a tool blocks against it until identity is
 known.
+
+---
+
+## 8. Debug channel (node ↔ gateway)
+
+The `debug?id=` TFTP resource is a **bidirectional relay** for the `dbg:` line
+protocol spoken by the in-image debugger. porta is a **stateless relay**: it
+queues operator-issued `dbg:` requests and accumulates node-emitted `dbg:`
+responses, but it has no understanding of the debugger state. The session lives
+entirely in the keeper process on the node.
+
+### 8.1 Request direction (operator → node, via RRQ)
+
+An operator enqueues a `dbg:` request line via the HTTP API
+(`POST /api/nodes/{id}/debug/send`) or the `porta debug send` CLI. The gateway
+stores each line as an undelivered debug request row.
+
+The node drains requests by issuing RRQs for `debug?id=<mac>` — the same
+drain pattern as `commands?id=`:
+
+- Each RRQ serves **one request line** (no trailing newline; the node appends
+  it on write to the debugger's stdin).
+- An RRQ that returns a non-empty body is **marked delivered** on the gateway
+  at transfer-complete (the same `Complete` callback as commands).
+- An RRQ that returns a **zero-byte body** means the request queue is empty —
+  the drain sentinel. The node stops issuing further request RRQs for this poll.
+
+The node feeds each delivered line to the in-image debugger's stdin (one line
+per write, newline-terminated). Requests accumulate in the gateway queue
+independently of the node's poll cadence; a burst of requests is drained in
+one poll turn.
+
+### 8.2 Response direction (node → operator, via WRQ)
+
+After feeding queued requests to the debugger and letting it produce output, the
+node uploads the accumulated response text to `debug?id=<mac>` via WRQ. The body
+is **newline-delimited `dbg:` response lines** (whatever the in-image debugger
+wrote to stdout since the last poll). The gateway splits on `\n`, discards blank
+lines, and inserts each non-empty line into the `debug_response` table with a
+monotonic `id`.
+
+Operators read responses via the HTTP API
+(`GET /api/nodes/{id}/debug/responses?after=N`) or `porta debug poll`. The
+`after` cursor parameter lets a client page through responses without duplicates.
+Because the response table is append-only, a client can re-read from `after=0`
+at any time to replay the session transcript.
+
+### 8.3 Session lifecycle
+
+A debug session begins when the node processes a `debug attach` command (§2.9)
+and ends when it processes `debug detach`, or when the in-image debugger exits
+(e.g., on `dbg:continue` after the last breakpoint). Between polls the debugger
+process is held alive by its stdin pipe; the node MUST keep the pipe open for the
+session to persist across poll turns.
+
+The `dbg:` line protocol is defined by the node's in-image debugger, not by
+porta. Recognised verbs at time of writing: `dbg:ready` (startup sentinel),
+`dbg:methods`, `dbg:break`, `dbg:clear`, `dbg:continue`, `dbg:inspect`,
+`dbg:step`, `dbg:over`, `dbg:out`. Response sentinels include `dbg:ok methods`,
+`dbg:ok break`, `dbg:paused break <id> <off>`, `dbg:paused step <id> <off>`,
+and `dbg:stack off=<n> r0=<v> …`. The protocol is defined in the node repo;
+porta carries it verbatim.
