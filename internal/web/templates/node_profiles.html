@@ -1,0 +1,7 @@
+<!-- Copyright (c) 2026 Ekorau LLC -->
+{{define "node-profiles"}}<section id="profiles" hx-get="/n/{{.ID}}/profiles" hx-trigger="load, every 10s" hx-swap="outerHTML">
+<h2>Profiles</h2>
+{{if .Rows}}<table class="compact"><tbody>
+{{range .Rows}}<tr><td>#{{.Seq}}</td><td>{{.Age}}</td><td>{{.App}}</td><td>{{if .Label}}{{.Label}}{{else}}—{{end}}</td><td>{{.Bytes}} B</td><td><a href="{{.DecodeHref}}">[decode ↗]</a></td></tr>{{end}}
+</tbody></table>{{else}}<p class="subtitle">{{.Empty}}</p>{{end}}
+</section>{{end}}

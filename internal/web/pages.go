@@ -78,6 +78,8 @@ func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store
 		h.render(w, "node-recent", vm)
 	case "containers":
 		h.render(w, "node-containers", vm)
+	case "profiles":
+		h.renderNodeProfiles(w, n)
 	// telemetry (optional): per-node console panels — see node_console.go
 	case "prints":
 		h.renderNodeConsole(w, n, "node-prints", "Prints",

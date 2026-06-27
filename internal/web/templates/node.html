@@ -1,8 +1,8 @@
 <!-- Copyright (c) 2026 Ekorau LLC -->
 {{define "node"}}{{template "head" .}}
 <a href="/">← all nodes</a>
-{{/* Two-column node page: left holds the existing surfaces (header → containers)
-     with Prints last, growing to fill the column; right is Logs full-height.
+{{/* Two-column node page: left holds discrete tables (header → config → recent →
+     profiles → containers); right stacks Logs (60%) above Prints (40%).
      Each partial emits its own polling wrapper (id + hx-*); embed them directly
      so the initial render matches what the outerHTML swap replaces. */}}
 <div class="node-cols">
@@ -10,7 +10,8 @@
     {{template "node-header" .}}
     {{template "node-config" .}}
     {{template "node-recent" .}}
-    {{template "node-profiles" .}}
+    <section id="profiles" hx-get="/n/{{.ID}}/profiles" hx-trigger="load, every 10s" hx-swap="outerHTML">
+      <h2>Profiles</h2><p class="subtitle">loading…</p></section>
     {{template "node-containers" .}}
   </div>
   <div class="node-right">
@@ -50,4 +51,3 @@
   {{if .Apps}}<table class="compact"><tbody>{{range .Apps}}<tr><td>{{.Name}}</td><td>crc {{.CRC}}</td><td>runlevel {{.Runlevel}}</td></tr>{{end}}</tbody></table>{{else}}<p class="subtitle">none observed</p>{{end}}
 </section>{{end}}
 
-{{define "node-profiles"}}{{end}}
