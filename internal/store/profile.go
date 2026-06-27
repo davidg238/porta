@@ -96,6 +96,29 @@ func (s *Store) ProfileResults(deviceID string, afterSeq int64, limit int) ([]Pr
 	return out, rows.Err()
 }
 
+// ProfileResultsRecent returns the newest limit rows for the device, ordered
+// newest-first (DESC seq). Blob is omitted (list view). limit must be > 0.
+func (s *Store) ProfileResultsRecent(deviceID string, limit int) ([]ProfileResult, error) {
+	rows, err := s.db.Query(
+		`SELECT id, seq, ts, COALESCE(app,''), COALESCE(label,''), COALESCE(byte_len,0)
+		 FROM profile_result WHERE device_id = ? ORDER BY seq DESC LIMIT ?`,
+		deviceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ProfileResult
+	for rows.Next() {
+		var r ProfileResult
+		r.DeviceID = deviceID
+		if err := rows.Scan(&r.ID, &r.Seq, &r.TS, &r.App, &r.Label, &r.ByteLen); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) GetProfileResult(deviceID string, seq int64) (*ProfileResult, error) {
 	var r ProfileResult
 	r.DeviceID = deviceID

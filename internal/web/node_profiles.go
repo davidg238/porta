@@ -31,15 +31,14 @@ type profilesVM struct {
 }
 
 func (h *Handler) renderNodeProfiles(w http.ResponseWriter, n *store.Node) {
-	rows, err := control.ProfileResults(h.st, n.ID, 0, 50)
+	rows, err := control.ProfileResultsRecent(h.st, n.ID, 50)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	now := h.now()
 	out := make([]profileRowVM, 0, len(rows))
-	for i := len(rows) - 1; i >= 0; i-- { // newest first
-		r := rows[i]
+	for _, r := range rows { // already newest-first from DESC query
 		href := fmt.Sprintf("nodus://profile?node=%s&seq=%d", n.ID, r.Seq)
 		out = append(out, profileRowVM{
 			Seq: r.Seq, Age: control.RelativeAge(r.TS, now), App: r.App, Label: r.Label,

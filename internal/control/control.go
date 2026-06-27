@@ -100,6 +100,11 @@ func ProfileResults(st *store.Store, id string, afterSeq int64, limit int) ([]st
 	return st.ProfileResults(id, afterSeq, limit)
 }
 
+// ProfileResultsRecent returns the newest limit rows for the device, newest-first.
+func ProfileResultsRecent(st *store.Store, id string, limit int) ([]store.ProfileResult, error) {
+	return st.ProfileResultsRecent(id, limit)
+}
+
 // ProfileResult fetches one profile result (with blob) by per-node seq.
 func ProfileResult(st *store.Store, id string, seq int64) (*store.ProfileResult, error) {
 	return st.GetProfileResult(id, seq)

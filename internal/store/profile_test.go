@@ -61,3 +61,36 @@ func TestProfileResultSeqAndCorrelation(t *testing.T) {
 		t.Fatalf("afterSeq filter wrong: %v %+v", err, after)
 	}
 }
+
+func TestProfileResultsRecent(t *testing.T) {
+	st, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// Insert 5 rows; then ask for newest 3 — must get seq 5,4,3 in that order.
+	for i := 0; i < 5; i++ {
+		if _, err := st.InsertProfileResult("node1", "app", "lbl", int64(1000+i), []byte{byte(i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	recent, err := st.ProfileResultsRecent("node1", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 3 {
+		t.Fatalf("want 3 rows, got %d", len(recent))
+	}
+	// Newest-first: seq 5, 4, 3
+	if recent[0].Seq != 5 || recent[1].Seq != 4 || recent[2].Seq != 3 {
+		t.Errorf("want seqs 5,4,3 got %d,%d,%d", recent[0].Seq, recent[1].Seq, recent[2].Seq)
+	}
+	// Blob must be omitted in list view
+	for _, r := range recent {
+		if r.Blob != nil {
+			t.Errorf("list view must omit blob, seq %d has blob", r.Seq)
+		}
+	}
+}
