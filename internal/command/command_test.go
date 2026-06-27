@@ -247,6 +247,43 @@ func TestDebugVerb(t *testing.T) {
 	}
 }
 
+func TestProfileVerb(t *testing.T) {
+	c, err := Profile("myapp", "start", 30, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Verb != "profile" {
+		t.Fatalf("verb = %q", c.Verb)
+	}
+	wire := string(EncodeWire(c.Verb, c.ArgsJSON))
+	for _, want := range []string{`"verb":"profile"`, `"action":"start"`, `"name":"myapp"`, `"duration_s":30`} {
+		if !strings.Contains(wire, want) {
+			t.Errorf("wire missing %q: %s", want, wire)
+		}
+	}
+	if strings.Contains(wire, "continuous") {
+		t.Errorf("continuous must be omitted when false: %s", wire)
+	}
+	if strings.Contains(wire, "label") {
+		t.Errorf("label must never reach the wire: %s", wire)
+	}
+
+	cc, _ := Profile("myapp", "start", 0, true)
+	if !strings.Contains(string(EncodeWire(cc.Verb, cc.ArgsJSON)), `"continuous":true`) {
+		t.Errorf("continuous=true must be present")
+	}
+
+	stop, _ := Profile("myapp", "stop", 0, false)
+	sw := string(EncodeWire(stop.Verb, stop.ArgsJSON))
+	if strings.Contains(sw, "duration_s") || strings.Contains(sw, "continuous") {
+		t.Errorf("stop carries no duration/continuous: %s", sw)
+	}
+
+	if _, err := Profile("myapp", "pause", 0, false); err == nil {
+		t.Error("expected error for invalid action")
+	}
+}
+
 func TestSetForward(t *testing.T) {
 	p := ForwardPolicy{
 		Print:     &StreamPolicy{On: false},

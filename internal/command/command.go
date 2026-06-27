@@ -164,6 +164,32 @@ func Debug(name, action string) (Command, error) {
 	return Command{Verb: "debug", ArgsJSON: string(b)}, nil
 }
 
+// Profile enqueues a declarative profile session goal: action ∈ {start, stop}.
+// start arms a one-shot profiling run of app `name` (run-loop bounded by
+// duration_s; deep-sleep bounded by the next wake); stop disarms early. The
+// operator label is porta-side only and is deliberately NOT part of the wire
+// args. duration_s/continuous ride only on start.
+func Profile(name, action string, durationS int64, continuous bool) (Command, error) {
+	if action != "start" && action != "stop" {
+		return Command{}, fmt.Errorf("invalid profile action %q (expected start|stop)", action)
+	}
+	if durationS < 0 {
+		return Command{}, fmt.Errorf("profile duration_s must be >= 0")
+	}
+	obj := map[string]any{"name": name, "action": action}
+	if action == "start" {
+		obj["duration_s"] = durationS
+		if continuous {
+			obj["continuous"] = true
+		}
+	}
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return Command{}, err
+	}
+	return Command{Verb: "profile", ArgsJSON: string(b)}, nil
+}
+
 // SetName builds a set-name command. The name is node-owned (stored in NVS and
 // echoed back); porta only relays + mirrors it.
 func SetName(name string) (Command, error) {
