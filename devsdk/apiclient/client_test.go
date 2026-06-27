@@ -229,3 +229,32 @@ func TestNodeIdentityNotYetReported(t *testing.T) {
 		t.Errorf("got chip=%q sdk=%q, want empty/empty", chip, sdk)
 	}
 }
+
+func TestProfileClientRoundTrip(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/commands"):
+			w.Write([]byte(`{"ok":true,"data":{"command_id":7,"node_id":"n1"}}`))
+		case strings.HasSuffix(r.URL.Path, "/profile/1"):
+			w.Write([]byte(`{"ok":true,"data":{"seq":1,"blob":"AQIDBA=="}}`))
+		case strings.HasSuffix(r.URL.Path, "/profile"):
+			w.Write([]byte(`{"ok":true,"data":{"results":[{"seq":1,"ts":5,"app":"myapp","label":"run1","byte_len":4}]}}`))
+		}
+	}))
+	defer srv.Close()
+	c := New(srv.URL)
+
+	cid, node, err := c.ProfileStart("n1", "myapp", 30, false, "run1")
+	if err != nil || cid != 7 || node != "n1" {
+		t.Fatalf("start: %d %q %v", cid, node, err)
+	}
+	rows, err := c.ProfileResults("n1", 0)
+	if err != nil || len(rows) != 1 || rows[0].Label != "run1" || rows[0].ByteLen != 4 {
+		t.Fatalf("list: %+v %v", rows, err)
+	}
+	blob, err := c.ProfileBlob("n1", 1)
+	if err != nil || len(blob) != 4 {
+		t.Fatalf("blob: %v %v", blob, err)
+	}
+}

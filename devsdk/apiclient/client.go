@@ -9,6 +9,7 @@ package apiclient
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -219,6 +220,69 @@ func (c *Client) DebugResponses(sel string, after int64) ([]DebugLine, error) {
 		return nil, err
 	}
 	return r.Responses, nil
+}
+
+// ProfileStart arms a one-shot profile session for sel targeting app. label is
+// stored porta-side only (it is sent in the command body but never reaches the
+// wire — porta strips it into the profile_session row).
+func (c *Client) ProfileStart(sel, app string, durationS int64, continuous bool, label string) (int64, string, error) {
+	return c.Command(sel, "profile", map[string]any{
+		"name": app, "action": "start", "duration_s": durationS, "continuous": continuous, "label": label,
+	})
+}
+
+// ProfileStop disarms an armed/running profile session for sel targeting app.
+func (c *Client) ProfileStop(sel, app string) (int64, string, error) {
+	return c.Command(sel, "profile", map[string]any{"name": app, "action": "stop"})
+}
+
+// ProfileRow is one profile result row (no blob) from the list endpoint.
+type ProfileRow struct {
+	Seq     int64  `json:"seq"`
+	TS      int64  `json:"ts"`
+	App     string `json:"app"`
+	Label   string `json:"label"`
+	ByteLen int64  `json:"byte_len"`
+}
+
+// ProfileResults lists profile result rows with seq > afterSeq.
+func (c *Client) ProfileResults(sel string, afterSeq int64) ([]ProfileRow, error) {
+	req, err := http.NewRequest("GET",
+		c.baseURL+"/api/nodes/"+url.PathEscape(sel)+"/profile?after="+strconv.FormatInt(afterSeq, 10), nil)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	var r struct {
+		Results []ProfileRow `json:"results"`
+	}
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, err
+	}
+	return r.Results, nil
+}
+
+// ProfileBlob fetches one profile result's raw blob by per-node seq.
+func (c *Client) ProfileBlob(sel string, seq int64) ([]byte, error) {
+	req, err := http.NewRequest("GET",
+		c.baseURL+"/api/nodes/"+url.PathEscape(sel)+"/profile/"+strconv.FormatInt(seq, 10), nil)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	var r struct {
+		Blob string `json:"blob"`
+	}
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, err
+	}
+	return base64.StdEncoding.DecodeString(r.Blob)
 }
 
 // DataRow is one telemetry row returned by the telemetry reads. Value is the
