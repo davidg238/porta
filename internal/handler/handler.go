@@ -164,7 +164,7 @@ func (h *Handler) readPayload(params map[string]string) ([]byte, error) {
 // Everything else (missing id, unknown base) → TFTP ERROR.
 func (h *Handler) AcceptWrite(resource, peer string) error {
 	base, params := parseResource(resource)
-	if base != "report" && base != "data" && base != "debug" {
+	if base != "report" && base != "data" && base != "debug" && base != "profile" {
 		return fmt.Errorf("access denied: %s", base)
 	}
 	if params["id"] == "" {
@@ -189,6 +189,8 @@ func (h *Handler) Write(resource, peer string, data []byte) error {
 		err = h.writeData(id, peer, data)
 	case "debug":
 		err = h.writeDebug(id, peer, data)
+	case "profile":
+		err = h.writeProfile(id, peer, data)
 	default:
 		return fmt.Errorf("access denied: %s", base)
 	}
@@ -336,6 +338,21 @@ func (h *Handler) writeDebug(id, peer string, data []byte) error {
 		seq++
 	}
 	return nil
+}
+
+// writeProfile ingests one profiler blob (the whole WRQ body, opaque to porta)
+// into profile_result, tagged with the node's current profile session app/label
+// for correlation. porta never parses the blob — decode is node-kind-defined.
+func (h *Handler) writeProfile(id, peer string, data []byte) error {
+	if err := h.store.TouchNode(id, peer, h.now()); err != nil {
+		return err
+	}
+	app, label := "", ""
+	if sess, err := h.store.GetProfileSession(id); err == nil && sess != nil {
+		app, label = sess.App, sess.Label
+	}
+	_, err := h.store.InsertProfileResult(id, app, label, h.now(), data)
+	return err
 }
 
 // reconcileAfterReport is the post-report self-heal hook. Best-effort:

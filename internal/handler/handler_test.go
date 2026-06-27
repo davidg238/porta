@@ -652,3 +652,25 @@ func TestWriteReportFaultEventNoCode(t *testing.T) {
 		t.Error("no reset event emitted for codeless panic")
 	}
 }
+
+func TestWriteProfileStoresBlobWithSessionLabel(t *testing.T) {
+	h, st := newH(t)
+
+	// Arm a session so the blob is correlated.
+	if err := st.UpsertProfileSession("aabbccddeeff", "myapp", "run1", 999); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.AcceptWrite("profile?id=aabbccddeeff", "1.2.3.4:5"); err != nil {
+		t.Fatalf("AcceptWrite rejected profile: %v", err)
+	}
+	if err := h.Write("profile?id=aabbccddeeff", "1.2.3.4:5", []byte{9, 8, 7}); err != nil {
+		t.Fatalf("Write profile: %v", err)
+	}
+	list, err := st.ProfileResults("aabbccddeeff", 0, 0)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("expected 1 result, got %d (%v)", len(list), err)
+	}
+	if list[0].App != "myapp" || list[0].Label != "run1" || list[0].ByteLen != 3 {
+		t.Errorf("result not correlated: %+v", list[0])
+	}
+}
