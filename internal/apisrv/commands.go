@@ -119,6 +119,21 @@ func (h *Handler) dispatch(id string, req commandReq) (int64, error) {
 			return 0, fmt.Errorf("debug requires name")
 		}
 		return control.Debug(h.st, id, a.Name, a.Action, "api", now)
+	case "profile":
+		var a struct {
+			Name       string `json:"name"`
+			Action     string `json:"action"`
+			DurationS  int64  `json:"duration_s"`
+			Continuous bool   `json:"continuous"`
+			Label      string `json:"label"`
+		}
+		if err := decodeArgs(req.Args, &a); err != nil {
+			return 0, err
+		}
+		if a.Name == "" {
+			return 0, fmt.Errorf("profile requires name")
+		}
+		return control.Profile(h.st, id, a.Name, a.Action, a.DurationS, a.Continuous, a.Label, "api", now)
 	default:
 		return 0, fmt.Errorf("unknown verb %q", req.Verb)
 	}
