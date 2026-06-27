@@ -32,7 +32,8 @@ node-kind-defined artifact whose decode lives in the node's dev tooling.
 2. A WRQ-only `profile?id=<mac>` TFTP resource that ingests the opaque blob.
 3. Append-only `profile_result` storage with stable per-session identity.
 4. Operator surface: `apisrv` endpoints, `portacli` `porta profile` subcommands,
-   and a web node-detail **Profiles** panel that lists blobs raw with a decode hint.
+   and a web node-detail **Profiles** panel (left table column) that lists blobs
+   raw with a decode hint, plus relocating Prints to the right column under Logs.
 5. Tests (TDD), following the existing `debug`/`data` patterns.
 
 ## Out of scope
@@ -132,7 +133,29 @@ exists purely to name sessions for human comparison.
 - **Web** (`web`): a **Profiles** panel on node detail listing result rows
   (`seq · ts · app · label · bytes`) with a `[decode ↗]` hint per row pointing at
   the node's dev tool — the same affordance pattern as the panic decode link.
-  porta renders the blob raw; it performs **no decode**.
+  porta renders the blob raw; it performs **no decode**. The panel header carries
+  the **start-profiling** affordance (a small action form: app + optional
+  duration/continuous/label), mirroring the existing per-node action forms. It
+  polls slower than the consoles (~10s) since sessions ship rarely.
+
+  **Node-detail layout change.** The page moves to a clean split — left column =
+  discrete state/history tables, right column = the two live consoles stacked:
+
+  ```
+  left (tables, scroll)            right (consoles)
+   header                           Logs   (60%)
+   Config (desired vs observed)     ----
+   Recent commands                  Prints (40%)
+   Profiles      ← new
+   Containers
+  ```
+
+  This **relocates Prints** from the bottom of the left column to the right column
+  under Logs (`flex: 60 / 40`, both `.console` with a `min-height` so neither
+  collapses when the other floods), removing today's orphaned growing-Prints wart
+  and leaving the left column purely tables. A draggable splitter is a deferred
+  follow-up (out of scope). Narrow-screen (<600px) behavior is unchanged: the
+  columns stack and consoles cap their height.
 
 ### 5. Neutrality invariant (first-class)
 
