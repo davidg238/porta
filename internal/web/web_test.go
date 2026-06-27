@@ -392,6 +392,23 @@ func TestTelemetryNodeFilterSelect(t *testing.T) {
 	}
 }
 
+func TestNodePageStacksConsolesRight(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+	body := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff/"))
+	// Both consoles now live in the right column, Prints after Logs.
+	li := strings.Index(body, `id="logs"`)
+	pi := strings.Index(body, `id="prints"`)
+	ri := strings.Index(body, `node-right`)
+	if li < 0 || pi < 0 || ri < 0 {
+		t.Fatalf("missing logs/prints/node-right: %d %d %d", li, pi, ri)
+	}
+	if !(ri < li && li < pi) {
+		t.Errorf("expected node-right then Logs then Prints; got right=%d logs=%d prints=%d", ri, li, pi)
+	}
+}
+
 func TestNodeLogsPanicDecodeLink(t *testing.T) {
 	st := testStore(t)
 	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)

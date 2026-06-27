@@ -10,16 +10,17 @@
     {{template "node-header" .}}
     {{template "node-config" .}}
     {{template "node-recent" .}}
+    {{template "node-profiles" .}}
     {{template "node-containers" .}}
-    {{/* telemetry:node-console begin (optional; see node_console.go) */}}
-    <section id="prints" hx-get="/n/{{.ID}}/prints" hx-trigger="load, every 3s" hx-swap="outerHTML">
-      <h2>Prints</h2><p class="subtitle">loading…</p></section>
   </div>
   <div class="node-right">
+    {{/* telemetry:node-console begin (optional; see node_console.go) */}}
     <section id="logs" hx-get="/n/{{.ID}}/logs" hx-trigger="load, every 3s" hx-swap="outerHTML">
       <h2>Logs</h2><p class="subtitle">loading…</p></section>
+    <section id="prints" hx-get="/n/{{.ID}}/prints" hx-trigger="load, every 3s" hx-swap="outerHTML">
+      <h2>Prints</h2><p class="subtitle">loading…</p></section>
+    {{/* telemetry:node-console end */}}
   </div>
-  {{/* telemetry:node-console end */}}
 </div>
 {{template "foot" .}}{{end}}
 
@@ -48,3 +49,5 @@
   <h2>Containers</h2>
   {{if .Apps}}<table class="compact"><tbody>{{range .Apps}}<tr><td>{{.Name}}</td><td>crc {{.CRC}}</td><td>runlevel {{.Runlevel}}</td></tr>{{end}}</tbody></table>{{else}}<p class="subtitle">none observed</p>{{end}}
 </section>{{end}}
+
+{{define "node-profiles"}}{{end}}

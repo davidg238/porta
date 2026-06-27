@@ -67,23 +67,22 @@ code { background:#f0f0f0; padding:0 .2rem; border-radius:3px; }
 .console a { color: #5db3ff; }
 .console a:hover { color: #8fcbff; }
 
-/* Node detail two-column layout: left = existing surfaces with Prints growing to
-   fill the remainder, right = Logs spanning the full column height. The columns
-   share a fixed height (viewport minus the top chrome) so "remainder" and
-   "whole column" are well-defined. */
+/* Node detail two-column layout: left = existing surfaces (header → containers),
+   right = Logs (60%) then Prints (40%) stacked. The columns share a fixed height
+   (viewport minus the top chrome) so the right-column split is well-defined. */
 .node-cols { display:flex; gap:.7rem; align-items:stretch; height:calc(100vh - 7rem); }
 .node-cols > div { flex:1; min-width:0; display:flex; flex-direction:column; }
 .node-left { overflow:auto; }
-/* Prints is the last left-column element and absorbs the leftover height. */
-.node-left #prints { flex:1; display:flex; flex-direction:column; min-height:8em; }
-.node-left #prints .console { flex:1; max-height:none; }
-/* Logs fills the whole right column. */
-.node-right #logs { flex:1; display:flex; flex-direction:column; margin:0; }
-.node-right #logs .console { flex:1; max-height:none; }
+/* Right column stacks the two consoles: Logs 60% on top, Prints 40% below.
+   Both get a min-height so neither collapses when the other floods. */
+.node-right { gap:.7rem; }
+.node-right #logs   { flex:6 1 0; display:flex; flex-direction:column; margin:0; min-height:8em; }
+.node-right #prints { flex:4 1 0; display:flex; flex-direction:column; margin:0; min-height:8em; }
+.node-right #logs .console, .node-right #prints .console { flex:1; max-height:none; }
 
 /* Narrow screens: stack the two columns and let them size to content. */
 @media (max-width: 600px) {
   .node-cols { flex-direction:column; height:auto; }
   .node-left { overflow:visible; }
-  .node-left #prints .console, .node-right #logs .console { max-height:16em; }
+  .node-right #logs .console, .node-right #prints .console { max-height:16em; }
 }
