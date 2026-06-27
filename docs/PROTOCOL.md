@@ -47,6 +47,7 @@ in `gateway/handler.toit`.
 | node → gw | WRQ | `data?id=<mac>` | Upload buffered telemetry (JSONL). |
 | node → gw | RRQ | `debug?id=<mac>` | Pull the next undelivered `dbg:` request line. Empty body = none queued. |
 | node → gw | WRQ | `debug?id=<mac>` | Upload newline-delimited `dbg:` response lines from the in-image debugger. |
+| node → gw | WRQ | `profile?id=<mac>` | Upload one encoded profiler blob (opaque, node-kind-defined). |
 
 Notes:
 - Any RRQ/WRQ carrying `id` causes the gateway to **touch** (last-seen) the node.
@@ -60,7 +61,7 @@ Notes:
 - `debug?id=` follows the same drain pattern as `commands`: served one request
   line per RRQ, marked delivered on transfer-complete, empty body = none queued.
   See §8 for the full debug channel semantics.
-- A WRQ to any base other than `report`, `data`, or `debug`, or any WRQ missing
+- A WRQ to any base other than `report`, `data`, `debug`, or `profile`, or any WRQ missing
   `id`, is rejected (`STORAGE-ACCESS-DENIED`). A `payload` RRQ whose `crc` does
   not match a stored image throws `STORAGE-FILE-NOT-FOUND`.
 
@@ -97,6 +98,7 @@ Verb constants (identical in `gateway/command.toit` and
 | `set` | `VERB-SET` |
 | `reboot` | `VERB-REBOOT` |
 | `debug` | `VERB-DEBUG` |
+| `profile` | `VERB-PROFILE` |
 
 ### 2.1 `run` — install/run an app
 
@@ -327,6 +329,36 @@ subsequent `run` command restores normal run-once behaviour.
 The debug session is **stateful in the node**: while the keeper process is alive,
 the child VM and its pipe handles persist across poll turns. The session lives in
 the keeper, not in porta — porta is a stateless relay.
+
+### 2.10 `profile` — arm or disarm remote profiling
+
+Declares the node's profile-session goal for a named app: **start** arms a
+one-shot profiling run; **stop** disarms early. Declarative, last-write-wins;
+while armed, a `run` for that app is held back (the profiler owns it), mirroring
+`debug`. The profiler model (sampling vs invocation-count, all-tasks, cutoff) is
+**node-internal** and deliberately off the wire.
+
+| Key | Type | Required | Meaning |
+|-----|------|----------|---------|
+| `verb` | string | yes | `"profile"` |
+| `name` | string | yes | App to profile (must already be installed). |
+| `action` | string | yes | `"start"` — arm a one-shot session · `"stop"` — disarm early. |
+| `duration_s` | int | no (start) | Run-loop auto-stop bound (default 30). Ignored by deep-sleep nodes (bounded by the wake's single execution). |
+| `continuous` | bool | no (start) | `true` re-arms each cycle until `stop`. Default `false`. |
+
+```json
+{"verb": "profile", "name": "myapp", "action": "start", "duration_s": 30}
+{"verb": "profile", "name": "myapp", "action": "stop"}
+```
+
+On **start**, a run-loop node relaunches the app under its profiler; a deep-sleep
+node profiles the next wake's single execution. On completion (duration elapsed,
+app exit, or one wake) the node encodes its profiler result and WRQs it to
+`profile?id=<mac>` (§1), then disarms unless `continuous`. The blob is **opaque
+and node-kind-defined**: porta stores it verbatim and never parses it; decoding
+is node-defined and lives in the node's dev tooling (selected by the node `kind`),
+exactly like the `kind:"panic"` contract. An operator label, when supplied, is
+porta-side metadata only and never appears on the wire.
 
 ---
 
