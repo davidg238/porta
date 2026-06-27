@@ -66,8 +66,8 @@ func (h *Handler) handleNode(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "node", h.detailVM(n))
 }
 
-// handleNodeSub dispatches the polled read-only detail partials, plus the two
-// surviving gateway-setting POSTs (max-offline / rename).
+// handleNodeSub dispatches the polled read-only detail partials, plus gateway
+// mutation POSTs: rename and the profile-start / profile-stop session controls.
 func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store.Node, sub string) {
 	vm := h.detailVM(n)
 	switch sub {

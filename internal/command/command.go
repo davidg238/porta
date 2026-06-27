@@ -170,6 +170,9 @@ func Debug(name, action string) (Command, error) {
 // operator label is porta-side only and is deliberately NOT part of the wire
 // args. duration_s/continuous ride only on start.
 func Profile(name, action string, durationS int64, continuous bool) (Command, error) {
+	if name == "" {
+		return Command{}, fmt.Errorf("profile requires a non-empty name")
+	}
 	if action != "start" && action != "stop" {
 		return Command{}, fmt.Errorf("invalid profile action %q (expected start|stop)", action)
 	}

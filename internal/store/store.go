@@ -102,7 +102,8 @@ CREATE TABLE IF NOT EXISTS profile_result (
   app TEXT,
   label TEXT,
   blob BLOB,
-  byte_len INTEGER
+  byte_len INTEGER,
+  UNIQUE(device_id, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_profres_device ON profile_result(device_id, seq);
 `

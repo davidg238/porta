@@ -282,6 +282,10 @@ func TestProfileVerb(t *testing.T) {
 	if _, err := Profile("myapp", "pause", 0, false); err == nil {
 		t.Error("expected error for invalid action")
 	}
+
+	if _, err := Profile("", "start", 30, false); err == nil {
+		t.Error("expected error for empty name")
+	}
 }
 
 func TestSetForward(t *testing.T) {

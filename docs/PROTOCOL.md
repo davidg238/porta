@@ -343,7 +343,7 @@ while armed, a `run` for that app is held back (the profiler owns it), mirroring
 | `verb` | string | yes | `"profile"` |
 | `name` | string | yes | App to profile (must already be installed). |
 | `action` | string | yes | `"start"` — arm a one-shot session · `"stop"` — disarm early. |
-| `duration_s` | int | no (start) | Run-loop auto-stop bound (default 30). Ignored by deep-sleep nodes (bounded by the wake's single execution). |
+| `duration_s` | int | no (start) | Run-loop auto-stop bound; a node that receives `0` treats it per its own policy. 30 is the porta CLI's default when the operator omits `--duration`. Ignored by deep-sleep nodes (bounded by the wake's single execution). |
 | `continuous` | bool | no (start) | `true` re-arms each cycle until `stop`. Default `false`. |
 
 ```json
@@ -646,8 +646,8 @@ A conforming node MUST:
   on every TFTP request.
 - Drain `commands?id=` by repeated RRQ until a zero-byte body, treating commands
   as absolute/idempotent (last write wins per target).
-- Honour the eight verbs (`run`, `stop`, `set-mode`, `set-name`, `set-forward`,
-  `set`, `reboot`, `debug`) with the arg schemas and defaults in §2, including the
+- Honour the nine verbs (`run`, `stop`, `set-mode`, `set-name`, `set-forward`,
+  `set`, `reboot`, `debug`, `profile`) with the arg schemas and defaults in §2, including the
   `lifecycle` declaration (default `run-once`) and `runlevel` (default `3`).
   `set-mode` MUST apply atomically (accept whole or reject whole); an always-on
   `set-mode` MAY carry the optional `loop_sleep_s`, which the node re-validates,

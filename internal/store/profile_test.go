@@ -62,6 +62,29 @@ func TestProfileResultSeqAndCorrelation(t *testing.T) {
 	}
 }
 
+// TestProfileResultUniqueConstraint proves that UNIQUE(device_id, seq) on
+// profile_result is enforced at the DDL level. InsertProfileResult auto-increments
+// seq so it never collides through the public API; we bypass it with raw SQL to
+// confirm the constraint exists and raises an error on duplicate (device_id, seq).
+func TestProfileResultUniqueConstraint(t *testing.T) {
+	st, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	_, err = st.db.Exec(`INSERT INTO profile_result (device_id, seq, ts, app, label, blob, byte_len) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"aabbccddeeff", 1, 1000, "myapp", "run1", []byte{0x01}, 1)
+	if err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+	_, err = st.db.Exec(`INSERT INTO profile_result (device_id, seq, ts, app, label, blob, byte_len) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"aabbccddeeff", 1, 1001, "myapp", "run2", []byte{0x02}, 1)
+	if err == nil {
+		t.Error("second insert with same (device_id, seq) should have failed due to UNIQUE constraint")
+	}
+}
+
 func TestProfileResultsRecent(t *testing.T) {
 	st, err := Open(":memory:")
 	if err != nil {
