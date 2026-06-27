@@ -3,6 +3,8 @@
 package web
 
 import (
+	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -49,5 +51,25 @@ func TestNodeProfilesPanelNewestFirst(t *testing.T) {
 	}
 	if idx3 > idx1 {
 		t.Errorf("newest result (seq=3) should appear before oldest (seq=1)")
+	}
+}
+
+func TestProfileStartFormEnqueues(t *testing.T) {
+	st := testStore(t)
+	st.TouchNode("aabbccddeeff", "192.168.1.9", 1000)
+	srv := serve(t, st)
+
+	form := url.Values{"app": {"myapp"}, "duration": {"30"}, "label": {"run1"}}
+	resp, err := http.PostForm(srv.URL+"/n/aabbccddeeff/profile-start", form)
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("post: %v code=%d", err, resp.StatusCode)
+	}
+	sess, err := st.GetProfileSession("aabbccddeeff")
+	if err != nil || sess == nil || sess.App != "myapp" || sess.Label != "run1" {
+		t.Fatalf("session not armed: %+v %v", sess, err)
+	}
+	body := readBody(t, resp)
+	if !strings.Contains(body, `id="profiles"`) {
+		t.Errorf("response should be the refreshed profiles partial: %s", body)
 	}
 }

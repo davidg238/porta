@@ -4,6 +4,7 @@ package web
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/davidg238/porta/internal/control"
@@ -80,6 +81,35 @@ func (h *Handler) handleNodeSub(w http.ResponseWriter, r *http.Request, n *store
 		h.render(w, "node-containers", vm)
 	case "profiles":
 		h.renderNodeProfiles(w, n)
+	case "profile-start":
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST required", http.StatusMethodNotAllowed)
+			return
+		}
+		_ = r.ParseForm()
+		dur, _ := strconv.ParseInt(r.FormValue("duration"), 10, 64)
+		if dur == 0 {
+			dur = 30
+		}
+		cont := r.FormValue("continuous") == "on" || r.FormValue("continuous") == "true"
+		if _, err := control.Profile(h.st, n.ID, r.FormValue("app"), "start", dur, cont, r.FormValue("label"), "web", h.now()); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		h.renderNodeProfiles(w, n)
+		return
+	case "profile-stop":
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST required", http.StatusMethodNotAllowed)
+			return
+		}
+		_ = r.ParseForm()
+		if _, err := control.Profile(h.st, n.ID, r.FormValue("app"), "stop", 0, false, "", "web", h.now()); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		h.renderNodeProfiles(w, n)
+		return
 	// telemetry (optional): per-node console panels — see node_console.go
 	case "prints":
 		h.renderNodeConsole(w, n, "node-prints", "Prints",
