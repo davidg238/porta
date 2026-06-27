@@ -79,6 +79,32 @@ func Debug(st *store.Store, id, name, action, issuedBy string, now int64) (int64
 	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
 }
 
+// Profile enqueues a declarative profile session goal. On start it first records
+// the porta-side session (app + operator label) so arriving blobs can be
+// correlated and labelled, then enqueues the (label-free) command.
+func Profile(st *store.Store, id, name, action string, durationS int64, continuous bool, label, issuedBy string, now int64) (int64, error) {
+	c, err := command.Profile(name, action, durationS, continuous)
+	if err != nil {
+		return 0, err
+	}
+	if action == "start" {
+		if err := st.UpsertProfileSession(id, name, label, now); err != nil {
+			return 0, err
+		}
+	}
+	return st.EnqueueCommand(id, c.Verb, c.ArgsJSON, issuedBy, now)
+}
+
+// ProfileResults lists profile result rows (no blob) with seq > afterSeq.
+func ProfileResults(st *store.Store, id string, afterSeq int64, limit int) ([]store.ProfileResult, error) {
+	return st.ProfileResults(id, afterSeq, limit)
+}
+
+// ProfileResult fetches one profile result (with blob) by per-node seq.
+func ProfileResult(st *store.Store, id string, seq int64) (*store.ProfileResult, error) {
+	return st.GetProfileResult(id, seq)
+}
+
 // Uninstall enqueues a stop command for the named container.
 func Uninstall(st *store.Store, id, name, issuedBy string, now int64) (int64, error) {
 	c := command.Stop(name)

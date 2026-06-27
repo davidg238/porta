@@ -104,3 +104,19 @@ func TestIsNodeID(t *testing.T) {
 		t.Error("non-hex, uppercase, 11-hex, and 17-hex should not be node ids")
 	}
 }
+
+func TestProfileStartStoresLabelAndEnqueues(t *testing.T) {
+	st := newStore(t)
+	if err := st.EnsureNode("aabbccddeeff", 1000); err != nil {
+		t.Fatal(err)
+	}
+
+	cid, err := Profile(st, "aabbccddeeff", "myapp", "start", 30, false, "before-fix", "test", 1000)
+	if err != nil || cid == 0 {
+		t.Fatalf("profile start: cid=%d err=%v", cid, err)
+	}
+	sess, err := st.GetProfileSession("aabbccddeeff")
+	if err != nil || sess == nil || sess.Label != "before-fix" || sess.App != "myapp" {
+		t.Fatalf("session not stored: %+v err=%v", sess, err)
+	}
+}
