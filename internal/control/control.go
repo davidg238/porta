@@ -88,7 +88,7 @@ func Profile(st *store.Store, id, name, action string, durationS int64, continuo
 		return 0, err
 	}
 	if action == "start" {
-		if err := st.UpsertProfileSession(id, name, label, now); err != nil {
+		if err := st.UpsertProfileSession(id, name, label, durationS, now); err != nil {
 			return 0, err
 		}
 	}

@@ -28,6 +28,16 @@ type profilesVM struct {
 	ID    string
 	Rows  []profileRowVM
 	Empty string
+	// Session is the armed session's status line (empty App when nothing armed).
+	Session profileSessionVM
+}
+
+type profileSessionVM struct {
+	App    string
+	Label  string
+	Status string // operator-facing state label, e.g. "stale / timed-out — no result"
+	State  string // raw state token (awaiting/running/stale/fulfilled) for styling
+	Armed  bool
 }
 
 func (h *Handler) renderNodeProfiles(w http.ResponseWriter, n *store.Node) {
@@ -45,8 +55,15 @@ func (h *Handler) renderNodeProfiles(w http.ResponseWriter, n *store.Node) {
 			Bytes: r.ByteLen, DecodeHref: template.URL(href),
 		})
 	}
-	h.render(w, "node-profiles", profilesVM{
+	vm := profilesVM{
 		ID: n.ID, Rows: out,
 		Empty: "no profiles — porta profile start <node> <app>",
-	})
+	}
+	if status, err := control.ProfileSessionStatus(h.st, n.ID, now); err == nil && status.Session != nil {
+		vm.Session = profileSessionVM{
+			App: status.Session.App, Label: status.Session.Label,
+			Status: status.State.Label(), State: string(status.State), Armed: true,
+		}
+	}
+	h.render(w, "node-profiles", vm)
 }

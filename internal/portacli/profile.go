@@ -31,11 +31,18 @@ func runProfileStop(out io.Writer, c *apiclient.Client, sel, app string) error {
 }
 
 func runProfilePoll(out io.Writer, c *apiclient.Client, sel string, after int64) error {
-	rows, err := c.ProfileResults(sel, after)
+	list, err := c.ProfileList(sel, after)
 	if err != nil {
 		return err
 	}
-	for _, r := range rows {
+	if s := list.Session; s != nil {
+		label := s.Label
+		if label == "" {
+			label = "-"
+		}
+		fmt.Fprintf(out, "session: %s (%s) — %s\n", s.App, label, s.StateLabel)
+	}
+	for _, r := range list.Results {
 		label := r.Label
 		if label == "" {
 			label = "-"

@@ -8,6 +8,7 @@
   <input name="label" placeholder="label">
   <button type="submit">profile</button>
 </form>
+{{if .Session.Armed}}<p class="subtitle profile-{{.Session.State}}">session: {{.Session.App}}{{if .Session.Label}} ({{.Session.Label}}){{end}} — {{.Session.Status}}</p>{{end}}
 {{if .Rows}}<table class="compact"><tbody>
 {{range .Rows}}<tr><td>#{{.Seq}}</td><td>{{.Age}}</td><td>{{.App}}</td><td>{{if .Label}}{{.Label}}{{else}}—{{end}}</td><td>{{.Bytes}} B</td><td><a href="{{.DecodeHref}}">[decode ↗]</a></td></tr>{{end}}
 </tbody></table>{{else}}<p class="subtitle">{{.Empty}}</p>{{end}}

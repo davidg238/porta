@@ -15,6 +15,7 @@ type ProfileSession struct {
 	App       string
 	Label     string
 	StartedAt int64
+	DurationS int64 // commanded profile window, seconds (0 = open/continuous)
 }
 
 type ProfileResult struct {
@@ -30,21 +31,22 @@ type ProfileResult struct {
 
 // UpsertProfileSession records the in-flight profile goal for a node. Single
 // row per device (last-write-wins) — the correlation source for arriving blobs.
-func (s *Store) UpsertProfileSession(deviceID, app, label string, now int64) error {
+func (s *Store) UpsertProfileSession(deviceID, app, label string, durationS, now int64) error {
 	_, err := s.db.Exec(
-		`INSERT INTO profile_session (device_id, app, label, started_at)
-		 VALUES (?, ?, ?, ?)
-		 ON CONFLICT(device_id) DO UPDATE SET app=excluded.app, label=excluded.label, started_at=excluded.started_at`,
-		deviceID, app, label, now)
+		`INSERT INTO profile_session (device_id, app, label, started_at, duration_s)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(device_id) DO UPDATE SET app=excluded.app, label=excluded.label,
+		   started_at=excluded.started_at, duration_s=excluded.duration_s`,
+		deviceID, app, label, now, durationS)
 	return err
 }
 
 func (s *Store) GetProfileSession(deviceID string) (*ProfileSession, error) {
 	var p ProfileSession
 	err := s.db.QueryRow(
-		`SELECT device_id, COALESCE(app,''), COALESCE(label,''), COALESCE(started_at,0)
+		`SELECT device_id, COALESCE(app,''), COALESCE(label,''), COALESCE(started_at,0), COALESCE(duration_s,0)
 		 FROM profile_session WHERE device_id = ?`, deviceID).
-		Scan(&p.DeviceID, &p.App, &p.Label, &p.StartedAt)
+		Scan(&p.DeviceID, &p.App, &p.Label, &p.StartedAt, &p.DurationS)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -52,6 +54,16 @@ func (s *Store) GetProfileSession(deviceID string) (*ProfileSession, error) {
 		return nil, err
 	}
 	return &p, nil
+}
+
+// LatestProfileResultTS returns the ts of the device's newest profile result,
+// or 0 if it has none. Used to tell whether an armed session has been fulfilled.
+func (s *Store) LatestProfileResultTS(deviceID string) (int64, error) {
+	var ts int64
+	err := s.db.QueryRow(
+		`SELECT COALESCE(MAX(ts),0) FROM profile_result WHERE device_id = ?`, deviceID).
+		Scan(&ts)
+	return ts, err
 }
 
 // InsertProfileResult appends one result row, assigning the next per-node seq.

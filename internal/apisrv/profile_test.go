@@ -50,6 +50,26 @@ func TestProfileStartListGet(t *testing.T) {
 		t.Fatalf("list wrong: %+v", lenv.Data.Results)
 	}
 
+	// list also reports the derived session status. The node has not reported
+	// since arming, so the armed session is "awaiting".
+	var senv struct {
+		Data struct {
+			Session struct {
+				App, Label, State string
+				DurationS         int64 `json:"duration_s"`
+				StartedAt         int64 `json:"started_at"`
+			}
+		}
+	}
+	sr, _ := http.Get(srv.URL + "/api/nodes/aabbccddeeff/profile")
+	json.NewDecoder(sr.Body).Decode(&senv)
+	if senv.Data.Session.App != "myapp" || senv.Data.Session.DurationS != 30 {
+		t.Fatalf("session not surfaced: %+v", senv.Data.Session)
+	}
+	if senv.Data.Session.State != "awaiting" {
+		t.Fatalf("session state want awaiting, got %q", senv.Data.Session.State)
+	}
+
 	// get blob
 	gr, _ := http.Get(srv.URL + "/api/nodes/aabbccddeeff/profile/1")
 	var genv struct {

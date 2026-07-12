@@ -4,10 +4,34 @@ package web
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 )
+
+func TestNodeProfilesPanelShowsStaleSession(t *testing.T) {
+	st := testStore(t)
+	st.EnsureNode("aabbccddeeff", 1000)
+	st.UpsertProfileSession("aabbccddeeff", "myapp", "run1", 30, 1000)
+	st.InsertReport("aabbccddeeff", "{}", "", 2000) // reported since arming, no result
+
+	// Fixed clock well past the deadline (2000+30+60=2090) → stale.
+	mux := http.NewServeMux()
+	h := New(st)
+	h.now = func() int64 { return 3000 }
+	h.Register(mux)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	p := readBody(t, mustGet(t, srv.URL+"/n/aabbccddeeff/profiles"))
+	if !strings.Contains(p, "stale") {
+		t.Errorf("profiles panel should show stale session status:\n%s", p)
+	}
+	if !strings.Contains(p, "myapp") {
+		t.Errorf("profiles panel should name the armed app:\n%s", p)
+	}
+}
 
 func TestNodeProfilesPanelListsAndLinks(t *testing.T) {
 	st := testStore(t)

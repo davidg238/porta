@@ -657,7 +657,7 @@ func TestWriteProfileStoresBlobWithSessionLabel(t *testing.T) {
 	h, st := newH(t)
 
 	// Arm a session so the blob is correlated.
-	if err := st.UpsertProfileSession("aabbccddeeff", "myapp", "run1", 999); err != nil {
+	if err := st.UpsertProfileSession("aabbccddeeff", "myapp", "run1", 30, 999); err != nil {
 		t.Fatal(err)
 	}
 	if err := h.AcceptWrite("profile?id=aabbccddeeff", "1.2.3.4:5"); err != nil {

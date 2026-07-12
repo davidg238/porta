@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -92,7 +93,8 @@ CREATE TABLE IF NOT EXISTS profile_session (
   device_id TEXT PRIMARY KEY,
   app TEXT,
   label TEXT,
-  started_at INTEGER
+  started_at INTEGER,
+  duration_s INTEGER
 );
 CREATE TABLE IF NOT EXISTS profile_result (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -222,7 +224,24 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	// Additive migrations for DBs created before a column existed. CREATE TABLE
+	// IF NOT EXISTS never alters an extant table, so new columns are added here
+	// idempotently (a duplicate-column error means the migration already ran).
+	for _, m := range []string{
+		`ALTER TABLE profile_session ADD COLUMN duration_s INTEGER`,
+	} {
+		if _, err := db.Exec(m); err != nil && !isDuplicateColumnErr(err) {
+			db.Close()
+			return nil, err
+		}
+	}
 	return &Store{db: db, path: path}, nil
+}
+
+// isDuplicateColumnErr reports whether err is sqlite's "duplicate column name"
+// raised by an ADD COLUMN whose column already exists — the idempotent no-op case.
+func isDuplicateColumnErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column name")
 }
 
 func (s *Store) Close() error { return s.db.Close() }

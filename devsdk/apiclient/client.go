@@ -245,8 +245,28 @@ type ProfileRow struct {
 	ByteLen int64  `json:"byte_len"`
 }
 
-// ProfileResults lists profile result rows with seq > afterSeq.
-func (c *Client) ProfileResults(sel string, afterSeq int64) ([]ProfileRow, error) {
+// ProfileSession is the derived status of a node's armed profile session, as
+// reported alongside the result list. State is one of awaiting/running/stale/
+// fulfilled; StateLabel is its operator-facing description. Nil when nothing is armed.
+type ProfileSession struct {
+	App        string `json:"app"`
+	Label      string `json:"label"`
+	StartedAt  int64  `json:"started_at"`
+	DurationS  int64  `json:"duration_s"`
+	State      string `json:"state"`
+	StateLabel string `json:"state_label"`
+}
+
+// ProfileListResult is the profile list endpoint payload: the derived session
+// status (nil when nothing armed) plus the result rows.
+type ProfileListResult struct {
+	Session *ProfileSession `json:"session"`
+	Results []ProfileRow    `json:"results"`
+}
+
+// ProfileList fetches the result rows (seq > afterSeq) and the derived session
+// status in one call.
+func (c *Client) ProfileList(sel string, afterSeq int64) (*ProfileListResult, error) {
 	req, err := http.NewRequest("GET",
 		c.baseURL+"/api/nodes/"+url.PathEscape(sel)+"/profile?after="+strconv.FormatInt(afterSeq, 10), nil)
 	if err != nil {
@@ -256,10 +276,17 @@ func (c *Client) ProfileResults(sel string, afterSeq int64) ([]ProfileRow, error
 	if err != nil {
 		return nil, err
 	}
-	var r struct {
-		Results []ProfileRow `json:"results"`
-	}
+	var r ProfileListResult
 	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// ProfileResults lists profile result rows with seq > afterSeq.
+func (c *Client) ProfileResults(sel string, afterSeq int64) ([]ProfileRow, error) {
+	r, err := c.ProfileList(sel, afterSeq)
+	if err != nil {
 		return nil, err
 	}
 	return r.Results, nil

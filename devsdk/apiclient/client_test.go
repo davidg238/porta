@@ -239,7 +239,7 @@ func TestProfileClientRoundTrip(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/profile/1"):
 			w.Write([]byte(`{"ok":true,"data":{"seq":1,"blob":"AQIDBA=="}}`))
 		case strings.HasSuffix(r.URL.Path, "/profile"):
-			w.Write([]byte(`{"ok":true,"data":{"results":[{"seq":1,"ts":5,"app":"myapp","label":"run1","byte_len":4}]}}`))
+			w.Write([]byte(`{"ok":true,"data":{"session":{"app":"myapp","label":"run1","duration_s":30,"state":"stale","state_label":"stale / timed-out — no result"},"results":[{"seq":1,"ts":5,"app":"myapp","label":"run1","byte_len":4}]}}`))
 		}
 	}))
 	defer srv.Close()
@@ -252,6 +252,13 @@ func TestProfileClientRoundTrip(t *testing.T) {
 	rows, err := c.ProfileResults("n1", 0)
 	if err != nil || len(rows) != 1 || rows[0].Label != "run1" || rows[0].ByteLen != 4 {
 		t.Fatalf("list: %+v %v", rows, err)
+	}
+	list, err := c.ProfileList("n1", 0)
+	if err != nil || list == nil || len(list.Results) != 1 {
+		t.Fatalf("profile list: %+v %v", list, err)
+	}
+	if list.Session == nil || list.Session.State != "stale" || list.Session.DurationS != 30 {
+		t.Fatalf("profile list session: %+v", list.Session)
 	}
 	blob, err := c.ProfileBlob("n1", 1)
 	if err != nil || len(blob) != 4 {

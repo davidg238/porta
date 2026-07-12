@@ -14,7 +14,7 @@ func TestProfileResultSeqAndCorrelation(t *testing.T) {
 	}
 	defer st.Close()
 
-	if err := st.UpsertProfileSession("aabbccddeeff", "myapp", "before-fix", 1000); err != nil {
+	if err := st.UpsertProfileSession("aabbccddeeff", "myapp", "before-fix", 30, 1000); err != nil {
 		t.Fatal(err)
 	}
 	sess, err := st.GetProfileSession("aabbccddeeff")
@@ -23,6 +23,9 @@ func TestProfileResultSeqAndCorrelation(t *testing.T) {
 	}
 	if sess.App != "myapp" || sess.Label != "before-fix" {
 		t.Fatalf("session mismatch: %+v", sess)
+	}
+	if sess.DurationS != 30 || sess.StartedAt != 1000 {
+		t.Fatalf("session window mismatch: %+v", sess)
 	}
 
 	seq1, err := st.InsertProfileResult("aabbccddeeff", sess.App, sess.Label, 1001, []byte{1, 2, 3})
@@ -82,6 +85,90 @@ func TestProfileResultUniqueConstraint(t *testing.T) {
 		"aabbccddeeff", 1, 1001, "myapp", "run2", []byte{0x02}, 1)
 	if err == nil {
 		t.Error("second insert with same (device_id, seq) should have failed due to UNIQUE constraint")
+	}
+}
+
+// TestProfileSessionDurationMigration proves that a DB created before the
+// duration_s column existed gains it on Open (additive ALTER), and the column
+// is usable afterwards.
+func TestProfileSessionDurationMigration(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/old.db"
+
+	// Stand up an "old" DB: a profile_session table WITHOUT duration_s.
+	old, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.db.Exec(`DROP TABLE profile_session`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.db.Exec(`CREATE TABLE profile_session (
+	  device_id TEXT PRIMARY KEY, app TEXT, label TEXT, started_at INTEGER)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.db.Exec(`INSERT INTO profile_session (device_id, app, label, started_at)
+	  VALUES ('n1','app','lbl',1000)`); err != nil {
+		t.Fatal(err)
+	}
+	old.Close()
+
+	// Reopen: migration must add duration_s. Existing row reads back with 0.
+	st, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen (migration): %v", err)
+	}
+	defer st.Close()
+	sess, err := st.GetProfileSession("n1")
+	if err != nil || sess == nil {
+		t.Fatalf("session after migration: %v %v", sess, err)
+	}
+	if sess.DurationS != 0 {
+		t.Fatalf("migrated row duration_s want 0, got %d", sess.DurationS)
+	}
+	// And the column accepts writes.
+	if err := st.UpsertProfileSession("n1", "app", "lbl", 45, 2000); err != nil {
+		t.Fatal(err)
+	}
+	sess, _ = st.GetProfileSession("n1")
+	if sess.DurationS != 45 {
+		t.Fatalf("post-migration write duration_s want 45, got %d", sess.DurationS)
+	}
+}
+
+func TestLatestProfileResultTS(t *testing.T) {
+	st, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// No results yet → 0.
+	ts, err := st.LatestProfileResultTS("node1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ts != 0 {
+		t.Fatalf("want 0 for no results, got %d", ts)
+	}
+
+	if _, err := st.InsertProfileResult("node1", "app", "lbl", 1000, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.InsertProfileResult("node1", "app", "lbl", 1005, []byte{2}); err != nil {
+		t.Fatal(err)
+	}
+	// Other node's result must not leak.
+	if _, err := st.InsertProfileResult("other", "app", "lbl", 9999, []byte{3}); err != nil {
+		t.Fatal(err)
+	}
+
+	ts, err = st.LatestProfileResultTS("node1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ts != 1005 {
+		t.Fatalf("want newest ts 1005, got %d", ts)
 	}
 }
 

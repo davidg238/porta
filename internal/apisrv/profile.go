@@ -28,7 +28,20 @@ func (h *Handler) handleProfileList(w http.ResponseWriter, r *http.Request) {
 			"seq": x.Seq, "ts": x.TS, "app": x.App, "label": x.Label, "byte_len": x.ByteLen,
 		})
 	}
-	writeOK(w, map[string]any{"node_id": id, "results": out})
+	resp := map[string]any{"node_id": id, "results": out}
+	// Derived liveness of the armed session (null when nothing is armed) so an
+	// operator can tell a stale/timed-out profile from one still in flight.
+	if status, err := control.ProfileSessionStatus(h.st, id, h.now()); err == nil && status.Session != nil {
+		resp["session"] = map[string]any{
+			"app":         status.Session.App,
+			"label":       status.Session.Label,
+			"started_at":  status.Session.StartedAt,
+			"duration_s":  status.Session.DurationS,
+			"state":       string(status.State),
+			"state_label": status.State.Label(),
+		}
+	}
+	writeOK(w, resp)
 }
 
 // handleProfileGet: GET /api/nodes/{sel}/profile/{seq} — one result with blob (base64).
