@@ -1,0 +1,246 @@
+# Porta ↔ nsl node protocol — the space-sync model
+
+**Status: design direction, pre-implementation** (written 2026-07-11, distilled from
+the tuvm architecture discussion of the same date; companion background in
+`tuvm/review/WHY.md` §"The model, named" and §"Paths extend across the network").
+
+Scope split, decided 2026-07-11:
+
+- **`kind: "toit"` nodes keep `PROTOCOL.md` (v1) unchanged.** The nodus fleet
+  conforms to it and it works; v1 is frozen for that kind, not deprecated.
+- **`kind: "nsl"` nodes (nsl-tuvm / nRF52840 / Zephyr) speak the protocol in this
+  document.** Porta carries both, gated by the existing per-node `kind` column —
+  the heterogeneity seam built for exactly this.
+- The v1 `st` kind description ("Smalltalk → Berry `.bec`") predates the nsl-tuvm
+  pivot and is superseded by this document for the Zephyr node class.
+
+---
+
+## 1. Why a second protocol — the convergence argument
+
+This is not a redesign for taste. Reading v1 with the nsl node's tuple-space model
+in hand, **v1 has been converging on a space protocol one revision at a time**, and
+each revision was the discovery of a rule the space model has natively:
+
+| v1 mechanism (and its bespoke rules) | What it is in space vocabulary |
+|---|---|
+| "Commands are declarative and absolute, last write wins" | a **retained latest-value channel** per target |
+| `reboot`'s exception paragraph (imperative, exactly-once, terminal on delivery, no convergence) | an **event channel** — the state/event split, native |
+| `node_config` echo: "only on cold boot and on change; absent never clobbers cache" | retained channel with publish-on-change; per-path values need no clobber rules |
+| `chip`/`sdk`/`kind` "absent never clobbers known identity" | same — retained per-path values |
+| gateway self-heal (diff desired vs reported config, re-enqueue divergent `set`s) | **anti-entropy between a `goal/` tree and an `obs/` tree** |
+| `set-mode` atomicity rule (accept whole or reject whole) | one record at one path is atomic **by construction** |
+| `set-forward` "the command is the whole policy, not a patch" | a retained record simply *is* the whole value |
+| FATAL/panic "must-deliver subset" | per-channel delivery class |
+| `commands?id=` drain-until-empty; `debug?id=` "same drain pattern" | `take:`-until-empty — the transport surface was already channels |
+
+The structural diagnosis: **v1's unit of extension is the verb/schema, which is
+multiplicative** — each new piece of node state touches the command codec, the report
+shape, echo rules, self-heal, the conformance section, and every node kind. **A
+space's unit of extension is the path, which is additive**: new state = new path +
+a pinned record schema. v1's own evolution rule (G8-style "add optional fields
+only") becomes "add paths" — the version of that rule that scales.
+
+The nsl node makes this nearly free on its end: the node's space already exists
+(`out:` / `take:` / `whenever:`, prefix-granted capabilities). The porta client on
+the node is an ordinary **bridge job**, not a protocol stack.
+
+### The one law
+
+**Location transparency must not become failure transparency** (Waldo, Wyant,
+Wollrath & Kendall, *A Note on Distributed Computing*, Sun Labs TR-94-29). The wire
+does not make remote look local; it makes remote *nameable* while keeping its
+delivery contract explicit:
+
+- `out:` across the wire is **best-effort, batched, eventually delivered**;
+- `whenever:` across the wire is a **subscription** (sync of changes since cursor);
+- **`take:` never crosses the wire.** A distributed destructive read is a consensus
+  problem (where JavaSpaces grew transactions); neither side destructively reads the
+  other's space. Each side publishes into its own; the other syncs.
+
+Remoteness lives **in the grant**: node jobs never learn that `goal/**` values come
+from porta, but the bridge is the single ingress where overflow policy, auth, and
+version skew are enforced — one door, same rules as any other event source.
+
+---
+
+## 2. The model — one picture
+
+```
+        PORTA (gateway)                            NSL NODE
+  ┌──────────────────────────┐             ┌──────────────────────────┐
+  │  per-node space mirror   │   check-in  │  the node's own space    │
+  │                          │  exchange   │                          │
+  │  node/<id>/goal/**  ─────┼────────────▶│  goal/**   (retained in) │
+  │  node/<id>/obs/**   ◀────┼─────────────│  obs/**    (retained out)│
+  │  node/<id>/tel/**   ◀────┼─────────────│  tel/**    (events out)  │
+  │  node/<id>/sys/**   ◀────┼─────────────│  sys/**    (events out)  │
+  │  node/<id>/dbg/req  ─────┼────────────▶│  dbg/req   (events in)   │
+  │  node/<id>/dbg/resp ◀────┼─────────────│  dbg/resp  (events out)  │
+  └──────────────────────────┘             └──────────────────────────┘
+       porta writes ONLY goal/** and dbg/req;    the bridge job holds the
+       the node writes ONLY its own node/<id>/** radio capability + these grants
+```
+
+Two channel kinds, declared per path prefix (this replaces v1's per-verb rules):
+
+- **retained** — the path holds a latest value; sync transfers values changed since
+  a cursor; a delete is a tombstone. State lives here (`goal/**`, `obs/**`).
+- **event** — an append-only queue; sync transfers entries once, in order, deduped
+  by sequence number. Actions and streams live here (`tel/**`, `sys/**`, `dbg/*`,
+  `goal/do/*`).
+
+Every value on the wire is a **CBOR record** from the nsl message algebra (null,
+bool, int, float, string, bytes, symbol, list, map, record — the L6/cbor.md
+encoding). Schemas are pinned **per path prefix**; evolution is additive (new
+paths, new optional record fields).
+
+---
+
+## 3. The node end
+
+### 3.1 The bridge job
+
+An ordinary supervised nsl job, granted: the radio/transport capability, write
+access to `goal/**` and `dbg/req` (inbound), and read/reaction access to `obs/**`,
+`tel/**`, `sys/**`, `dbg/resp` (outbound). No VM changes; crash of the bridge is a
+contained fault and porta sees a late check-in, nothing worse.
+
+On each check-in (cadence per `obs/mode`, exactly as v1 derives liveness):
+
+1. **Pull**: request `goal/**` (+ `dbg/req`) entries with `seq > cursor`; apply each
+   to the local space (retained paths become local retained values; `goal/do/*`
+   events are `out:`ed once); persist the new cursor (NVS) only after apply.
+2. **Push**: send retained `obs/**` values changed since last acked push, plus
+   queued `tel/**` / `sys/**` / `dbg/resp` events, each batch tagged with a
+   node-side sequence for gateway dedup.
+
+Cold boot: cursor may reset to 0 → porta replays the full retained `goal/**` tree.
+**This replaces v1's boot-echo drift-healing with full-state resync by
+construction** — a reflashed node converges with no special rules.
+
+### 3.2 Node-side path map (what replaces the nine verbs)
+
+| v1 verb / report field | nsl path | kind | record shape (sketch) |
+|---|---|---|---|
+| `run` | `goal/apps/<name>` | retained | `{crc:, size:, triggers:, runlevel:, lifecycle:, arguments:}` |
+| `stop` | *(tombstone of the above)* | retained | delete = tombstone; reconcile uninstalls |
+| `set-mode` | `goal/mode` | retained | `{mode:, minAwakeS:, maxAwakeS:, maxAsleepS:, loopSleepS:}` — atomic because it is one record |
+| `set-name` | `goal/name` | retained | string |
+| `set-forward` | `goal/forward` | retained | whole-policy record, as v1 already demands |
+| `set` (per-app key) | `goal/config/<app>/<key>` | retained | scalar; per-key last-write-wins is per-path, native |
+| `reboot` | `goal/do/reboot` | **event** | `{}` — exactly-once via cursor; v1's exception paragraph dissolves |
+| `debug attach/detach` | `goal/debug/<app>` | retained | `{action:}` — plus the `dbg/req`/`dbg/resp` event pair |
+| `profile` | `goal/profile/<app>` | retained | `{action:, durationS:, continuous:}` |
+| report `apps` | `obs/apps/<name>` | retained | observed `{crc:, runlevel:, lifecycle:, triggers:}` |
+| report `config` echo | `obs/config/<app>/<key>` | retained | scalar echo |
+| `node_config` echo | `obs/mode`, `obs/name`, `obs/forward` | retained | publish-on-change is what retained channels do; no echo-cadence rules |
+| `health` | `obs/health` | retained | `{uptimeUs:, wakes:, pollTimeouts:}` |
+| `health.reset` (fault) | `sys/reset` | event | `{category:, code:}` — v1's "data_log on first fault" is just an event |
+| telemetry `print`/`log` | `tel/print`, `tel/log` | event | `{text:}` / `{level:, text:}` |
+| telemetry `metric` | `tel/m/<name>` | event | `{value:, ts:}` |
+| telemetry `panic` | `sys/panic` | event, **must-deliver** | `{blob:}` (bytes) — delivery class is per-channel, not a prose rule |
+| debug lines | `dbg/req` ↓ / `dbg/resp` ↑ | event | `{line:}` — porta stays a stateless relay, session lives in the node (unchanged from v1 §8) |
+
+On the node these are the *same paths* its local jobs already use — the supervisor
+reacts to `goal/apps/**` exactly as it reacts to any channel. There is no separate
+"protocol handler": **the protocol is the space, filtered by grant.**
+
+### 3.3 What stays OFF the space
+
+- **Bulk image payload** — data plane, not control plane (same law as drivers: big
+  bytes never ride channels). Delivery stays a bulk transfer selected by content
+  hash, referenced from the `goal/apps/<name>` record. v1 §5's raw-bytes+CRC model
+  carries over as-is (transport per node class: TFTP today, CoAP blockwise on
+  Thread).
+- **Auth/identity (G5)** — the grant machinery cannot ride the thing it guards.
+  Node identity + session auth wrap the exchange at the transport layer; prefix
+  authority is then enforced *inside*: porta may write only `goal/**` and
+  `dbg/req`; the node may write only its own `node/<id>/**` mirror.
+- **Profiler blobs** — opaque and potentially large; delivered like payloads
+  (referenced, pulled in bulk), not as events.
+
+---
+
+## 4. The porta end
+
+### 4.1 Store
+
+One mechanism replaces the per-feature tables (commands queue, report cache,
+config-desired projection, debug_response, …):
+
+- `space_retained(node_id, path, seq, value_cbor, tombstone, ts)` — latest value
+  per path, monotonic per-node `seq` assigned on write; tombstones retained until
+  the node's cursor passes them.
+- `space_events(node_id, path, seq, value_cbor, ts, direction)` — append-only;
+  inbound (node→porta) rows are the telemetry/forensics log, outbound
+  (porta→node) rows are the command/debug queues.
+
+Convergence is **structural**: `goal/X` vs `obs/X` is a tree diff — the UI's
+desired-vs-observed view and the self-heal loop are the same query. Self-heal as a
+*mechanism* disappears: a node whose obs diverges simply hasn't applied the goal
+seq yet (visible), and a node that lost state resyncs from cursor 0 (automatic).
+
+### 4.2 Operator surface
+
+CLI/API verbs become path writes and tree reads — the vocabulary stays
+operator-friendly while the plumbing unifies:
+
+- `porta app run <node> <name> …` → write `goal/apps/<name>` record (+ stage image)
+- `porta mode <node> deep-sleep …` → write `goal/mode`
+- `porta reboot <node>` → append `goal/do/reboot` event
+- `porta get <node> [prefix]` → dump the retained tree (goal + obs, diffed)
+- `porta tail <node> [prefix]` → follow `tel/**` / `sys/**` events
+- `porta debug send/poll` → `dbg/req` append / `dbg/resp` read-after-cursor (v1 §8
+  semantics preserved verbatim)
+
+Liveness derivation is unchanged from v1: `offline = k × cadence`, cadence read
+from the retained `obs/mode`. The heartbeat *is* the exchange.
+
+### 4.3 Wire framing (first cut — to be ratified at phase-3 design)
+
+Keep the node-initiated, gateway-passive shape (it is deep-sleep-correct and
+transport-agnostic):
+
+- **Pull**: node requests `space?id=<id>&cursor=<n>` → body = CBOR array of
+  `[seq, path, kind, value|tombstone]` for outbound entries with `seq > n`, plus
+  the new high-water. Empty body = up to date.
+- **Push**: node sends CBOR array of `[nodeSeq, path, kind, value]`; gateway
+  dedupes on `nodeSeq` high-water, acks the high-water.
+- Transport: whatever the node class carries — the v1 TFTP surface can carry these
+  two resources unchanged on day one; CoAP (blockwise, observe) is the natural
+  Thread evolution. Framing is transport-independent by construction.
+
+---
+
+## 5. Coexistence & migration
+
+- Porta serves v1 and this protocol side-by-side, selected by node `kind`. No Toit
+  node ever changes.
+- First implementation target: the **G10 host fleet-sim** (N host tuvm VMs + porta
+  over localhost UDP) — prove exchange, cursor resync, kill-mid-transfer recovery
+  there before any radio is involved.
+- The nsl node's conformance doc is this file; the bridge job + C seam land with
+  the phase-3 (CBOR wire) rungs in `tuvm/review/program-sequence.md`.
+
+## 6. Open questions (for the phase-3 design doc)
+
+1. Cursor persistence granularity on the node (NVS write per check-in vs
+   per-batch; flash-wear budget, G7 discipline).
+2. Tombstone retention window at porta (until cursor passes vs time-boxed).
+3. Event-queue overflow at the *gateway* mirror (a chatty node vs porta storage) —
+   per-prefix retention policy, mirroring the node's own G2 vocabulary.
+4. `dbg` session flow-control (v1 relies on poll pacing; keep, or add a window?).
+5. Auth handshake concretely (G5): what wraps the exchange on localhost UDP for the
+   sim vs Thread in the field; where the node's porta-identity pairing lives (G7).
+6. Whether `obs/**` pushes are per-path or snapshot-batched on constrained MTUs
+   (Thread fragmentation vs chattiness) — measure in the fleet-sim.
+7. Record schemas per prefix: pin in a `PROTOCOL-NSL-RECORDS.md` (the L6/cbor.md
+   companion) before first implementation; additive evolution only.
+
+---
+
+*Provenance: this design was distilled from the 2026-07-11 architecture review
+discussion (actors-at-the-grain / Linda-at-the-joints framing; see
+`tuvm/review/WHY.md`). The convergence table in §1 cites v1 behaviors verbatim from
+`PROTOCOL.md` as of the same date.*

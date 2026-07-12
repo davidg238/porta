@@ -17,6 +17,14 @@ Source of truth in code:
 - Triggers: `nodus/src/triggers.toit`.
 - TFTP resources / framing: `gateway/handler.toit`, `nodus/src/supervisor.toit`.
 
+> **Scope (2026-07-11).** This document (v1) governs `kind: "toit"` nodes and is
+> frozen for that kind — the nodus fleet conforms to it and it does not change.
+> The **nsl node class** (nsl-tuvm on nRF52840/Zephyr) speaks a different,
+> space-sync protocol: see **`PROTOCOL-NSL.md`** (design direction; both ends
+> specified there). Porta carries both, selected by the per-node `kind` column.
+> The `st` kind rows below ("Smalltalk → Berry `.bec`") predate the nsl-tuvm
+> pivot and are superseded by `PROTOCOL-NSL.md` for that hardware class.
+
 ---
 
 ## 1. Transport: TFTP over UDP
