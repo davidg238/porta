@@ -240,6 +240,87 @@ transport-agnostic):
 
 ---
 
+---
+
+## Addendum 2026-07-12 — two internal contradictions, found while pinning the records
+
+Read before implementing. Neither invalidates the model; both need a decision.
+
+**1. §2 vs §3.1 — where do retained channels live? (tuvm#32, BLOCKS phase 3)**
+
+§2 defines retained as a **channel kind**, "declared per path prefix" — a property of *the
+space*. §3.1 promises the bridge job needs "**No VM changes**". **These cannot both hold.**
+The node's space today is a pure event **queue** (`tuvm/src/space.c`: `space_post` /
+`space_take` / `spaceRegister`) — it has no latest-value slot, no per-path sequence, no
+tombstone, and no changed-since-cursor query. Something must provide those four things.
+
+The deciding question is **not** cost — an nsl `Map` in the bridge job can hold all four
+cheaply. It is **who besides the bridge needs a retained path.** This document assumes others
+do, twice: §3.2 has the supervisor reacting to `goal/apps/**` *"exactly as it reacts to any
+channel"*, and §3.3's tagline is *"the protocol **is** the space, filtered by grant"*. Both
+claims are only true if the **space** owns retained. If instead the bridge owns it privately,
+the supervisor must ask the bridge — jobs then learn the bridge exists, the bridge becomes a
+second authority beside the space, and §1's convergence argument (the whole reason this
+protocol beats v1) quietly stops being true.
+
+So: an nsl library is a bet that **the bridge is the only consumer, forever**; a C channel kind
+is the bet that it is not, paid up front in prims, GC roots and footprint. Decision material:
+`tuvm/review/retained-channels.html`.
+
+**2. §3.2 vs §3.3 — `sys/panic` cannot carry a blob**
+
+§3.2 gives `sys/panic` the shape `{blob: bytes}` and marks it *must-deliver*; §3.3 says bulk
+never rides a channel. Both cannot hold. **Resolved in `PROTOCOL-NSL-RECORDS.md` §2.4**: a
+bounded inline summary (`reason`, `bootId`, `monoMs`, truncated `detail`) plus a `BlobRef` for
+the core dump. Truncation is legal *here and nowhere else*, because a partial reason beats no
+reason — and the point is that a node dying of OOM can still **report** that it died of OOM,
+since the report is ~60 bytes and needs no buffer to build.
+
+**Also new:** `PROTOCOL-NSL-RECORDS.md` pins the per-prefix schemas this document defers, and
+the **size law** that §3.3 states only as an intent. The binding constraint is the *radio*, not
+the heap: 6LoWPAN fragments above ~102 B and a datagram survives only if every fragment does,
+so at the bench fleet's measured worst-node loss (4.6%/datagram) a 1 KB batch arrives ~54% of
+the time. This makes §4.3's wire framing a real constraint, not a free choice — see open
+question 6 there.
+
+**3. Vocabulary: "retained" should be renamed to *cell*.**
+
+The word is borrowed from MQTT, where a *retained message* is a broker-side **delivery trick**
+(the broker keeps the last message on a topic so late subscribers receive one). It names a
+**delivery side-effect**, when what this protocol means is a **state semantics**: *this name
+has a value*. The borrowed word actively invites the misreading that "retained" is a flag one
+could sprinkle onto an existing channel — which is the single most important thing to *not*
+believe about it.
+
+Proposed, and used in `tuvm/review/retained-channels-v2.html`: a name resolves either to a
+**cell** (it *has* a value; read is non-destructive, write overwrites, delete tombstones) or a
+**stream** (it *delivers* occurrences; read consumes, write appends). Every system that has
+solved this uses the first word or a synonym — a *file* (Plan 9), a *znode* (ZooKeeper), a
+*key* (etcd), a *resource* (REST). None of them say "retained".
+
+**4. What this protocol actually is, in the literature's terms.**
+
+Worth recording, because it tells us which prior art to steal from and which to ignore:
+
+- The **naming** model is Plan 9's — the namespace *is* the interface, `walk` ≈ `resolve:`, and
+  Plan 9's `fid` is precisely our `Channel` capability. Their lesson for §2's "two channel
+  kinds" is: **don't add a *kind*, add a *server*** — keep the verbs uniform and let whoever
+  serves a name supply the semantics (`/net`: you open TCP by writing to a file).
+- But **we cannot use Plan 9's remote model.** A mount means every read is a round trip to a
+  server that must be up *right now*; our node sleeps on a duty cycle, loses 2–5% of datagrams,
+  and must keep running while partitioned. **Disconnected operation is a requirement**, so we
+  cannot fetch on demand, so we must **replicate** — and *that* is where `seq`, cursors and
+  tombstones come from. They are forced by the radio, not chosen for elegance.
+- Which means **we are building etcd, not 9P**: their `revision` is our per-path `seq`, their
+  *watch-from-revision* is our `changedSince: cursor`, their tombstones are ours — and **their
+  compaction hazard is ours too** (porta#24: a node whose cursor falls behind the retention
+  point is silently stranded). Steal their vocabulary *and* their scars.
+- **LOCUS** is the cautionary bookend to §1's "one law": Plan 9 got away with far more
+  transparency than LOCUS largely because its interface was *file I/O, which everyone already
+  knows can fail*.
+
+---
+
 *Provenance: this design was distilled from the 2026-07-11 architecture review
 discussion (actors-at-the-grain / Linda-at-the-joints framing; see
 `tuvm/review/WHY.md`). The convergence table in §1 cites v1 behaviors verbatim from

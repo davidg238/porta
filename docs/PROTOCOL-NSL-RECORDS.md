@@ -303,7 +303,16 @@ paginates, which it must do for a serial console anyway.
    fixed-point int + declared scale better for a sensor fleet?
 5. **Does `obs/**` push per-path or snapshot-batched?** (§6.6 of the parent doc.) The
    size law says: whichever fits 512 bytes; measure.
-6. **Tombstone retention at porta** — until the cursor passes, or time-boxed?
+6. **Tombstone retention at porta** — until the cursor passes, or time-boxed? **This is not a
+   shrug; it is a live hazard — now porta#24.** A delete is only visible as a tombstone in the
+   cursor stream, so a node that is away long enough for porta to reclaim tombstones past its
+   cursor comes back, asks for `seq > N`, and porta **silently answers a question it cannot
+   answer**: the node keeps running an app that was uninstalled, and nothing anywhere notices.
+   This is exactly etcd's compaction-vs-watch hazard, and their fix is cheap and should just be
+   taken: porta keeps a **compaction revision**, refuses an incremental sync from a cursor older
+   than it, and forces a **full resync from cursor 0** — a path §3.1 already requires for cold
+   boot and which therefore costs one comparison and one error code. Pin it in the §4.3 framing
+   *before* first implementation, not after.
 
 ---
 
