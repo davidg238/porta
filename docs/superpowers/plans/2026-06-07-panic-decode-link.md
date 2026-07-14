@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, `html/template`, `net/url`. Existing packages `internal/web`, `internal/telemetry`.
 
-**Spec:** `docs/superpowers/specs/2026-06-07-panic-decode-link-design.md`
+**Spec:** `docs/design/2026-06-07-panic-decode-link-design.md`
 
 ---
 

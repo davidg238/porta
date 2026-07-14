@@ -16,7 +16,7 @@
 - Profile goal is **single-in-flight per node** (last-write-wins) — correlation needs no wire session token.
 - TDD throughout: failing test → run/verify fail → minimal impl → run/verify pass → commit. Run `gofmt` before each commit.
 - Tests use `store.Open(":memory:")` (see `internal/web/web_test.go:testStore`).
-- Spec: `docs/superpowers/specs/2026-06-26-profile-verb-design.md`.
+- Spec: `docs/design/2026-06-26-profile-verb-design.md`.
 
 ---
 

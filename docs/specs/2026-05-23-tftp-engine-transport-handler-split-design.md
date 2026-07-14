@@ -27,7 +27,7 @@ The gateway needs three things the current `tftp` package does not provide:
 
 The boundary this spec introduces is **not novel** — it is exactly where the
 shipped st-zephyr jast Thread integration drew its transport line. From
-`st-zephyr/docs/superpowers/specs/2026-03-29-thread-integration-design.md`
+`st-zephyr/docs/design/2026-03-29-thread-integration-design.md`
 ("Transport Abstraction"):
 
 > - **Serial:** `send_packet()` → SLIP-encode, write via uart. `recv_packet()` →

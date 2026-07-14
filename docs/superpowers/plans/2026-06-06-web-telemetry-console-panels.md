@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, sqlite (mattn/go-sqlite3), stdlib `net/http` + `html/template`, htmx (polling). Test with `go test ./internal/store/ ./internal/web/`.
 
-**Spec:** `docs/superpowers/specs/2026-06-06-web-telemetry-console-panels-design.md`. Built on branch `feat/set-forward` (needs the `level` column + `kind:"print"` from the set-forward work).
+**Spec:** `docs/design/2026-06-06-web-telemetry-console-panels-design.md`. Built on branch `feat/set-forward` (needs the `level` column + `kind:"print"` from the set-forward work).
 
 ---
 

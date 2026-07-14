@@ -4,6 +4,50 @@
 the tuvm architecture discussion of the same date; companion background in
 `tuvm/review/WHY.md` §"The model, named" and §"Paths extend across the network").
 
+---
+
+## ADDENDUM 2026-07-13 — tuvm#32 decided; two things below are now WRONG
+
+This document's central contradiction has been resolved. **tuvm#32 is CLOSED: the node's
+space owns the value-holding channel kind (option A).** It shipped as tuvm rung 9
+(`tuvm 0cadc2c` · `nsl-tuvm aa21b71` · `nsl-tests 8c9536c`). Two corrections to what follows,
+which is otherwise unchanged and still correct:
+
+**1. The word "retained" is retracted. Say CELL and STREAM.** "Retained" is MQTT's word for a
+broker-side *delivery trick*; what we mean is a *state semantics* — **this name has a value**.
+Read every `retained` below as **cell**, and every `event` as **stream**:
+
+- a **cell** — a pigeonhole that HOLDS the latest letter. `put:value:` overwrites it,
+  `peek:ifAbsent:` reads it without removing it. (`goal/**`, `obs/**`)
+- a **stream** — a pigeonhole you EMPTY by reading. Each letter delivered once. (`tel/**`,
+  `sys/**`, `dbg/*`, `goal/do/*`)
+
+**2. §3.1's "No VM changes" is false, and that was the whole of tuvm#32.** §2 declares the
+value-holding kind "per path prefix" (a property of *the space*) while §3.1 says the bridge is
+an ordinary nsl job needing no VM change (which would make it a property of the bridge's
+*private Map*). Both could not hold. **The space won**, because the space has `post` and `take`
+and **no *call*** — a job cannot ask another job for a value — so a cell in the bridge's Map is
+invisible to the supervisor reading `goal/apps/**`, exactly as §3.2 and §3.3 require it not to be.
+The VM changed: a value slot on `SpaceChannel`, prims 105–107 (`spaceKind:` / `spacePeek:` /
+`spacePut:value:`), and `Channel>>put:value:` / `peek:ifAbsent:`.
+
+**3. There is no `clear:` and no tombstone.** David's rule, and it deleted a whole mechanism:
+*"in industrial control there is no clear — there is a start button and a separate stop button,
+and stop always wins."* A stopped loop is `auto = false`; an un-deployed app is
+`runlevel: #stopped`. **Absence means only "nobody has ever said anything about this name"**, and
+the safe answer to that is the fail-safe default. Where this document says *"delete = tombstone"*,
+read: **the operator writes the stopped state explicitly**. If a record must ever be *removed*
+(not stopped — removed), that is an **action** — a letter on a `do/` stream — not a property of
+the pigeonhole.
+
+**Still true, and still porta's problem:** the **compaction-vs-cursor hazard**. A node whose
+cursor falls behind the point where porta forgot its history is silently stranded. Unanswered.
+
+Full argument + the four interaction diagrams: `tuvm/review/cells-and-streams-v3.html`.
+The option-A/option-C code diff: `tuvm/review/cells-sketch.ns`.
+
+---
+
 Scope split, decided 2026-07-11:
 
 - **`kind: "toit"` nodes keep `PROTOCOL.md` (v1) unchanged.** The nodus fleet
