@@ -255,9 +255,18 @@ the drop is counted (`Health.overruns`). Losing a log line to save a node is cor
 | `sys/reset` | E | `Reset { reason: sym, bootId: int }` |
 | `sys/overrun` | E | `Overrun { path: str, dropped: int }` — G2's counter |
 | `sys/panic` | E, **must-deliver** | `Panic { … }` — §2.4 |
+| `sys/metrics` | **C (cell)** | `Metrics { heapSize: int, liveBytes: int, heapHighWater: int, largestFreeBlock: int, gcCycles: int, handlesLive: int, handlesHighWater: int, queueHighWater: int, overruns: int }` — tuvm#24; ~70 B encoded, within §2.2 |
 
 **Delivery class is a property of the channel, not a paragraph of prose.** `sys/panic`
 is must-deliver; `tel/print` is drop-first. That is the whole rule.
+
+**Kind C is a cell** (tuvm#32 option A, rung 9): the pigeonhole holds the latest
+letter. A reader — porta, an agent, a second job — `peek:`s current state *by
+name*, non-destructively, without draining a stream some other consumer is
+counting on (the WHY-AGENTS rider, folded in here). The node app is the writer,
+on a user-requested cadence (G9: no unrequested periodic work); as of tuvm#24
+no periodic publisher exists — the record is built by `kernel metrics` and
+published explicitly.
 
 ### 4.5 `dbg/*` — remote debug (event, both ways)
 
