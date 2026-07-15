@@ -195,8 +195,10 @@ batch. Individual records carry only `monoMs` where they need a stamp.
 
 ## 4. The record catalogue
 
-Kind is `R` (retained — path holds a latest value) or `E` (event — append-only queue).
-Direction is from the node's point of view.
+Kind is `R` (retained — path holds a latest value), `E` (event — append-only queue),
+or `C` (cell — the post-tuvm#32 name for a path that holds the latest value; a stream
+you empty is `E`, a cell holds). The `R` rows predate the tuvm#32 ruling; going
+forward, `R` reads as "cell". Direction is from the node's point of view.
 
 ### 4.1 `goal/**` — what porta wants (retained; porta writes, node reads)
 
@@ -255,7 +257,7 @@ the drop is counted (`Health.overruns`). Losing a log line to save a node is cor
 | `sys/reset` | E | `Reset { reason: sym, bootId: int }` |
 | `sys/overrun` | E | `Overrun { path: str, dropped: int }` — G2's counter |
 | `sys/panic` | E, **must-deliver** | `Panic { … }` — §2.4 |
-| `sys/metrics` | **C (cell)** | `Metrics { heapSize: int, liveBytes: int, heapHighWater: int, largestFreeBlock: int, gcCycles: int, handlesLive: int, handlesHighWater: int, queueHighWater: int, overruns: int }` — tuvm#24; ~70 B encoded, within §2.2 |
+| `sys/metrics` | **C (cell)** | `Metrics { heapSize: int, liveBytes: int, heapHighWater: int, largestFreeBlock: int, gcCycles: int, handlesLive: int, handlesHighWater: int, queueHighWater: int, overruns: int }` — tuvm#24; ~150–190 B encoded depending on counter magnitudes (symbol field names dominate), within §2.2's 256 B/value cap |
 
 **Delivery class is a property of the channel, not a paragraph of prose.** `sys/panic`
 is must-deliver; `tel/print` is drop-first. That is the whole rule.
