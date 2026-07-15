@@ -82,6 +82,15 @@ superseded by this document for the Zephyr node class.
   *call* — a job cannot ask another job for a value. This is load-bearing: it is
   *why* the value-holding kind had to live in the space and not in the bridge's
   private map (§3.1).
+- **No server-initiated push — CoAP Observe is out of scope.** The exchange is
+  always node-initiated. There is no standard way to deliver server push reliably to
+  a *sleeping* node (RFC 7641 Observe presumes a reachable observer); the standards'
+  answer for sleepy endpoints — LwM2M **Queue Mode**, the CoAP **mirror-server /
+  Resource Directory** pattern (RFC 9176) — is client-initiated drain to an always-on
+  mirror, which is exactly what porta *is*. Freshness and responsiveness are bought
+  with adaptive **cadence** (§4.4), not push. Observe would be a mains-only
+  micro-optimization that also makes the gateway stateful; it is deliberately unused
+  (transport note, §5.3).
 
 ---
 
@@ -286,6 +295,48 @@ bounded ~60-byte inline summary (reason, bootId, monoMs, truncated detail) plus 
 dying of OOM can still **report** that it died of OOM, because the report needs no
 buffer to build (RECORDS §2.4).
 
+### 4.4 Check-in cadence — liveness, freshness, load
+
+Because the exchange is always node-initiated (non-goal §1), one node-side variable —
+the **check-in cadence** — governs four concerns that are usually tangled. They pull
+that one knob in different directions, and the knob is **nsl policy**, not a transport
+setting (the space is mechanism; when to sync is policy — same split as everywhere
+else in this stack):
+
+| Concern | What it is | Direction | Pulls cadence… |
+|---|---|---|---|
+| **Request latency at the server** | Time from porta writing a `goal`/command to the node acting on it — downstream *actuation* responsiveness as seen from porta | porta → node (pull) | **faster**, on demand (active debug, pending goal) |
+| **Data acquisition freshness** | How stale `obs`/`tel` is at porta, and `goal` at the node | both (push / pull) | **faster**, per application need |
+| **Server / mesh ping load** | Aggregate check-in traffic across the whole fleet | fleet aggregate | **slower** — idle nodes must back off |
+| **Node-alive detection** | How fast a dead node must be noticed | node → porta | sets the **floor** (check in *at least* this often) |
+
+The structure that falls out:
+
+- **Liveness sets the floor** — the slowest allowed cadence (`maxAsleepS`): miss it and
+  porta declares the node offline (`offline = k × cadence`, §5.2).
+- **Battery sets the ceiling** — the fastest allowed cadence on a sleepy node. An
+  always-on node has effectively *no* ceiling; the `mode` lifts it, and cadence policy
+  fills the room. **This is why always-on nodes are not stuck on an artificial slow
+  poll** — nothing forces a fixed period; on a radio LAN 2–10 Hz is real-time for
+  anything short of a hard control loop.
+- **Freshness and request-latency pull up** toward the ceiling; **fleet-load pulls
+  down** toward the floor. The node runs a small **adaptive cadence controller**
+  between the two bounds, keyed off `mode` plus application signals (observed change
+  rate, a pending goal, an active debug session).
+
+Two deliberate choices:
+
+1. **Node-alive is *not* a separate message.** An idle check-in *is* the heartbeat
+   ("cursor=N, nothing to push" → "nothing new"), so liveness comes free from the sync
+   exchange. The only case that would justify a separate fast liveness ping is a node
+   that must be *known-dead fast* while syncing *data slowly* — named here, not built,
+   until a use case needs it.
+2. **The server never dictates cadence — it may only *hint*.** porta cannot push to a
+   sleeper, so its only lever on fleet load is an optional **back-pressure hint** in
+   its check-in response ("you may slow to X") that a node's policy may honor. This
+   keeps porta passive and stateless. Idle backoff on the node alone likely suffices
+   first; the hint is future (§7).
+
 ---
 
 ## 5. The porta end
@@ -322,7 +373,8 @@ operator-friendly while the plumbing unifies:
   semantics preserved verbatim)
 
 Liveness derivation is unchanged from v1: `offline = k × cadence`, cadence read from
-the `obs/mode` cell. The heartbeat *is* the exchange.
+the `obs/mode` cell. The heartbeat *is* the exchange — and this `cadence` is the
+liveness *floor* of the node's own adaptive policy (§4.4), not a fixed period.
 
 ### 5.3 Wire framing (first cut — ratified at phase-3 design)
 
@@ -334,9 +386,18 @@ transport-agnostic):
   high-water. Empty body = up to date.
 - **Push** — node sends CBOR array of `[nodeSeq, path, kind, value]`; gateway dedupes
   on `nodeSeq` high-water and acks it.
-- Transport — whatever the node class carries: the v1 TFTP surface can carry these
-  two resources unchanged on day one; CoAP (blockwise, observe) is the natural Thread
-  evolution. Framing is transport-independent by construction.
+- Transport — whatever the node class carries. The v1 TFTP surface can carry these
+  two resources unchanged on day one; **the ratified direction is TFTP → CoAP** for
+  `kind: "nsl"` nodes (Zephyr ships a native CoAP client/server, so this rides the
+  same BSD-socket seam already proven for UDP in rungs 5–7). CoAP earns the switch
+  for its **resource model** (paths = URIs), **ETag-conditional GET** (our `seq`/cursor
+  in-protocol), **DTLS** (a real answer to G5), **CBOR content-format**, and
+  **resumable blockwise** image transfer — *not* for throughput (blockwise is
+  stop-and-wait, ≈ TFTP-with-blksize) and *not* for Observe, which is out of scope
+  (non-goal §1). Only the **client-initiated** subset is used, so one profile serves
+  sleepy and always-on nodes alike. Framing is transport-independent by construction;
+  the one thing to retire before committing is the **DTLS RAM footprint** on the most
+  constrained target (§7).
 
 **The size law is a real constraint, not a free choice.** The binding limit is the
 *radio*, not the heap: 6LoWPAN fragments above ~102 B, and a datagram survives only
@@ -379,6 +440,13 @@ the fleet-sim (RECORDS "the size law").
    the sim vs Thread in the field; where the node's porta-identity pairing lives (G7).
 6. **`obs/**` push shape** — per-path or snapshot-batched on constrained MTUs (Thread
    fragmentation vs chattiness); decided by measurement against the §5.3 size law.
+7. **DTLS RAM footprint on the most constrained target** — the one gate on the
+   TFTP → CoAP transition (§5.3). CoAP message handling is cheap; mbedTLS DTLS
+   handshake/session state is not. Measure it against the dongle's arena budget (a
+   G-series footprint gate) before committing CoAPs; CoAP-without-DTLS is nearly free.
+8. **Porta back-pressure hint** — whether porta's check-in response carries an optional
+   "you may slow to X" cadence hint (§4.4) or idle backoff on the node alone suffices.
+   Keeps porta passive either way; measure fleet load in the sim first.
 
 *(The former open question "pin the per-prefix record schemas" is now **done** —
 `PROTOCOL-NSL-RECORDS.md`.)*
@@ -403,3 +471,11 @@ Decisions folded into this edition (full reasoning trail in
   ZooKeeper *znode*, etcd *key*, REST *resource*).
 - **No `clear:`, no tombstone** — stopped state is written explicitly; removal is a
   `do/` action (§3).
+- **(2026-07-15) Transport direction: TFTP → CoAP**, client-initiated subset only,
+  **Observe out of scope** (§5.3, non-goal §1). No standard delivers server-push to a
+  sleepy node; the standards' sleepy answer *is* our client-initiated-to-a-mirror
+  model. Gated on a DTLS footprint measurement (§7, open question 7).
+- **(2026-07-15) One adaptive check-in cadence, as nsl policy** (§4.4), bounded
+  [liveness floor ≤ cadence ≤ battery ceiling], pulled up by freshness/request-latency
+  and down by fleet load. Dissolves the "always-on nodes stuck on a slow poll" worry
+  without a new mechanism; node-alive stays coupled to the sync heartbeat.
