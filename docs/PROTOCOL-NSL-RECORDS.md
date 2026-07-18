@@ -16,7 +16,7 @@ library). Records are the same either way; that decision is deliberately left op
 ## 1. The encoding contract
 
 Every value on the wire is a **CBOR-encoded value of the nsl message algebra** — the
-codec that shipped at rung 3 (`Cbor` in `nsl-tuvm/lib/kernel.ns`, RFC 8949). No second
+codec that shipped at rung 3 (`Cbor` in `nsl-tuvm/lib/kernel.nsl`, RFC 8949). No second
 codec, no bespoke framing, no JSON.
 
 Inherited from that codec, and therefore **already true and already tested** — this
