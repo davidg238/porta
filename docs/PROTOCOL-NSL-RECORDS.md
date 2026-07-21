@@ -257,7 +257,7 @@ the drop is counted (`Health.overruns`). Losing a log line to save a node is cor
 | `sys/reset` | E | `Reset { reason: sym, bootId: int }` |
 | `sys/overrun` | E | `Overrun { path: str, dropped: int }` — G2's counter |
 | `sys/panic` | E, **must-deliver** | `Panic { … }` — §2.4 |
-| `sys/metrics` | **C (cell)** | `Metrics { heapSize: int, liveBytes: int, heapHighWater: int, largestFreeBlock: int, gcCycles: int, handlesLive: int, handlesHighWater: int, queueHighWater: int, overruns: int }` — tuvm#24; ~150–190 B encoded depending on counter magnitudes (symbol field names dominate), within §2.2's 256 B/value cap |
+| `sys/metrics` | **C (cell)** | `Metrics { heapSize: int, liveBytes: int, heapHighWater: int, largestFreeBlock: int, gcCycles: int, handlesLive: int, handlesHighWater: int, queueHighWater: int, overruns: int, pulseDrops: int, pulseCoalesced: int }` — tuvm#24, widened 9→11 by tuvm#34; ~185–230 B encoded depending on counter magnitudes (symbol field names dominate), still within §2.2's 256 B/value cap but see the headroom note below |
 
 **Delivery class is a property of the channel, not a paragraph of prose.** `sys/panic`
 is must-deliver; `tel/print` is drop-first. That is the whole rule.
@@ -269,6 +269,25 @@ counting on (the WHY-AGENTS rider, folded in here). The node app is the writer,
 on a user-requested cadence (G9: no unrequested periodic work); as of tuvm#24
 no periodic publisher exists — the record is built by `kernel metrics` and
 published explicitly.
+
+**`Metrics` headroom (tuvm#34) — an estimate, not a measurement.** `pulseDrops`/
+`pulseCoalesced` — the ISR pulse seam's shed and coalesce counters, added when that seam
+stopped answering a full mailbox with `k_oops` and started shedding — widened the record
+from 9 fields to 11. The ~185–230 B figure above is **derived from field-name lengths and
+plausible counter magnitudes; nobody has encoded the record and measured it.** The
+pre-existing ~150–190 B figure it extends appears to be of the same kind. Treat both as
+order-of-magnitude.
+
+Two things keep this from being alarming. First, §2.2's 256 B is itself a **first cut
+pending re-measurement on the G10 fleet-sim**, not a frozen protocol constant — the
+*structure* (a per-value cap) is the invariant, not the number. Second, a breach is a
+**crash at the bridge, not a silent truncation**, so it cannot corrupt data undetected.
+
+Still worth acting on: `Metrics` is the one record that grows every time a subsystem gains
+a counter, and it is now the closest to the cap. **Measure it before adding field 12.** If
+it needs to keep growing — or if per-job latency histograms ever want publishing (tuvm#61,
+where bucket counts are many fields at once) — that wants its own record, split by
+subsystem (heap / handles / seam / latency), not another append here.
 
 ### 4.5 `dbg/*` — remote debug (event, both ways)
 
