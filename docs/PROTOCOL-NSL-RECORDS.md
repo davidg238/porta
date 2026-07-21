@@ -257,7 +257,8 @@ the drop is counted (`Health.overruns`). Losing a log line to save a node is cor
 | `sys/reset` | E | `Reset { reason: sym, bootId: int }` |
 | `sys/overrun` | E | `Overrun { path: str, dropped: int }` — G2's counter |
 | `sys/panic` | E, **must-deliver** | `Panic { … }` — §2.4 |
-| `sys/metrics` | **C (cell)** | `Metrics { heapSize: int, liveBytes: int, heapHighWater: int, largestFreeBlock: int, gcCycles: int, handlesLive: int, handlesHighWater: int, queueHighWater: int, overruns: int, pulseDrops: int, pulseCoalesced: int }` — tuvm#24, widened 9→11 by tuvm#34; ~185–230 B encoded depending on counter magnitudes (symbol field names dominate), still within §2.2's 256 B/value cap but see the headroom note below |
+| `sys/metrics` | **C (cell)** | `Metrics { heapSize: int, liveBytes: int, heapHighWater: int, largestFreeBlock: int, gcCycles: int, handlesLive: int, handlesHighWater: int, queueHighWater: int, overruns: int, pulseDrops: int, pulseCoalesced: int }` — tuvm#24, widened 9→11 by tuvm#34; **195 B encoded, MEASURED 2026-07-21** (was estimated ~185–230 B), within §2.2's 256 B/value cap with 61 B of headroom |
+| `sys/latency` | **C (cell)** | `LatencySpan { span: sym, n: int, fails: int, minUs: int, maxUs: int, sumUsLo: int, sumUsHi: int, b0..b5: int }` — tuvm#61; **140 B encoded, MEASURED 2026-07-21**. **One record PER SPAN**, not one record with a field per span: adding an instrumented job therefore adds a *record*, never a field, so this schema does not grow the way `Metrics` has. Field names are deliberately short — thirteen fields here total 46 characters of name against `Metrics`'s ~120 |
 
 **Delivery class is a property of the channel, not a paragraph of prose.** `sys/panic`
 is must-deliver; `tel/print` is drop-first. That is the whole rule.
@@ -270,13 +271,26 @@ on a user-requested cadence (G9: no unrequested periodic work); as of tuvm#24
 no periodic publisher exists — the record is built by `kernel metrics` and
 published explicitly.
 
-**`Metrics` headroom (tuvm#34) — an estimate, not a measurement.** `pulseDrops`/
-`pulseCoalesced` — the ISR pulse seam's shed and coalesce counters, added when that seam
-stopped answering a full mailbox with `k_oops` and started shedding — widened the record
-from 9 fields to 11. The ~185–230 B figure above is **derived from field-name lengths and
-plausible counter magnitudes; nobody has encoded the record and measured it.** The
-pre-existing ~150–190 B figure it extends appears to be of the same kind. Treat both as
-order-of-magnitude.
+**`Metrics` headroom — MEASURED 2026-07-21 (tuvm#61), superseding the estimate below.**
+`Metrics` encodes to **195 B** and `LatencySpan` to **140 B**, both through the real
+`Cbor>>encode:` path, witnessed by `nsl-tests/19_latency/05_record_size.nsl` (which also
+serves as the regression guard, since encoded size is what porta pays for on every
+uplink). The measurement used the values read off a WROOM-32 rather than round numbers:
+CBOR is shortest-form, so a field holding 7,820,873 costs five bytes where one holding
+52,746 costs three, and a size taken against placeholders is not the size the fleet sends.
+
+195 B lands inside the old ~185–230 B estimate, so the estimate was sound — but it was
+still an estimate, and this section said so about itself. **The headroom is now a
+number: 61 B under the 256 B cap.** That is roughly two more integer fields with names
+of the current average length, not five.
+
+*The original note, kept because its reasoning is what prompted the measurement:*
+`pulseDrops`/`pulseCoalesced` — the ISR pulse seam's shed and coalesce counters, added
+when that seam stopped answering a full mailbox with `k_oops` and started shedding —
+widened the record from 9 fields to 11. The ~185–230 B figure was **derived from
+field-name lengths and plausible counter magnitudes; nobody had encoded the record and
+measured it.** The pre-existing ~150–190 B figure it extends appears to be of the same
+kind.
 
 Two things keep this from being alarming. First, §2.2's 256 B is itself a **first cut
 pending re-measurement on the G10 fleet-sim**, not a frozen protocol constant — the
@@ -284,10 +298,16 @@ pending re-measurement on the G10 fleet-sim**, not a frozen protocol constant �
 **crash at the bridge, not a silent truncation**, so it cannot corrupt data undetected.
 
 Still worth acting on: `Metrics` is the one record that grows every time a subsystem gains
-a counter, and it is now the closest to the cap. **Measure it before adding field 12.** If
-it needs to keep growing — or if per-job latency histograms ever want publishing (tuvm#61,
-where bucket counts are many fields at once) — that wants its own record, split by
-subsystem (heap / handles / seam / latency), not another append here.
+a counter, and it is the closest to the cap. It has now been measured, so the standing
+instruction is discharged for field 12 — **but re-measure before field 13**, and note that
+counter magnitudes move the figure as well as field count.
+
+The forecast in this paragraph held. It said that if per-job latency histograms ever
+wanted publishing (tuvm#61, where bucket counts are many fields at once) that should be
+**its own record, split by subsystem** — and that is exactly what `sys/latency` above is.
+`LatencySpan` is one record per span, so instrumenting another job adds a record rather
+than a field, and `Metrics` is not dragged toward the cap by work that has nothing to do
+with the heap.
 
 ### 4.5 `dbg/*` — remote debug (event, both ways)
 
